@@ -441,9 +441,19 @@ namespace p3ds::crash
         void watchdogMain(void*)
         {
             installForCurrentThread();
+            int tick = 0;
+            uint32_t peakHeap = 0;
             while (gWatchdogRun)
             {
                 svcSleepThread(500LL * 1000 * 1000);
+                // Memory profile every 5 s (the log is thread-safe).
+                const mem::Stats s = mem::query();
+                if (s.heapUsed > peakHeap)
+                    peakHeap = s.heapUsed;
+                if (++tick % 10 == 0)
+                    P3DS_LOGI("mem: heap %.1f MB used (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
+                        mem::toMB(s.heapUsed), mem::toMB(s.heapArena), mem::toMB(s.heapTotal), mem::toMB(peakHeap),
+                        mem::toMB(s.linearFree), gStep);
                 const u64 timeout = gTimeoutTicks;
                 if (timeout != 0 && svcGetSystemTick() - gLastKick > timeout)
                     reportHang();

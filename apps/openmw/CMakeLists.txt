@@ -162,6 +162,17 @@ if(BUILD_OPENMW)
 
     target_link_libraries(openmw openmw-lib)
 
+    if (OPENMW_PLATFORM_3DS)
+        include(${OPENMW3DS_ROOT}/cmake/Ctr3dsPackaging.cmake)
+        omw3ds_package(openmw
+            TITLE "OpenMW"
+            DESCRIPTION "OpenMW (Morrowind engine) for New 3DS"
+            AUTHOR "OpenMW 3DS port"
+            PRODUCT_CODE "CTR-P-OMW3"
+            UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp
+            SYSTEM_MODE_EXT 178MB)
+    endif()
+
     # Workaround necessary to ensure osgAnimation::MatrixLinearSampler dynamic casts work under Clang
     # NOTE: it's unclear whether the broken behavior is spec-compliant
     if (CMAKE_CXX_COMPILER_ID STREQUAL Clang)

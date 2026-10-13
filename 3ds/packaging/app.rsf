@@ -13,7 +13,9 @@ Option:
   FreeProductCode         : true
   MediaFootPadding        : false
   EnableCrypt             : false
-  EnableCompress          : true
+  # Off: a compressed 40 MB .code fails to boot (Azahar runs garbage at the entry point); the CIA
+  # just gets bigger on the SD card.
+  EnableCompress          : false
 
 AccessControlInfo:
   CoreVersion                   : 2

@@ -9,7 +9,8 @@
 
 namespace Files
 {
-    /// Nintendo 3DS: everything lives on the SD card under sdmc:/openmw.
+    /// Nintendo 3DS: everything lives on the SD card under sdmc:/openmw (spelled "/openmw": the SD card
+    /// is the default device, and std::filesystem only treats POSIX-style paths as absolute).
     ///   sdmc:/openmw/config     openmw.cfg, settings.cfg (user)
     ///   sdmc:/openmw/           user data (saves/, screenshots/)
     ///   sdmc:/openmw/cache      caches

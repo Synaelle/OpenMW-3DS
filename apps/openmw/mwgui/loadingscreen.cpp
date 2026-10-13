@@ -27,6 +27,10 @@
 
 #include "backgroundimage.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/crash.hpp>
+#endif
+
 namespace MWGui
 {
 
@@ -317,6 +321,9 @@ namespace MWGui
 
     void LoadingScreen::draw()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::crash::kick("loading screen"); // loading is progressing: feed the hang watchdog
+#endif
         if (!needToDrawLoadingScreen())
             return;
 

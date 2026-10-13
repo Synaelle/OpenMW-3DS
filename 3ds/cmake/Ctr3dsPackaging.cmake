@@ -1,10 +1,12 @@
 # Packaging helpers: .3dsx (via devkitPro's ctr_create_3dsx) and .cia (bannertool + makerom).
 # makerom/bannertool are fetched into .tools/bin by scripts/bootstrap.ps1.
 
-find_program(OMW3DS_MAKEROM makerom HINTS "${CMAKE_SOURCE_DIR}/.tools/bin")
-find_program(OMW3DS_BANNERTOOL bannertool HINTS "${CMAKE_SOURCE_DIR}/.tools/bin")
+# Paths are relative to this file: the module is used both by the repo superbuild and by openmw/.
+get_filename_component(_omw3ds_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+find_program(OMW3DS_MAKEROM makerom HINTS "${_omw3ds_root}/.tools/bin")
+find_program(OMW3DS_BANNERTOOL bannertool HINTS "${_omw3ds_root}/.tools/bin")
 
-set(OMW3DS_PACKAGING_DIR "${CMAKE_SOURCE_DIR}/packaging")
+set(OMW3DS_PACKAGING_DIR "${_omw3ds_root}/packaging")
 
 # omw3ds_package(<elf target>
 #     TITLE <name> DESCRIPTION <text> AUTHOR <text>

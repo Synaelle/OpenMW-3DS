@@ -23,10 +23,16 @@ static inline void* dlopen(const char* file, int mode)
     return (void*)0;
 }
 
+/* Provided by the stub GL (deps/stubgl): resolves every gl* name. Weak, so code that never links
+ * the stub GL still builds. */
+extern void* osg3ds_glGetProcAddress(const char* name) __attribute__((weak));
+
 static inline void* dlsym(void* handle, const char* name)
 {
     (void)handle;
-    (void)name;
+    /* OSG looks GL 2.0+ entry points up with dlsym(0, "glCreateProgram") etc. */
+    if (osg3ds_glGetProcAddress)
+        return osg3ds_glGetProcAddress(name);
     return (void*)0;
 }
 

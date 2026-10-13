@@ -7,8 +7,10 @@
 #include <3ds.h>
 
 #include <cstdarg>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <reent.h>
 #include <sys/stat.h>
 
 // Replaces libctru's weak __system_allocateHeaps (it lives here because this object is always linked).
@@ -70,6 +72,76 @@ extern "C"
 
         fake_heap_start = reinterpret_cast<char*>(__ctru_heap);
         fake_heap_end = fake_heap_start + __ctru_heap_size;
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Two-segment sbrk (replaces libsysbase's weak _sbrk_r).
+//
+// The libctru app heap is capped by its virtual window (~95 MB even in the 178 MB mode), while the
+// linear (GPU-visible) heap gets the rest of the memory and is mostly idle until textures and vertex
+// buffers exist. When the app heap is exhausted, malloc continues in a block carved from the linear
+// heap, leaving kLinearGpuReserve for citro3d. newlib's malloc accepts sbrk jumping to a higher,
+// non-contiguous address (it fences off the gap), and never mixes segments afterwards.
+extern "C"
+{
+    size_t p3ds_linear_gpu_reserve = 24u * 1024u * 1024u; // keep this much linear memory for the GPU
+
+    static char* gSbrkCur = nullptr; // current break
+    static char* gSbrkEnd = nullptr; // end of the current segment
+    static char* gExtStart = nullptr; // linear extension segment (once used)
+    static size_t gExtSize = 0;
+
+    void* _sbrk_r(struct _reent* r, ptrdiff_t incr)
+    {
+        if (gSbrkCur == nullptr)
+        {
+            gSbrkCur = fake_heap_start;
+            gSbrkEnd = fake_heap_end;
+        }
+        if (incr >= 0 ? (gSbrkCur + incr > gSbrkEnd) : (gSbrkCur + incr < (gExtStart ? gExtStart : fake_heap_start)))
+        {
+            // Out of the app heap: move once to a linear-heap segment.
+            if (incr > 0 && gExtStart == nullptr)
+            {
+                const size_t avail = linearSpaceFree();
+                if (avail > p3ds_linear_gpu_reserve + size_t(incr))
+                {
+                    gExtSize = (avail - p3ds_linear_gpu_reserve) & ~size_t(0xFFFF);
+                    gExtStart = static_cast<char*>(linearMemAlign(gExtSize, 0x1000));
+                }
+                if (gExtStart != nullptr && gExtStart > gSbrkEnd)
+                {
+                    gSbrkCur = gExtStart;
+                    gSbrkEnd = gExtStart + gExtSize;
+                    char* prev = gSbrkCur;
+                    gSbrkCur += incr;
+                    return prev;
+                }
+                if (gExtStart != nullptr)
+                {
+                    linearFree(gExtStart); // below the app heap: newlib can't use it
+                    gExtStart = nullptr;
+                    gExtSize = 0;
+                }
+            }
+            r->_errno = ENOMEM;
+            return reinterpret_cast<void*>(-1);
+        }
+        char* prev = gSbrkCur;
+        gSbrkCur += incr;
+        return prev;
+    }
+
+    size_t p3ds_heap_extension_size()
+    {
+        return gExtSize;
+    }
+
+    // Address gap newlib's malloc counts as allocated once it jumped to the extension segment.
+    size_t p3ds_heap_extension_gap()
+    {
+        return gExtStart ? size_t(gExtStart - fake_heap_end) : 0;
     }
 }
 

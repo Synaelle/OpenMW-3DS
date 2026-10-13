@@ -85,6 +85,10 @@
 
 #include "profile.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/crash.hpp>
+#endif
+
 namespace
 {
     void checkSDLError(int ret)
@@ -189,6 +193,9 @@ void OMW::Engine::executeLocalScripts()
 
 bool OMW::Engine::frame(unsigned frameNumber, float frametime)
 {
+#ifdef OPENMW_PLATFORM_3DS
+    p3ds::crash::kick("engine frame"); // feed the hang watchdog
+#endif
     const osg::Timer_t frameStart = mViewer->getStartTick();
     const osg::Timer* const timer = osg::Timer::instance();
     osg::Stats* const stats = mViewer->getViewerStats();
@@ -513,7 +520,12 @@ void OMW::Engine::createWindow()
         posY = SDL_WINDOWPOS_UNDEFINED_DISPLAY(screen);
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // No OpenGL: SDL runs its dummy video driver; rendering goes through citro3d (sdlgraphicswindow_3ds).
+    Uint32 flags = SDL_WINDOW_SHOWN;
+#else
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
     if (windowMode == Settings::WindowMode::Fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN;
     else if (windowMode == Settings::WindowMode::WindowedFullscreen)

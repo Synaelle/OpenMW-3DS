@@ -134,10 +134,10 @@ build_compat() {
     cp -r "$DEPS/compat/include/." "$PREFIX/include/"
     # libcompat3ds.a: POSIX stubs (fchown, geteuid, ...) referenced by dependencies.
     local flags="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -O2 -ffunction-sections -D__3DS__ $INT32_FLAG"
-    local objs=()
-    for c in "$DEPS"/compat/src/*.c; do
-        local o="$BUILD/compat/$(basename "$c" .c).o"
-        "$DEVKITARM/bin/arm-none-eabi-gcc" $flags -I"$DEVKITPRO/libctru/include" -c "$c" -o "$o"
+    local objs=() csrc o
+    for csrc in "$DEPS"/compat/src/*.c; do
+        o="$BUILD/compat/$(basename "$csrc" .c).o"
+        "$DEVKITARM/bin/arm-none-eabi-gcc" $flags -I"$DEVKITPRO/libctru/include" -c "$csrc" -o "$o"
         objs+=("$o")
     done
     rm -f "$PREFIX/lib/libcompat3ds.a"

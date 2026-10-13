@@ -14,12 +14,16 @@
 
 #include <components/debug/debugging.hpp>
 
+#include <osg/GLExtensions>
+#include <dlfcn.h>
+
 #include <3ds.h>
 
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 int runApplication(int argc, char* argv[]); // apps/openmw/main.cpp
@@ -64,8 +68,8 @@ int main(int, char**)
     opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
     p3ds::init(opts);
     p3ds::crash::setContextString(&gContext);
-    // Startup (ESM loading) is long and has no frame loop yet: generous timeout for now.
-    p3ds::crash::startWatchdog(120, p3ds::info().syscoreLimit > 0 ? 1 : 0);
+    // Fed by Engine::frame() and LoadingScreen::draw() (see p3ds::crash::kick calls in openmw).
+    p3ds::crash::startWatchdog(60, p3ds::info().syscoreLimit > 0 ? 1 : 0);
 
     p3ds::DebugBottomScreen bottom;
     bottom.init();
@@ -74,9 +78,19 @@ int main(int, char**)
     bottom.update(snap);
     bottom.forceRedraw();
 
+    // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)
+    // does not consider "sdmc:/..." absolute, and OpenMW resolves relative paths against config dirs.
+    chdir("sdmc:/");
     // std::filesystem::temp_directory_path() (used by the crash-catcher setup) needs an existing dir.
-    setenv("TMPDIR", "sdmc:/openmw/cache", 1);
-    setenv("HOME", "sdmc:/openmw", 1);
+    setenv("TMPDIR", "/openmw/cache", 1);
+    setenv("HOME", "/openmw", 1);
+    // SDL is only used for events, joystick, touch and timers. Its n3ds video driver would take over
+    // the screens (gfxInit) and has no OpenGL, so use the dummy driver.
+    setenv("SDL_VIDEODRIVER", "dummy", 1);
+
+    // TEMP diagnostic: GL 2.0 entry points resolution through the stub GL.
+    P3DS_LOGI("diag: dlsym(glCreateProgram)=%p getGLExtensionFuncPtr=%p resolver=%p", dlsym(nullptr, "glCreateProgram"),
+        osg::getGLExtensionFuncPtr("glCreateProgram"), (void*)&osg3ds_glGetProcAddress);
 
     std::vector<std::string> args = loadArguments();
     std::vector<char*> argv;

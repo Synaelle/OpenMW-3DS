@@ -10,6 +10,8 @@ extern "C"
 {
     extern char __start__[];
     extern char __end__[];
+    size_t p3ds_heap_extension_size(); // platform.cpp: linear-heap segment used by malloc (0 if none)
+    size_t p3ds_heap_extension_gap(); // address gap between the two segments (counted by mallinfo)
 }
 
 namespace p3ds::mem
@@ -34,14 +36,15 @@ namespace p3ds::mem
             s.regionUsed = uint32_t(current);
         }
         s.imageSize = uint32_t(__end__ - __start__);
-        s.heapTotal = envGetHeapSize();
+        s.heapTotal = envGetHeapSize() + uint32_t(p3ds_heap_extension_size());
         s.linearTotal = envGetLinearHeapSize();
         s.linearFree = linearSpaceFree();
         s.vramFree = vramSpaceFree();
 
         const struct mallinfo mi = mallinfo();
-        s.heapArena = uint32_t(mi.arena);
-        s.heapUsed = uint32_t(mi.uordblks);
+        const uint32_t gap = uint32_t(p3ds_heap_extension_gap());
+        s.heapArena = uint32_t(mi.arena) - gap;
+        s.heapUsed = uint32_t(mi.uordblks) - gap;
         return s;
     }
 

@@ -583,6 +583,12 @@ if (OPENMW_USE_SYSTEM_SQLITE3)
     endif()
 endif()
 
+if (OPENMW_PLATFORM_3DS)
+    # No OpenGL: the 3DS window has no GL context (see sdlutil/sdlgraphicswindow_3ds.cpp).
+    list(FILTER COMPONENT_FILES EXCLUDE REGEX "sdlutil/sdlgraphicswindow\\.cpp$")
+    list(APPEND COMPONENT_FILES sdlutil/sdlgraphicswindow_3ds.cpp)
+endif()
+
 add_library(components STATIC ${COMPONENT_FILES})
 
 if (ANDROID)
