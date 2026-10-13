@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+extern "C" const char* const p3ds_build_id; // "YYYYMMDD-HHMMSS <git rev>", regenerated every build
+
 namespace p3ds
 {
     // Root of all port files on the SD card.

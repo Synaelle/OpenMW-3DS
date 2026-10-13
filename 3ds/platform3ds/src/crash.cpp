@@ -1,6 +1,7 @@
 #include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memstats.hpp>
+#include <platform3ds/platform.hpp>
 #include <platform3ds/textfb.hpp>
 
 #include <3ds.h>
@@ -255,7 +256,9 @@ namespace p3ds::crash
         void beginReport(const char* kind)
         {
             gReportLen = 0;
-            put("=== OpenMW 3DS crash report ===\n");
+            put("=== OpenMW 3DS crash report ===\nBuild: ");
+            put(p3ds_build_id);
+            putc_('\n');
             put("Kind: ");
             put(kind);
             put("\nUptime: ");

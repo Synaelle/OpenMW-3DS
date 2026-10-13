@@ -22,7 +22,8 @@ if ($Autorun) { Set-Content "$sd\openmw\autorun.txt" $Autorun -NoNewline }
 
 # Keep the matching .elf next to the package (NOT copied to the SD card) for crash symbolization.
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-Copy-Item "$out\testapp.elf" "$out\testapp-$stamp.elf"
+New-Item -ItemType Directory -Force "$out\elf-archive" | Out-Null
+Copy-Item "$out\testapp.elf" "$out\elf-archive\testapp-$stamp.elf"
 
 @"
 OpenMW 3DS - hardware test package ($stamp)
@@ -45,5 +46,5 @@ uninstall the previous "OpenMW3DS testapp" in FBI if you installed one.
 "@ | Set-Content "$sd\README.txt"
 
 Write-Host "SD card package: $sd"
-Write-Host "Matching ELF kept as: $out\testapp-$stamp.elf"
+Write-Host "Matching ELF kept as: $out\elf-archive\testapp-$stamp.elf"
 Get-ChildItem $sd -Recurse -File | ForEach-Object { $_.FullName.Substring($sd.Length + 1) }

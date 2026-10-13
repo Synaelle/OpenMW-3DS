@@ -102,7 +102,7 @@ int main(int argc, char** argv)
     p3ds::crash::setContextString(&gContext);
     // Test app: every log line goes to the SD card immediately, so a hard freeze still leaves a trail.
     p3ds::log::setSyncMode(true);
-    P3DS_LOGI("OpenMW3DS testapp M0 (built " __DATE__ " " __TIME__ ")");
+    P3DS_LOGI("OpenMW3DS testapp M0");
 
     const Autorun autorun = parseAutorun();
 

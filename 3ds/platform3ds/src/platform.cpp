@@ -143,6 +143,7 @@ namespace p3ds
         crash::setWaitForInput(!gInfo.autorun);
 
         const mem::Stats ms = mem::query();
+        P3DS_LOGI("build %s", p3ds_build_id);
         P3DS_LOGI("platform3ds: %s, %s (title %016llX), speedup %s, syscore limit %d%%, autorun %s",
             isNew ? "New 3DS" : "Old 3DS", gInfo.launchedAsCia ? "cia" : "3dsx", (unsigned long long)gInfo.programId,
             gInfo.speedupEnabled ? "on" : "off", gInfo.syscoreLimit, gInfo.autorun ? "yes" : "no");
