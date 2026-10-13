@@ -30,6 +30,7 @@ namespace p3ds::log
 
         FILE* gFile = nullptr;
         Level gFileLevel = Level::Debug;
+        volatile bool gSync = false;
 
         Thread gThread = nullptr;
         LightEvent gWake;
@@ -141,6 +142,13 @@ namespace p3ds::log
         gFileLevel = fileLevel;
     }
 
+    void setSyncMode(bool sync)
+    {
+        gSync = sync;
+        if (sync)
+            drainToFile();
+    }
+
     void write(Level level, std::string_view msg)
     {
         ensureLock();
@@ -182,7 +190,9 @@ namespace p3ds::log
         gGeneration = gGeneration + 1;
         LightLock_Unlock(&gLock);
 
-        if (wantFlush && gThread != nullptr)
+        if (gSync)
+            drainToFile();
+        else if (wantFlush && gThread != nullptr)
             LightEvent_Signal(&gWake);
     }
 

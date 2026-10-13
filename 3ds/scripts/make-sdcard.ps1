@@ -2,7 +2,8 @@
 #   scripts\make-sdcard.ps1 [-NoBuild] [-Autorun "probes bench"]
 param(
     [switch]$NoBuild,
-    [string]$Autorun = 'probes bench'
+    [string]$Autorun = 'probes bench',
+    [switch]$With3dsx  # hardware tests use the .cia (real 178 MB / 804 MHz settings); 3dsx is optional
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -11,9 +12,11 @@ if (-not $NoBuild) { & "$PSScriptRoot\build.ps1" | Out-Host }
 $out = Join-Path $RepoRoot 'out'
 $sd = Join-Path $out 'sdcard'
 if (Test-Path $sd) { Remove-Item -Recurse -Force $sd }
-New-Item -ItemType Directory -Force "$sd\3ds\openmw3ds", "$sd\cias", "$sd\openmw" | Out-Null
-
-Copy-Item "$out\testapp.3dsx" "$sd\3ds\openmw3ds\testapp.3dsx"
+New-Item -ItemType Directory -Force "$sd\cias", "$sd\openmw" | Out-Null
+if ($With3dsx) {
+    New-Item -ItemType Directory -Force "$sd\3ds\openmw3ds" | Out-Null
+    Copy-Item "$out\testapp.3dsx" "$sd\3ds\openmw3ds\testapp.3dsx"
+}
 Copy-Item "$out\testapp.cia" "$sd\cias\openmw3ds-testapp.cia"
 if ($Autorun) { Set-Content "$sd\openmw\autorun.txt" $Autorun -NoNewline }
 
@@ -26,17 +29,20 @@ OpenMW 3DS - hardware test package ($stamp)
 ===========================================
 Copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
 
-  3ds/openmw3ds/testapp.3dsx   -> Homebrew Launcher build
-  cias/openmw3ds-testapp.cia   -> install with FBI, then launch from the HOME Menu
-  openmw/autorun.txt           -> makes the app run probes + GPU bench and exit by itself
+  cias/openmw3ds-testapp.cia   -> install with FBI, launch "OpenMW3DS testapp" from the HOME Menu
+  openmw/autorun.txt           -> makes the app run its tests by itself and exit (~30 s)
 
-Test steps: docs/HARDWARE_TEST_M0.md in the repo. Short version:
- 1. Launch the CIA (HOME Menu). Wait ~30 s until it exits. Copy sdmc:/openmw/ to a folder 'cia'.
- 2. Launch the 3DSX (Homebrew Launcher). Wait until it exits. Copy sdmc:/openmw/ to a folder '3dsx'.
- 3. Delete sdmc:/openmw/autorun.txt, launch the CIA, hold L+R and press X.
-    Red screen = crash logger worked. Press START. Copy sdmc:/openmw/crash.log.
- 4. Send the folders back.
-"@ | Set-Content "$sd\README.txt"
+Before testing: delete old files in sdmc:/openmw/ (openmw.log, probe.txt, crash.log), and
+uninstall the previous "OpenMW3DS testapp" in FBI if you installed one.
+
+1. Launch the CIA. The bottom screen shows progress (PROBE lines, then BENCH lines).
+   It exits by itself when done.
+2. If it freezes: note the LAST line on the bottom screen, power off, and send me
+   sdmc:/openmw/openmw.log (every line is now saved immediately, so it survives a freeze)
+   plus anything in sdmc:/luma/dumps/arm11/.
+3. If it finished: send sdmc:/openmw/openmw.log and probe.txt.
+   Optional crash-logger test: delete sdmc:/openmw/autorun.txt, launch again, hold L+R, press X.
+"@"@ | Set-Content "$sd\README.txt"
 
 Write-Host "SD card package: $sd"
 Write-Host "Matching ELF kept as: $out\testapp-$stamp.elf"

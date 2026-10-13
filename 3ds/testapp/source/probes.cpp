@@ -26,6 +26,7 @@
 namespace
 {
     FILE* gOut = nullptr;
+    void (*gProgress)() = nullptr;
     int gFailures = 0;
 
     void report(bool pass, const char* name, const std::string& detail)
@@ -35,7 +36,12 @@ namespace
         const auto level = pass ? p3ds::log::Level::Info : p3ds::log::Level::Error;
         p3ds::log::writef(level, "PROBE %-14s %s %s", name, pass ? "PASS" : "FAIL", detail.c_str());
         if (gOut != nullptr)
+        {
             fprintf(gOut, "%-16s %s  %s\n", name, pass ? "PASS" : "FAIL", detail.c_str());
+            fflush(gOut);
+        }
+        if (gProgress != nullptr)
+            gProgress();
     }
 
     template <class F>
@@ -323,9 +329,10 @@ namespace
     }
 }
 
-int runProbes(bool includeSdBenchmark)
+int runProbes(bool includeSdBenchmark, void (*onProgress)())
 {
     gFailures = 0;
+    gProgress = onProgress;
     gOut = fopen("sdmc:/openmw/probe.txt", "w");
     P3DS_LOGI("---- probes start ----");
 
@@ -336,13 +343,22 @@ int runProbes(bool includeSdBenchmark)
             GET_VERSION_MAJOR(osGetKernelVersion()), GET_VERSION_MINOR(osGetKernelVersion()),
             p3ds::info().launchedAsCia ? "cia" : "3dsx", sysver[0] ? sysver : "sysver n/a"));
 
+    // Each step is announced first, so a freeze leaves the culprit as the last log line.
+    P3DS_LOGI("probe step: memory");
     probeMemory();
+    P3DS_LOGI("probe step: cpu");
     probeCpu();
+    P3DS_LOGI("probe step: c++ runtime");
     probeCxx();
+    P3DS_LOGI("probe step: cores");
     probeCores();
+    P3DS_LOGI("probe step: filesystem");
     probeFilesystem();
     if (includeSdBenchmark)
+    {
+        P3DS_LOGI("probe step: sd benchmark (8 MB)");
         probeSd();
+    }
 
     P3DS_LOGI("---- probes done: %d failure(s) ----", gFailures);
     if (gOut != nullptr)

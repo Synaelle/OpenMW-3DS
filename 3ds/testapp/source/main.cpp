@@ -91,6 +91,8 @@ int main(int argc, char** argv)
     opts.ciaUniqueId = 0xF6D30; // must match testapp/CMakeLists.txt UNIQUE_ID
     const p3ds::PlatformInfo pi = p3ds::init(opts);
     p3ds::crash::setContextString(&gContext);
+    // Test app: every log line goes to the SD card immediately, so a hard freeze still leaves a trail.
+    p3ds::log::setSyncMode(true);
     P3DS_LOGI("OpenMW3DS testapp M0 (built " __DATE__ " " __TIME__ ")");
 
     const Autorun autorun = parseAutorun();
@@ -98,6 +100,14 @@ int main(int argc, char** argv)
     p3ds::DebugBottomScreen bottom;
     p3ds::IBottomScreen& screen = bottom; // the game loop only knows the interface
     screen.init();
+    static p3ds::DebugBottomScreen* sBottom = &bottom;
+    const auto progress = [] {
+        p3ds::GameSnapshot s;
+        s.cellName = "(probes running)";
+        sBottom->update(s);
+        sBottom->forceRedraw();
+    };
+    progress();
 
     TestRenderer renderer;
     if (!renderer.init())
@@ -106,10 +116,10 @@ int main(int argc, char** argv)
     if (autorun.probes)
     {
         gContext = "testapp: probes";
-        runProbes(true);
+        runProbes(true, progress);
     }
     else if (!autorun.enabled)
-        runProbes(false); // quick probes without the SD benchmark
+        runProbes(false, progress); // quick probes without the SD benchmark
 
     p3ds::FrameTimer timer;
     p3ds::FrameStats stats;
@@ -165,7 +175,10 @@ int main(int argc, char** argv)
         if (autorun.bench && !done)
         {
             if (benchFrame == 0)
+            {
                 renderer.setScene(benchScene);
+                P3DS_LOGI("bench scene start: %s", TestRenderer::sceneName(benchScene));
+            }
             if (benchFrame >= 10) // skip warm-up frames
             {
                 sumFrame += frameMs;

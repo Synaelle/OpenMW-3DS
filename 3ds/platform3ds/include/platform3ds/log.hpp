@@ -28,6 +28,10 @@ namespace p3ds::log
 
     void setLevel(Level fileLevel);
 
+    // Sync mode: every line is written and flushed to the SD card before write() returns.
+    // Slow (several ms per line on hardware) but survives a hard freeze. Use for hardware tests.
+    void setSyncMode(bool sync);
+
     void write(Level level, std::string_view msg);
     void writef(Level level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 

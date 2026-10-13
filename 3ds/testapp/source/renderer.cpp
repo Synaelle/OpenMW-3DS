@@ -176,6 +176,13 @@ bool TestRenderer::init()
             texels[tile * 64 + morton8(u32(x % 8), u32(ty % 8))] = rgba;
         }
     C3D_TexFlush(&mTexture);
+
+    // The GPU reads linear memory directly: CPU-written data must be flushed out of the data cache.
+    // (Azahar has no cache emulation, so forgetting this "works" there and hangs real hardware.)
+    GSPGPU_FlushDataCache(mCubeVbo, sizeof(Vertex) * 36);
+    GSPGPU_FlushDataCache(mMeshVbo, sizeof(Vertex) * vcount);
+    GSPGPU_FlushDataCache(mMeshIbo, sizeof(u16) * mMeshIndexCount);
+    GSPGPU_FlushDataCache(mQuadVbo, sizeof(Vertex) * 6);
     C3D_TexSetFilter(&mTexture, GPU_LINEAR, GPU_NEAREST);
     C3D_TexSetWrap(&mTexture, GPU_REPEAT, GPU_REPEAT);
     C3D_TexBind(0, &mTexture);

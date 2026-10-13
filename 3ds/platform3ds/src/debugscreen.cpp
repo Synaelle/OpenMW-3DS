@@ -151,6 +151,12 @@ namespace p3ds
         mLastRedrawMs = float(ticksToMs(ticks() - t0));
     }
 
+    void DebugBottomScreen::forceRedraw()
+    {
+        mLastRedrawTick = 0;
+        render();
+    }
+
     void DebugBottomScreen::redraw()
     {
         using namespace textfb;

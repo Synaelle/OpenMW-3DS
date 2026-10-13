@@ -19,6 +19,9 @@ namespace p3ds
         void setVisible(bool visible) override;
         bool isVisible() const override { return mVisible; }
 
+        // Redraws immediately, ignoring the rate limit (progress display during long blocking steps).
+        void forceRedraw();
+
         // Cost of the last redraw, for self-profiling.
         float lastRedrawMs() const { return mLastRedrawMs; }
 
