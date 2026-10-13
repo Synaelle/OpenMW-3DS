@@ -1,0 +1,13 @@
+diff --git a/src/OpenThreads/CMakeLists.txt b/src/OpenThreads/CMakeLists.txt
+index 6701356..fece0b2 100644
+--- a/src/OpenThreads/CMakeLists.txt
++++ b/src/OpenThreads/CMakeLists.txt
+@@ -96,7 +96,7 @@ ELSEIF(WIN32)
+         # examples)
+     ENDIF()
+ ELSE()
+-    IF(UNIX)
++    IF(UNIX OR NINTENDO_3DS)
+         SUBDIRS(pthreads)
+     ELSE()
+         MESSAGE("Sorry, OpenThreads may not support your platform")
