@@ -234,6 +234,9 @@ int runApplication(int argc, char* argv[])
     return 0;
 }
 
+#if defined(OPENMW_PLATFORM_3DS)
+// Nintendo 3DS: main() is in n3ds/main3ds.cpp (platform bring-up first).
+#else
 #ifdef ANDROID
 extern "C" int SDL_main(int argc, char** argv)
 #else
@@ -242,6 +245,7 @@ int main(int argc, char** argv)
 {
     return Debug::wrapApplication(&runApplication, argc, argv, "OpenMW");
 }
+#endif
 
 // Platform specific for Windows when there is no console built into the executable.
 // Windows will call the WinMain function instead of main in this case, the normal

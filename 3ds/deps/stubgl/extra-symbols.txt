@@ -1,0 +1,4 @@
+# gl* functions called by OpenMW itself (not by the dependency libraries scanned by
+# stubgl_generate). One per line; each becomes a no-op in libGL.a.
+glGetTexParameteriv
+

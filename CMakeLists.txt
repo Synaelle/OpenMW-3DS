@@ -12,6 +12,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (OPENMW_PLATFORM_3DS)
+    # Nintendo 3DS port. int32_t = int ABI (arm-none-eabi defaults to long; see the header), and
+    # POSIX declarations (strnlen, fileno, ...) that newlib hides in strict C++20 mode.
+    add_compile_options("SHELL:-include ${OPENMW3DS_ROOT}/deps/compat/include/openmw3ds_int32.h")
+    add_compile_definitions(_GNU_SOURCE OPENMW_PLATFORM_3DS=1)
+    include_directories(SYSTEM ${OPENMW3DS_DEPS_PREFIX}/include)
+endif()
+
 option(OPENMW_GL4ES_MANUAL_INIT "Manually initialize gl4es. This is more reliable on platforms without a windowing system. Requires gl4es to be configured with -DNOEGL=ON -DNO_LOADER=ON -DNO_INIT_CONSTRUCTOR=ON." OFF)
 if(OPENMW_GL4ES_MANUAL_INIT)
     add_compile_definitions(OPENMW_GL4ES_MANUAL_INIT)

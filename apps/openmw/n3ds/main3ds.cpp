@@ -1,0 +1,94 @@
+// Nintendo 3DS entry point (replaces main() in apps/openmw/main.cpp on this platform).
+//
+// Brings up the platform layer (log file, crash logger, hang watchdog, memory split, bottom-screen
+// debug display) before handing over to OpenMW's unchanged runApplication(). Command-line options come
+// from sdmc:/openmw/args.txt (one argument per line); the debug default boots straight into a new game
+// with the default generated character in Seyda Neen:
+//   --skip-menu --start "Seyda Neen"
+// (--new-game is deliberately absent: it would start character generation and the intro movie.)
+
+#include <platform3ds/crash.hpp>
+#include <platform3ds/debugscreen.hpp>
+#include <platform3ds/log.hpp>
+#include <platform3ds/platform.hpp>
+
+#include <components/debug/debugging.hpp>
+
+#include <3ds.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <string>
+#include <vector>
+
+int runApplication(int argc, char* argv[]); // apps/openmw/main.cpp
+
+namespace
+{
+    constexpr const char* kArgsPath = "sdmc:/openmw/args.txt";
+
+    std::vector<std::string> loadArguments()
+    {
+        std::vector<std::string> args{ "openmw" };
+        std::ifstream file(kArgsPath);
+        if (file)
+        {
+            std::string line;
+            while (std::getline(file, line))
+            {
+                while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                if (!line.empty() && line[0] != '#')
+                    args.push_back(line);
+            }
+            P3DS_LOGI("arguments from %s", kArgsPath);
+        }
+        else
+        {
+            args.insert(args.end(), { "--skip-menu", "--start", "Seyda Neen" });
+            P3DS_LOGI("no %s: using debug defaults", kArgsPath);
+        }
+        for (const std::string& a : args)
+            P3DS_LOGI("  arg: %s", a.c_str());
+        return args;
+    }
+
+    const char* gContext = "openmw: startup";
+}
+
+int main(int, char**)
+{
+    gfxInitDefault();
+    p3ds::InitOptions opts;
+    opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
+    p3ds::init(opts);
+    p3ds::crash::setContextString(&gContext);
+    // Startup (ESM loading) is long and has no frame loop yet: generous timeout for now.
+    p3ds::crash::startWatchdog(120, p3ds::info().syscoreLimit > 0 ? 1 : 0);
+
+    p3ds::DebugBottomScreen bottom;
+    bottom.init();
+    p3ds::GameSnapshot snap;
+    snap.cellName = "(starting OpenMW)";
+    bottom.update(snap);
+    bottom.forceRedraw();
+
+    // std::filesystem::temp_directory_path() (used by the crash-catcher setup) needs an existing dir.
+    setenv("TMPDIR", "sdmc:/openmw/cache", 1);
+    setenv("HOME", "sdmc:/openmw", 1);
+
+    std::vector<std::string> args = loadArguments();
+    std::vector<char*> argv;
+    for (std::string& a : args)
+        argv.push_back(a.data());
+    argv.push_back(nullptr);
+
+    gContext = "openmw: runApplication";
+    const int ret = Debug::wrapApplication(&runApplication, int(args.size()), argv.data(), "OpenMW");
+
+    P3DS_LOGI("OpenMW exited with %d", ret);
+    p3ds::shutdown();
+    gfxExit();
+    return ret;
+}

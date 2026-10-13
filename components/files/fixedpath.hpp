@@ -5,7 +5,13 @@
 #include <string>
 #include <vector>
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
+#if defined(OPENMW_PLATFORM_3DS)
+#include <components/files/threedspath.hpp>
+namespace Files
+{
+    typedef ThreeDSPath TargetPathType;
+}
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__)
 #ifndef ANDROID
 #include <components/files/linuxpath.hpp>
 namespace Files

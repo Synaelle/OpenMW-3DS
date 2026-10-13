@@ -3,6 +3,8 @@
 
 #include "../mwgui/videowidget.hpp"
 
+#include <MyGUI_ITexture.h>
+
 #include <components/debug/debuglog.hpp>
 
 namespace Video

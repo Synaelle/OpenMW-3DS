@@ -40,3 +40,7 @@ set(CMAKE_DISABLE_PRECOMPILE_HEADERS ON CACHE BOOL "MSYS paths in generated PCH 
 # platform module doesn't define that feature, so use GNU ld's flags.
 set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:--whole-archive" "<LINK_ITEM>" "LINKER:--no-whole-archive" CACHE INTERNAL "")
 set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE CACHE INTERNAL "")
+
+# Static link of ~45 libraries with circular references (OSG serializer plugins -> libosg, ICU
+# i18n -> uc, ...): put them all in one linker group instead of relying on CMake's ordering.
+set(CMAKE_CXX_LINK_EXECUTABLE "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> -Wl,--start-group <LINK_LIBRARIES> -Wl,--end-group" CACHE STRING "" FORCE)

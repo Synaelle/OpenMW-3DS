@@ -313,7 +313,7 @@ add_component_dir (debug
     debugging debuglog gldebug debugdraw writeflags
     )
 add_component_dir (files
-    linuxpath androidpath windowspath macospath fixedpath multidircollection collections configurationmanager
+    linuxpath androidpath windowspath macospath threedspath fixedpath multidircollection collections configurationmanager
     constrainedfilestream memorystream hash configfileparser openfile constrainedfilestreambuf conversion
     istreamptr streamwithbuffer utils
     )
@@ -398,7 +398,7 @@ if(WIN32)
         windowscrashmonitor
         windowscrashshm
     )
-elseif(NOT ANDROID)
+elseif(NOT ANDROID AND NOT OPENMW_PLATFORM_3DS) # 3DS: platform3ds crash logger instead
     add_component_dir (crashcatcher
         crashcatcher
     )

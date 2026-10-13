@@ -17,6 +17,13 @@ namespace MWSound
 {
     class HeadCache;
 
+    // Same rule as the FFmpeg decoder (ffmpegdecoder.cpp).
+    inline bool hasAudioExtension(VFS::Path::NormalizedView fname)
+    {
+        const auto ext = fname.extension();
+        return ext == "mp3" || ext == "ogg" || ext == "wav" || ext == "flac" || ext == "opus";
+    }
+
     class OpenALOutput final : public SoundOutput
     {
     public:
