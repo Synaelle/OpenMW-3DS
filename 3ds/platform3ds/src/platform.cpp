@@ -91,6 +91,10 @@ extern "C"
     static char* gSbrkEnd = nullptr; // end of the current segment
     static char* gExtStart = nullptr; // linear extension segment (once used)
     static size_t gExtSize = 0;
+    // Diagnostics (read by the watchdog; sbrk runs under the malloc lock and must not log).
+    volatile uint32_t p3ds_sbrk_failures = 0;
+    volatile int32_t p3ds_sbrk_last_fail_incr = 0;
+    volatile uint32_t p3ds_sbrk_last_fail_linear_free = 0;
 
     void* _sbrk_r(struct _reent* r, ptrdiff_t incr)
     {
@@ -125,6 +129,9 @@ extern "C"
                     gExtSize = 0;
                 }
             }
+            ++p3ds_sbrk_failures;
+            p3ds_sbrk_last_fail_incr = int32_t(incr);
+            p3ds_sbrk_last_fail_linear_free = uint32_t(linearSpaceFree());
             r->_errno = ENOMEM;
             return reinterpret_cast<void*>(-1);
         }

@@ -20,6 +20,10 @@
 
 #include "../mwmechanics/spelllist.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp>
+#endif
+
 namespace
 {
     struct Ref
@@ -397,6 +401,9 @@ namespace MWWorld
         while (esm.hasMoreRecs())
         {
             ESM::NAME n = esm.getRecName();
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::memprobe::Scope memScope(n.toInt()); // heap growth per record type (diagnostic)
+#endif
             esm.getRecHeader();
             if (esm.getRecordFlags() & ESM::FLAG_Ignored)
             {
@@ -468,6 +475,9 @@ namespace MWWorld
             if (listener != nullptr)
                 listener->setProgress(::EsmLoader::fileProgress * esm.getFileOffset() / esm.getFileSize());
         }
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::report(esm.getName().string().c_str());
+#endif
     }
 
     void ESMStore::loadESM4(ESM4::Reader& reader, Loading::Listener* listener)

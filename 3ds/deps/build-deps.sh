@@ -187,12 +187,15 @@ build_osg() {
     fetch "https://github.com/OpenMW/osg/archive/$rev.zip" "osg-$rev.zip"
     unpack "osg-$rev.zip" osg
     # Mirrors openmw/extern/CMakeLists.txt, minus the dae/ktx plugins; GL comes from the stub.
+    # Unlike upstream, matrices/planes/quaternions are float (as in the Vita port): animation keyframes
+    # store osg::Quat values, and with doubles Morrowind's base animations alone exhaust the heap;
+    # the ARM11 VFP is also slower at double precision.
     cmake_build "$SRC/osg" osg \
         -DOPENGL_PROFILE=GL2 \
         -DOPENGL_INCLUDE_DIR="$PREFIX/include" -DOPENGL_gl_LIBRARY="$PREFIX/lib/libGL.a" \
         -DOSG_WINDOWING_SYSTEM=None \
         -DDYNAMIC_OPENSCENEGRAPH=OFF -DDYNAMIC_OPENTHREADS=OFF \
-        -DOSG_USE_FLOAT_MATRIX=OFF -DOSG_USE_FLOAT_PLANE=OFF -DOSG_USE_FLOAT_QUAT=OFF \
+        -DOSG_USE_FLOAT_MATRIX=ON -DOSG_USE_FLOAT_PLANE=ON -DOSG_USE_FLOAT_QUAT=ON \
         -DBUILD_OSG_APPLICATIONS=OFF -DBUILD_OSG_EXAMPLES=OFF -DBUILD_OSG_DEPRECATED_SERIALIZERS=OFF \
         -DBUILD_OSG_PLUGINS_BY_DEFAULT=OFF \
         -DBUILD_OSG_PLUGIN_BMP=ON -DBUILD_OSG_PLUGIN_DDS=ON -DBUILD_OSG_PLUGIN_FREETYPE=ON \

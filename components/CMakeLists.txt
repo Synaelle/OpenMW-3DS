@@ -590,6 +590,9 @@ if (OPENMW_PLATFORM_3DS)
 endif()
 
 add_library(components STATIC ${COMPONENT_FILES})
+if (OPENMW_PLATFORM_3DS)
+    target_link_libraries(components platform3ds)
+endif()
 
 if (ANDROID)
     set_property(TARGET components PROPERTY POSITION_INDEPENDENT_CODE ON)

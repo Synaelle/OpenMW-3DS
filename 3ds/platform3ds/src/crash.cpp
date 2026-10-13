@@ -1,12 +1,15 @@
 #include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
+#include <platform3ds/memprobe.hpp>
 #include <platform3ds/memstats.hpp>
 #include <platform3ds/platform.hpp>
 #include <platform3ds/textfb.hpp>
 
 #include <3ds.h>
 
+#include <cstdio>
 #include <cstdlib>
+#include <malloc.h>
 #include <cstring>
 #include <exception>
 #include <new>
@@ -16,6 +19,10 @@
 
 extern "C"
 {
+    // platform.cpp two-segment sbrk diagnostics
+    extern volatile uint32_t p3ds_sbrk_failures;
+    extern volatile int32_t p3ds_sbrk_last_fail_incr;
+    extern volatile uint32_t p3ds_sbrk_last_fail_linear_free;
     extern char __start__[];
     extern char __exidx_start[]; // end of .text (start of exception index in rodata)
 }
@@ -177,6 +184,12 @@ namespace p3ds::crash
             putKB(s.linearTotal);
             put("\n  vram free ");
             putKB(s.vramFree);
+            put("\n  sbrk failures ");
+            putDec(p3ds_sbrk_failures);
+            put(", last incr ");
+            putDec(u32(p3ds_sbrk_last_fail_incr));
+            put(", linear free then ");
+            putKB(p3ds_sbrk_last_fail_linear_free);
             putc_('\n');
 
             if (gContext != nullptr && *gContext != nullptr)
@@ -451,9 +464,17 @@ namespace p3ds::crash
                 if (s.heapUsed > peakHeap)
                     peakHeap = s.heapUsed;
                 if (++tick % 10 == 0)
+                {
                     P3DS_LOGI("mem: heap %.1f MB used (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
                         mem::toMB(s.heapUsed), mem::toMB(s.heapArena), mem::toMB(s.heapTotal), mem::toMB(peakHeap),
                         mem::toMB(s.linearFree), gStep);
+                    memprobe::logThreads();
+                    memprobe::logReporters();
+                    if (p3ds_sbrk_failures != 0)
+                        P3DS_LOGW("sbrk: %lu failures, last incr %ld, linear free then %lu",
+                            (unsigned long)p3ds_sbrk_failures, (long)p3ds_sbrk_last_fail_incr,
+                            (unsigned long)p3ds_sbrk_last_fail_linear_free);
+                }
                 const u64 timeout = gTimeoutTicks;
                 if (timeout != 0 && svcGetSystemTick() - gLastKick > timeout)
                     reportHang();
@@ -488,6 +509,213 @@ namespace p3ds::crash
         P3DS_LOGI("watchdog: %s (timeout %d s, core %d)", gWatchdog ? "running" : "FAILED to start", seconds, core);
         return gWatchdog != nullptr;
     }
+}
+
+// ---- operator new instrumentation ----
+// Replaces the global operator new so out-of-memory reports say what was asked for, and large
+// allocations (often the real culprits on a 3DS) show up in the log. operator new[] and the nothrow
+// forms in libstdc++ call this one.
+namespace
+{
+    constexpr std::size_t kLargeAllocLog = 4u * 1024u * 1024u;
+}
+
+// Net bytes allocated minus freed through operator new/delete by the current thread. Used by
+// p3ds::memprobe for exact, concurrency-free attribution (malloc_usable_size includes chunk rounding).
+thread_local int64_t p3ds_thread_net_bytes = 0;
+
+// Registry of per-thread counters so the watchdog can log every thread's net C++ allocations.
+// Note: memory freed by a different thread than the one that allocated it shows up as a negative
+// balance on the freeing thread; the sum is still exact.
+namespace
+{
+    // Global slots (not pointers into thread-local storage, which is freed when a thread exits).
+    struct ThreadSlot
+    {
+        u32 tid;
+        int64_t bytes; // updated only by the owning thread
+    };
+    constexpr int kMaxThreadSlots = 32;
+    ThreadSlot gThreadSlots[kMaxThreadSlots];
+    int gThreadSlotCount = 0; // grows only (__atomic)
+    thread_local bool tRegistered = false;
+    thread_local int tSlot = -1;
+
+    void registerThreadCounter()
+    {
+        tRegistered = true;
+        const int i = __atomic_fetch_add(&gThreadSlotCount, 1, __ATOMIC_SEQ_CST);
+        if (i >= kMaxThreadSlots)
+            return;
+        u32 tid = 0;
+        svcGetThreadId(&tid, CUR_THREAD_HANDLE);
+        gThreadSlots[i].tid = tid;
+        gThreadSlots[i].bytes = p3ds_thread_net_bytes;
+        tSlot = i;
+    }
+
+    inline void accountThread(int64_t delta)
+    {
+        p3ds_thread_net_bytes += delta;
+        if (tSlot >= 0)
+            gThreadSlots[tSlot].bytes += delta;
+    }
+}
+
+namespace p3ds::memprobe
+{
+    // Logs each thread's net operator-new balance (called by the watchdog).
+    void logThreads()
+    {
+        const int n = __atomic_load_n(&gThreadSlotCount, __ATOMIC_ACQUIRE);
+        char line[256];
+        int len = snprintf(line, sizeof(line), "mem/threads (net new MB):");
+        for (int i = 0; i < n && i < kMaxThreadSlots; ++i)
+        {
+            if (gThreadSlots[i].tid == 0 || len >= int(sizeof(line)) - 24)
+                continue;
+            len += snprintf(line + len, sizeof(line) - len, " t%lu=%.1f", (unsigned long)gThreadSlots[i].tid,
+                double(gThreadSlots[i].bytes) / 1048576.0);
+        }
+        P3DS_LOGI("%s", line);
+    }
+}
+
+// ---- caller profile: bytes allocated per call site, for one thread, while enabled ----
+namespace
+{
+    struct CallerEntry
+    {
+        void* caller;
+        uint64_t bytes;
+        uint32_t count;
+    };
+    constexpr int kCallerSlots = 1024;
+    CallerEntry gCallers[kCallerSlots];
+    volatile u32 gCallerTid = 0; // 0 = profiling off
+
+    void recordCaller(void* caller, std::size_t size)
+    {
+        u32 tid = 0;
+        svcGetThreadId(&tid, CUR_THREAD_HANDLE);
+        if (tid != gCallerTid)
+            return;
+        uint32_t h = (uint32_t(uintptr_t(caller)) >> 2) * 2654435761u;
+        for (int probe = 0; probe < kCallerSlots; ++probe)
+        {
+            CallerEntry& e = gCallers[(h + probe) % kCallerSlots];
+            if (e.caller == caller || e.caller == nullptr)
+            {
+                e.caller = caller;
+                e.bytes += size;
+                ++e.count;
+                return;
+            }
+        }
+    }
+}
+
+namespace p3ds::memprobe
+{
+    void callerProfileStart()
+    {
+        memset(gCallers, 0, sizeof(gCallers));
+        u32 tid = 0;
+        svcGetThreadId(&tid, CUR_THREAD_HANDLE);
+        gCallerTid = tid;
+    }
+
+    void callerProfileStop(const char* label)
+    {
+        gCallerTid = 0;
+        // Top 24 by bytes (selection; the table is small).
+        P3DS_LOGI("caller profile [%s] (bytes allocated, not net; symbolize with addr2line):", label);
+        for (int k = 0; k < 24; ++k)
+        {
+            int best = -1;
+            for (int i = 0; i < kCallerSlots; ++i)
+                if (gCallers[i].caller != nullptr && (best < 0 || gCallers[i].bytes > gCallers[best].bytes))
+                    best = i;
+            if (best < 0)
+                break;
+            P3DS_LOGI("  caller 0x%08lX  %8.2f MB  %7lu allocs", (unsigned long)uintptr_t(gCallers[best].caller),
+                double(gCallers[best].bytes) / 1048576.0, (unsigned long)gCallers[best].count);
+            gCallers[best].caller = nullptr;
+        }
+    }
+}
+
+void* operator new(std::size_t size)
+{
+    if (size == 0)
+        size = 1;
+    if (gCallerTid != 0)
+        recordCaller(__builtin_return_address(0), size);
+    if (size >= kLargeAllocLog)
+        P3DS_LOGW("large allocation: %u bytes (%.1f MB) from %p", unsigned(size), double(size) / 1048576.0,
+            __builtin_return_address(0));
+    for (;;)
+    {
+        if (void* p = std::malloc(size))
+        {
+            if (!tRegistered)
+                registerThreadCounter();
+            accountThread(int64_t(malloc_usable_size(p)));
+            return p;
+        }
+        P3DS_LOGE("operator new(%u bytes) failed, caller %p", unsigned(size), __builtin_return_address(0));
+        std::new_handler handler = std::get_new_handler();
+        if (handler == nullptr)
+            throw std::bad_alloc();
+        handler();
+    }
+}
+
+// nothrow forms must just return nullptr: callers like std::stable_sort (get_temporary_buffer) handle
+// failure by degrading gracefully. libstdc++'s default nothrow new calls operator new above, whose
+// new_handler would turn a recoverable failure into a fatal crash.
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept
+{
+    if (size == 0)
+        size = 1;
+    void* p = std::malloc(size);
+    if (p == nullptr)
+    {
+        P3DS_LOGW("operator new(%u bytes, nothrow) failed (caller copes), caller %p", unsigned(size),
+            __builtin_return_address(0));
+        return nullptr;
+    }
+    if (!tRegistered)
+        registerThreadCounter();
+    accountThread(int64_t(malloc_usable_size(p)));
+    return p;
+}
+
+void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept
+{
+    return operator new(size, tag);
+}
+
+void operator delete(void* p, const std::nothrow_t&) noexcept
+{
+    operator delete(p);
+}
+
+void operator delete[](void* p, const std::nothrow_t&) noexcept
+{
+    operator delete(p);
+}
+
+void operator delete(void* p) noexcept
+{
+    if (p != nullptr)
+        accountThread(-int64_t(malloc_usable_size(p)));
+    std::free(p);
+}
+
+void operator delete(void* p, std::size_t) noexcept
+{
+    operator delete(p);
 }
 
 // Linked with -Wl,--wrap=abort (see platform3ds/CMakeLists.txt).

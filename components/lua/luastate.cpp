@@ -19,6 +19,10 @@
 #error SOL_PROPAGATE_EXCEPTIONS inhibits error checking
 #endif
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp>
+#endif
+
 namespace LuaUtil
 {
     static VFS::Path::Normalized packageNameToVfsPath(std::string_view packageName, const VFS::Manager& vfs)
@@ -185,6 +189,13 @@ namespace LuaUtil
         , mConf(conf)
         , mVFS(vfs)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // Diagnostics: report Lua VM memory (lua_gc COUNT is a plain read of the GC byte counter).
+        p3ds::memprobe::addReporter("lua", [](void* L) -> uint64_t {
+            lua_State* state = static_cast<lua_State*>(L);
+            return uint64_t(lua_gc(state, LUA_GCCOUNT, 0)) * 1024u + uint64_t(lua_gc(state, LUA_GCCOUNTB, 0));
+        }, mLuaState.get());
+#endif
         if (sProfilerEnabled)
             lua_sethook(mLuaState.get(), &countHook, LUA_MASKCOUNT, countHookStep);
 

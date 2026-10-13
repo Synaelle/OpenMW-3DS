@@ -114,8 +114,15 @@ namespace p3ds::log
 
         LightEvent_Init(&gWake, RESET_ONESHOT);
         gRunning = true;
-        // Low priority (higher number) on the app core: runs while the main thread waits for vblank/GPU.
-        gThread = threadCreate(flushThread, nullptr, 8 * 1024, 0x3F, 0, false);
+        // The 3DS scheduler is strictly priority-based with no time-slicing, so a lower-priority
+        // flusher never runs while the main thread is busy (logs then pile up in RAM and are lost on a
+        // hang). It sleeps almost always, so give it a higher priority than main (0x30), on core 1
+        // (time-limited syscore) when available so it doesn't preempt the game on core 0.
+        s32 mainPrio = 0x30;
+        svcGetThreadPriority(&mainPrio, CUR_THREAD_HANDLE);
+        gThread = threadCreate(flushThread, nullptr, 8 * 1024, mainPrio - 2, 1, false);
+        if (gThread == nullptr)
+            gThread = threadCreate(flushThread, nullptr, 8 * 1024, mainPrio - 2, 0, false);
         return true;
     }
 

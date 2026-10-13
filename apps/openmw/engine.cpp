@@ -87,6 +87,10 @@
 
 #ifdef OPENMW_PLATFORM_3DS
 #include <platform3ds/crash.hpp>
+#include <platform3ds/memprobe.hpp>
+#define OMW3DS_MEMSTAGE(label) p3ds::memprobe::stage(label)
+#else
+#define OMW3DS_MEMSTAGE(label)
 #endif
 
 namespace
@@ -752,10 +756,12 @@ void OMW::Engine::prepareEngine()
     mViewer->setSceneData(rootNode);
 
     createWindow();
+    OMW3DS_MEMSTAGE("createWindow");
 
     mVFS = std::make_unique<VFS::Manager>();
 
     VFS::registerArchives(mVFS.get(), mFileCollections, mArchives, true, &mEncoder.get()->getStatelessEncoder());
+    OMW3DS_MEMSTAGE("VFS registerArchives");
 
     mResourceSystem = std::make_unique<Resource::ResourceSystem>(
         mVFS.get(), Settings::cells().mCacheExpiryDelay, &mEncoder.get()->getStatelessEncoder());
@@ -766,6 +772,7 @@ void OMW::Engine::prepareEngine()
         Settings::general().mTextureMinFilter, Settings::general().mTextureMipmap,
         static_cast<float>(Settings::general().mAnisotropy));
     mEnvironment.setResourceSystem(*mResourceSystem);
+    OMW3DS_MEMSTAGE("ResourceSystem");
 
     mWorkQueue = std::make_shared<SceneUtil::WorkQueue>(Settings::cells().mPreloadNumThreads);
     mUnrefQueue = std::make_unique<SceneUtil::UnrefQueue>();
@@ -786,6 +793,7 @@ void OMW::Engine::prepareEngine()
 
     mLuaManager = std::make_unique<MWLua::LuaManager>(mVFS.get(), mResDir / "lua_libs");
     mEnvironment.setLuaManager(*mLuaManager);
+    OMW3DS_MEMSTAGE("LuaManager");
 
     // Create input and UI first to set up a bootstrapping environment for
     // showing a loading screen and keeping the window responsive while doing so
@@ -843,6 +851,7 @@ void OMW::Engine::prepareEngine()
         mWorkQueue, mCfgMgr.getLogPath(), mScriptConsoleMode, mTranslationDataStorage, mEncoding, mExportFonts,
         Version::getOpenmwVersionDescription(), mCfgMgr);
     mEnvironment.setWindowManager(*mWindowManager);
+    OMW3DS_MEMSTAGE("WindowManager");
 
     auto takeScreenshot = [this] {
         mScreenCaptureHandler->setFramesToCapture(1);
@@ -851,15 +860,18 @@ void OMW::Engine::prepareEngine()
     mInputManager = std::make_unique<MWInput::InputManager>(mWindow, mViewer, takeScreenshot, keybinderUser,
         keybinderUserExists, userGameControllerdb, gameControllerdb, mGrab);
     mEnvironment.setInputManager(*mInputManager);
+    OMW3DS_MEMSTAGE("InputManager");
 
     // Create sound system
     mSoundManager = std::make_unique<MWSound::SoundManager>(mVFS.get(), mUseSound);
     mEnvironment.setSoundManager(*mSoundManager);
+    OMW3DS_MEMSTAGE("SoundManager");
 
     // Create the world
     mWorld = std::make_unique<MWWorld::World>(
         mResourceSystem.get(), mActivationDistanceOverride, mCellName, mCfgMgr.getUserDataPath());
     mEnvironment.setWorld(*mWorld);
+    OMW3DS_MEMSTAGE("World constructed");
     mEnvironment.setWorldModel(mWorld->getWorldModel());
     mEnvironment.setESMStore(mWorld->getStore());
 
@@ -904,6 +916,7 @@ void OMW::Engine::prepareEngine()
     mLuaManager->loadPermanentStorage(mCfgMgr.getUserConfigPath());
     mLuaManager->initPreLoad();
 
+    OMW3DS_MEMSTAGE("before loadData");
     Loading::Listener* listener = MWBase::Environment::get().getWindowManager()->getLoadingScreen();
     Loading::AsyncListener asyncListener(*listener);
     auto dataLoading = std::async(std::launch::async,
@@ -917,16 +930,24 @@ void OMW::Engine::prepareEngine()
     }
 
     listener->loadingOn();
+#ifdef OPENMW_PLATFORM_3DS
+    p3ds::memprobe::callerProfileStart(); // diagnostic: who allocates on the main thread while loading
+#endif
     {
         using namespace std::chrono_literals;
         while (dataLoading.wait_for(50ms) != std::future_status::ready)
             asyncListener.update();
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::callerProfileStop("main thread during loadData");
+#endif
         dataLoading.get();
     }
+    OMW3DS_MEMSTAGE("after loadData (main thread)");
     mSoundManager->warmStoreSounds();
     listener->loadingOff();
 
     mWorld->init(mMaxRecastLogLevel, mViewer, std::move(rootNode), mWorkQueue, *mUnrefQueue);
+    OMW3DS_MEMSTAGE("World::init");
     mEnvironment.setWorldScene(mWorld->getWorldScene());
     mWorld->setupPlayer();
     mWorld->setRandomSeed(mRandomSeed);

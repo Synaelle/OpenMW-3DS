@@ -8,6 +8,7 @@ add_library(platform3ds STATIC
     src/textfb.cpp
     src/debugscreen.cpp
     src/screenshot.cpp
+    src/memprobe.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.c
 )
 
