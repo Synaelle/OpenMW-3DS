@@ -1,4 +1,5 @@
-Source/
-.tools/
-build/
-out/
+/Source/
+/.tools/
+/build/
+/out/
+
