@@ -27,7 +27,11 @@ New-Item -ItemType Directory -Force $SdOpenmw | Out-Null
 Get-ChildItem $SdOpenmw -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^(openmw\.log|crash\.log|probe\.txt|autorun\.(txt|done)|shot_.*\.bmp|perf.*\.csv)$' } |
     Remove-Item -Force
-if ($Autorun) { Set-Content -Path (Join-Path $SdOpenmw 'autorun.txt') -Value $Autorun -NoNewline }
+if ($Autorun) {
+    # Emulator runs always capture screenshots (cheap there; opt-in on hardware).
+    if ($Autorun -match 'bench' -and $Autorun -notmatch 'screens') { $Autorun += ' screens' }
+    Set-Content -Path (Join-Path $SdOpenmw 'autorun.txt') -Value $Autorun -NoNewline
+}
 
 Get-Process azahar -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500

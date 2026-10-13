@@ -6,7 +6,8 @@
 //
 // Automation: if sdmc:/openmw/autorun.txt exists, its whitespace-separated commands drive the run:
 //   probes        run the probe suite (incl. SD benchmark)
-//   bench         cycle all GPU scenes (90 frames each), logging averages + screenshots
+//   bench         cycle all GPU scenes (90 frames each), logging averages
+//   screens       also save BMP screenshots (emulator runs; slow on real SD cards)
 //   crash:data | crash:throw | crash:abort | crash:hang   trigger that failure after the other steps
 // The app then writes sdmc:/openmw/autorun.done and exits.
 
@@ -70,6 +71,7 @@ namespace
         bool enabled = false;
         bool probes = false;
         bool bench = false;
+        bool screens = false; // screenshots cost ~1.5 s each on real SD cards (file creation)
         char crash[16] = "";
     };
 
@@ -82,6 +84,7 @@ namespace
         a.enabled = true;
         a.probes = strstr(buf, "probes") != nullptr;
         a.bench = strstr(buf, "bench") != nullptr;
+        a.screens = strstr(buf, "screens") != nullptr;
         if (const char* c = strstr(buf, "crash:"))
             sscanf(c + 6, "%15s", a.crash);
         return a;
@@ -204,7 +207,8 @@ int main(int argc, char** argv)
                     sumFrame / n, sumCpu / n, sumGpu / n);
                 char path[64];
                 snprintf(path, sizeof(path), "sdmc:/openmw/shot_scene%d_top.bmp", benchScene);
-                renderer.captureTop(path);
+                if (autorun.screens)
+                    renderer.captureTop(path);
                 sumFrame = sumCpu = sumGpu = 0;
                 benchFrame = 0;
                 if (++benchScene == TestRenderer::SceneCount)
@@ -229,7 +233,8 @@ int main(int argc, char** argv)
             bottom.setVisible(true);
             screen.update(snap);
             screen.render();
-            p3ds::screenshot::saveBottomScreen("sdmc:/openmw/shot_bottom.bmp");
+            if (autorun.screens)
+                p3ds::screenshot::saveBottomScreen("sdmc:/openmw/shot_bottom.bmp");
             if (autorun.crash[0] != '\0')
                 triggerCrash(autorun.crash);
             break;
