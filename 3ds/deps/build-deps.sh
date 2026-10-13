@@ -16,6 +16,8 @@ JOBS="${JOBS:-$(nproc)}"
 export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
 TOOLCHAIN="$DEVKITPRO/cmake/3DS.cmake"
 mkdir -p "$SRC" "$BUILD" "$PREFIX" "$DL" "$STAMPS"
+# Force-included in every TU we compile: makes int32_t `int` (see the header for why).
+INT32_FLAG="-include $DEPS/compat/include/openmw3ds_int32.h"
 
 log() { printf '\n=== %s\n' "$*"; }
 
@@ -62,9 +64,14 @@ unpack() {
 }
 
 # cmake_build <srcdir> <builddir-name> [cmake args...]
+# PCH is disabled: CMake writes MSYS-style paths (/c/...) into generated PCH headers, which the native
+# Windows cross-compiler cannot open.
 cmake_build() {
     local src="$1" name="$2"; shift 2
     rm -rf "$BUILD/$name"
+    # int32_t = int ABI for everything we build (see deps/compat/include/openmw3ds_int32.h).
+    # Env flags are appended to the toolchain's CMAKE_<LANG>_FLAGS_INIT, not replacing them.
+    CFLAGS="$INT32_FLAG ${CFLAGS:-}" CXXFLAGS="$INT32_FLAG ${CXXFLAGS:-}" \
     cmake -S "$src" -B "$BUILD/$name" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DCMAKE_BUILD_TYPE=Release \
@@ -73,6 +80,7 @@ cmake_build() {
         -DCMAKE_FIND_ROOT_PATH="$PREFIX;$DEVKITPRO/portlibs/3ds;$DEVKITPRO/libctru" \
         -DBUILD_SHARED_LIBS=OFF \
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
         "$@"
     cmake --build "$BUILD/$name" -j "$JOBS"
     cmake --install "$BUILD/$name"
@@ -122,8 +130,18 @@ build_bullet() {
 
 # POSIX bits newlib/libctru lack (dlfcn.h, ...): header-only shims in deps/compat/include.
 build_compat() {
-    mkdir -p "$PREFIX/include"
+    mkdir -p "$PREFIX/include" "$PREFIX/lib" "$BUILD/compat"
     cp -r "$DEPS/compat/include/." "$PREFIX/include/"
+    # libcompat3ds.a: POSIX stubs (fchown, geteuid, ...) referenced by dependencies.
+    local flags="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -O2 -ffunction-sections -D__3DS__ $INT32_FLAG"
+    local objs=()
+    for c in "$DEPS"/compat/src/*.c; do
+        local o="$BUILD/compat/$(basename "$c" .c).o"
+        "$DEVKITARM/bin/arm-none-eabi-gcc" $flags -I"$DEVKITPRO/libctru/include" -c "$c" -o "$o"
+        objs+=("$o")
+    done
+    rm -f "$PREFIX/lib/libcompat3ds.a"
+    "$DEVKITARM/bin/arm-none-eabi-ar" rcs "$PREFIX/lib/libcompat3ds.a" "${objs[@]}"
 }
 
 # Stub OpenGL: Mesa/Khronos headers + libGL.a of no-op functions (see deps/stubgl/stubgl_special.c).
@@ -144,7 +162,7 @@ build_stubgl() {
 stubgl_generate() {
     local dir="$BUILD/stubgl" cc="$DEVKITARM/bin/arm-none-eabi-gcc" nm="$DEVKITARM/bin/arm-none-eabi-nm"
     mkdir -p "$dir"
-    local flags="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -O2 -ffunction-sections -I$PREFIX/include"
+    local flags="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -O2 -ffunction-sections -I$PREFIX/include $INT32_FLAG"
     "$cc" $flags -c "$DEPS/stubgl/stubgl_special.c" -o "$dir/special.o"
     "$nm" -g --defined-only "$dir/special.o" | awk '{print $3}' | sort -u > "$dir/defined.txt"
     : > "$dir/wanted.txt"
@@ -183,7 +201,95 @@ build_osg() {
     stubgl_generate
 }
 
-ALL_COMPONENTS=(compat sdl2 boost bullet stubgl osg)
+build_mygui() {
+    local v=3.4.3
+    fetch "https://github.com/MyGUI/mygui/archive/refs/tags/MyGUI$v.zip" "MyGUI$v.zip"
+    unpack "MyGUI$v.zip" mygui
+    # As openmw/extern/CMakeLists.txt, but the Dummy render system: OpenMW renders MyGUI itself
+    # (components/myguiplatform), and on 3DS through the citro3d backend - no GL platform needed.
+    cmake_build "$SRC/mygui" mygui \
+        -DMYGUI_RENDERSYSTEM=1 -DMYGUI_DISABLE_PLUGINS=TRUE -DMYGUI_BUILD_DEMOS=OFF \
+        -DMYGUI_BUILD_PLUGINS=OFF -DMYGUI_BUILD_TOOLS=OFF -DMYGUI_DONT_USE_OBSOLETE=ON \
+        -DMYGUI_STATIC=ON -DMYGUI_USE_FREETYPE=ON
+}
+
+build_recast() {
+    local rev=03259f3287ff8330f0d66fcd98d022edddffaa97   # same commit as openmw/extern/CMakeLists.txt
+    fetch "https://github.com/OpenMW/recastnavigation/archive/$rev.zip" "recastnavigation-$rev.zip"
+    unpack "recastnavigation-$rev.zip" recast
+    cmake_build "$SRC/recast" recast \
+        -DRECASTNAVIGATION_DEMO=OFF -DRECASTNAVIGATION_TESTS=OFF -DRECASTNAVIGATION_EXAMPLES=OFF
+}
+
+build_sqlite3() {
+    fetch "https://www.sqlite.org/2023/sqlite-amalgamation-3410100.zip" "sqlite-amalgamation-3410100.zip"
+    unpack "sqlite-amalgamation-3410100.zip" sqlite3
+    cp "$DEPS/sqlite3/CMakeLists.txt" "$SRC/sqlite3/"
+    cmake_build "$SRC/sqlite3" sqlite3
+}
+
+# Built here rather than taken from portlibs: it is C++, so it must use our int32_t = int ABI.
+build_yamlcpp() {
+    local rev=c2680200486572baf8221ba052ef50b58ecd816e   # same commit as openmw/extern/CMakeLists.txt
+    fetch "https://github.com/jbeder/yaml-cpp/archive/$rev.zip" "yaml-cpp-$rev.zip"
+    unpack "yaml-cpp-$rev.zip" yamlcpp
+    cmake_build "$SRC/yamlcpp" yamlcpp -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF \
+        -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_BUILD_SHARED_LIBS=OFF
+}
+
+build_icu() {
+    # 73.2, not upstream's pinned 70.1: ICU 70 assumes int32_t == int, but arm-none-eabi's int32_t
+    # is long (dozens of overload/override errors). 73.2 builds cleanly (the Vita port uses it too);
+    # OpenMW only uses the stable MessageFormat/Locale API.
+    local v=73-2 vu=73_2
+    fetch "https://github.com/unicode-org/icu/releases/download/release-$v/icu4c-$vu-src.tgz" "icu4c-$vu-src.tgz"
+    unpack "icu4c-$vu-src.tgz" icu
+    local src="$SRC/icu/source"
+    # The source tarball ships prebuilt data, which ignores ICU_DATA_FILTER_FILE: replace it with
+    # the data sources so the filter actually applies.
+    fetch "https://github.com/unicode-org/icu/releases/download/release-$v/icu4c-$vu-data.zip" "icu4c-$vu-data.zip"
+    rm -rf "$src/data"
+    unzip -q "$DL/icu4c-$vu-data.zip" -d "$src"
+    local host="$BUILD/icu-host" cross="$BUILD/icu-3ds"
+
+    # 1. Native host build (MSYS2 UCRT64 MinGW): ICU runs its own tools to build its data.
+    rm -rf "$host"; mkdir -p "$host"
+    # ICU 70 defaults to -std=c++11 -pedantic, which GCC 16's <limits> rejects: use gnu++17.
+    env MSYSTEM=UCRT64 CHERE_INVOKING=1 CFLAGS="-O2" CXXFLAGS="-O2 -std=gnu++17" \
+        bash -lc "cd '$host' && '$src/runConfigureICU' MinGW \
+        --disable-tests --disable-samples --disable-extras --disable-icuio \
+        && make -j$JOBS"
+    # (Host build keeps ICU's default shared libs: static-only MinGW builds name libs libsicu*.a but
+    # link the tools with -licu*, which fails. Only the host tools use this build.)
+
+    # 2. Cross build for the 3DS. Data is packaged as an archive (icudt73l.dat, filtered by
+    #    deps/icu/icufilters.json); the port registers it at startup with udata_setCommonData().
+    #    ("static" packaging needs the host pkgdata to generate C sources, and the MinGW-host pkgdata
+    #    builds broken paths like ./out/tmpicudt73l_dat.c.)
+    cp "$src/config/mh-linux" "$src/config/mh-unknown"
+    rm -rf "$cross"; mkdir -p "$cross"
+    local arch="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -mword-relocations"
+    (
+        cd "$cross"
+        # The data step runs the host (MinGW) ICU tools, which need the UCRT64 runtime DLLs.
+        export PATH="$PATH:/ucrt64/bin"
+        export ICU_DATA_FILTER_FILE="$DEPS/icu/icufilters.json"
+        export CC="$DEVKITARM/bin/arm-none-eabi-gcc" CXX="$DEVKITARM/bin/arm-none-eabi-g++"
+        export AR="$DEVKITARM/bin/arm-none-eabi-ar" RANLIB="$DEVKITARM/bin/arm-none-eabi-ranlib"
+        export CPPFLAGS="$INT32_FLAG -D__3DS__ -I$DEVKITPRO/libctru/include -DU_HAVE_MMAP=0 -DU_ENABLE_DYLOAD=0 -DU_TIMEZONE=0"
+        export CFLAGS="$arch -O2 -ffunction-sections -fdata-sections"
+        export CXXFLAGS="$arch -O2 -ffunction-sections -fdata-sections -std=gnu++17"
+        export LDFLAGS="-specs=3dsx.specs $arch -L$DEVKITPRO/libctru/lib"
+        export LIBS="-lctru"
+        "$src/configure" --host=arm-none-eabi --with-cross-build="$host" --prefix="$PREFIX" \
+            --enable-static --disable-shared --disable-tools --disable-tests --disable-samples \
+            --disable-extras --disable-icuio --disable-dyload --with-data-packaging=archive
+        make -j"$JOBS"
+        make install
+    )
+}
+
+ALL_COMPONENTS=(compat sdl2 boost bullet stubgl osg mygui recast sqlite3 yamlcpp icu)
 
 # ---------------------------------------------------------------- driver
 components=("$@")
@@ -198,3 +304,4 @@ for c in "${components[@]}"; do
     date > "$STAMPS/$c"
 done
 log "done: prefix $PREFIX"
+

@@ -35,6 +35,26 @@
 #define SDL_MAIN_HANDLED // we provide main(); SDL is used for input/timers only
 #include <SDL2/SDL.h>
 
+#include <unicode/locid.h>
+#include <unicode/msgfmt.h>
+#include <unicode/udata.h>
+#include <unicode/uversion.h>
+
+#include "icudt73l_dat.h"
+
+#define SOL_ALL_SAFETIES_ON 0
+#include <sol/sol.hpp>
+
+#include <MyGUI_UString.h>
+#include <MyGUI_Prerequest.h>
+
+#include <DetourNavMesh.h>
+#include <Recast.h>
+
+#include <sqlite3.h>
+
+#include <yaml-cpp/yaml.h>
+
 #include <cstdio>
 #include <format>
 #include <string>
@@ -280,6 +300,95 @@ namespace
     }
 }
 
+namespace
+{
+    // ---------------------------------------------------------------- ICU (OpenMW l10n uses MessageFormat)
+    void smokeIcu()
+    {
+        guarded("icu", [] {
+            UErrorCode status = U_ZERO_ERROR;
+            udata_setCommonData(icudt73l_dat, &status); // embedded, filtered data archive
+            if (U_FAILURE(status))
+                throw std::runtime_error(std::string("udata_setCommonData: ") + u_errorName(status));
+            icu::MessageFormat fmt(icu::UnicodeString::fromUTF8(
+                                       "{name} has {count, plural, one {# item} other {# items}}"),
+                icu::Locale("en"), status);
+            icu::UnicodeString names[] = { "name", "count" };
+            icu::Formattable args[] = { icu::Formattable("Fargoth"), icu::Formattable(int32_t(3)) };
+            icu::UnicodeString out;
+            fmt.format(names, args, 2, out, status);
+            std::string utf8;
+            out.toUTF8String(utf8);
+            report(U_SUCCESS(status) && utf8 == "Fargoth has 3 items", "icu",
+                std::format("ICU {} MessageFormat -> '{}' ({})", U_ICU_VERSION, utf8, u_errorName(status)));
+        });
+    }
+
+    // ---------------------------------------------------------------- Lua 5.1 + sol3 (OpenMW's binding)
+    void smokeLua()
+    {
+        guarded("lua", [] {
+            sol::state lua;
+            lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table);
+            lua.set_function("cppAdd", [](int a, int b) { return a + b; });
+            int result = 0;
+            const double ms = timeMs([&] {
+                result = lua.script(R"(
+                    local t = {}
+                    for i = 1, 20000 do t[i] = cppAdd(i, 1) end
+                    local s = 0
+                    for i = 1, #t do s = s + t[i] end
+                    return s
+                )");
+            });
+            report(result == 200030000, "lua",
+                std::format("{} + sol3: 20k C++ calls + table sum = {} in {:.1f} ms", LUA_RELEASE, result, ms));
+        });
+    }
+
+    // ---------------------------------------------------------------- MyGUI / Recast / SQLite / yaml-cpp
+    void smokeMisc()
+    {
+        guarded("mygui", [] {
+            MyGUI::UString s("Seyda Neen");
+            report(s.size() == 10, "mygui", std::format("MyGUI {}.{}.{} UString len {}", MYGUI_VERSION_MAJOR,
+                                                 MYGUI_VERSION_MINOR, MYGUI_VERSION_PATCH, s.size()));
+        });
+        guarded("recast", [] {
+            rcContext ctx(false);
+            rcHeightfield* hf = rcAllocHeightfield();
+            const float bmin[3] = { 0, 0, 0 }, bmax[3] = { 10, 10, 10 };
+            const bool ok = rcCreateHeightfield(&ctx, *hf, 32, 32, bmin, bmax, 0.3f, 0.2f);
+            rcFreeHeightField(hf);
+            dtNavMesh* nav = dtAllocNavMesh();
+            dtFreeNavMesh(nav);
+            report(ok, "recast", "heightfield 32x32 + dtNavMesh alloc/free");
+        });
+        guarded("sqlite", [] {
+            sqlite3* db = nullptr;
+            int rc = sqlite3_open(":memory:", &db);
+            int value = 0;
+            if (rc == SQLITE_OK)
+            {
+                sqlite3_exec(db, "CREATE TABLE t(x INTEGER); INSERT INTO t VALUES (41);", nullptr, nullptr, nullptr);
+                sqlite3_exec(
+                    db, "SELECT x + 1 FROM t;",
+                    [](void* out, int, char** v, char**) {
+                        *static_cast<int*>(out) = atoi(v[0]);
+                        return 0;
+                    },
+                    &value, nullptr);
+                sqlite3_close(db);
+            }
+            report(rc == SQLITE_OK && value == 42, "sqlite", std::format("SQLite {} :memory: query -> {}", sqlite3_libversion(), value));
+        });
+        guarded("yaml-cpp", [] {
+            const YAML::Node n = YAML::Load("greeting: \"Welcome to Vvardenfell\"\nlevel: 1\n");
+            report(n["level"].as<int>() == 1, "yaml-cpp", "parsed: " + n["greeting"].as<std::string>());
+        });
+    }
+}
+
 int main()
 {
     gfxInitDefault();
@@ -308,6 +417,12 @@ int main()
     smokeBullet();
     refresh();
     smokeOsg();
+    refresh();
+    smokeIcu();
+    refresh();
+    smokeLua();
+    refresh();
+    smokeMisc();
     refresh();
     P3DS_LOGI("depsmoke done: %d failure(s)", gFailures);
     if (gOut)

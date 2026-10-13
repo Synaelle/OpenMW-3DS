@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+# int32_t = int ABI across the whole port and every C++ dependency (see deps/compat/include/openmw3ds_int32.h).
+add_compile_options("SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/deps/compat/include/openmw3ds_int32.h")
+
 # GCC's 'parameter passing changed in GCC 9.1' ABI notes are irrelevant for a static executable.
 add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-psabi>)
 
