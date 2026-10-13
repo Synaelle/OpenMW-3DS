@@ -1,0 +1,13 @@
+diff --git a/src/osgDB/FileUtils.cpp b/src/osgDB/FileUtils.cpp
+index c953625..daea91f 100644
+--- a/src/osgDB/FileUtils.cpp
++++ b/src/osgDB/FileUtils.cpp
+@@ -99,7 +99,7 @@ typedef char TCHAR;
+     #endif
+ #endif
+ 
+-#if defined(__ANDROID__)
++#if defined(__ANDROID__) || defined(__3DS__)
+     #define stat64 stat
+ #endif
+ 
