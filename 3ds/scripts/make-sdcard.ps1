@@ -42,7 +42,7 @@ uninstall the previous "OpenMW3DS testapp" in FBI if you installed one.
    plus anything in sdmc:/luma/dumps/arm11/.
 3. If it finished: send sdmc:/openmw/openmw.log and probe.txt.
    Optional crash-logger test: delete sdmc:/openmw/autorun.txt, launch again, hold L+R, press X.
-"@"@ | Set-Content "$sd\README.txt"
+"@ | Set-Content "$sd\README.txt"
 
 Write-Host "SD card package: $sd"
 Write-Host "Matching ELF kept as: $out\testapp-$stamp.elf"
