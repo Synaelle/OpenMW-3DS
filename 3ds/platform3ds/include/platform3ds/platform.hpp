@@ -1,0 +1,45 @@
+#pragma once
+
+#include <cstdint>
+
+namespace p3ds
+{
+    // Root of all port files on the SD card.
+    constexpr const char* kBaseDir = "sdmc:/openmw";
+    constexpr const char* kLogPath = "sdmc:/openmw/openmw.log";
+    constexpr const char* kCrashPath = "sdmc:/openmw/crash.log";
+    constexpr const char* kAutorunPath = "sdmc:/openmw/autorun.txt";
+    constexpr const char* kAutorunDonePath = "sdmc:/openmw/autorun.done";
+
+    struct InitOptions
+    {
+        bool enableSpeedup = true; // New 3DS: 804 MHz + L2 cache
+        int syscoreTimeLimitPercent = 30; // core 1 time slice (0 = leave core 1 unused)
+        uint32_t ciaUniqueId = 0; // UniqueId from the .rsf; used to tell .cia launches from .3dsx
+    };
+
+    struct PlatformInfo
+    {
+        bool isNew3DS = false;
+        bool speedupEnabled = false;
+        int syscoreLimit = 0;
+        bool autorun = false;
+        bool launchedAsCia = false; // false for .3dsx (Homebrew Launcher or emulator direct boot)
+        uint64_t programId = 0;
+    };
+
+    // Brings up directories, logging, crash handling and CPU configuration. Call right after
+    // gfxInit (the crash screen needs the bottom framebuffer).
+    PlatformInfo init(const InitOptions& options = {});
+    void shutdown();
+
+    const PlatformInfo& info();
+
+    bool fileExists(const char* path);
+    // Reads a small text file into buf (NUL-terminated). Returns false if missing.
+    bool readSmallFile(const char* path, char* buf, unsigned bufSize);
+    void writeSmallFile(const char* path, const char* text);
+
+    // Best core for a worker thread: 2 on New 3DS (if the exheader allows it), else 1, else 0.
+    int preferredWorkerCore();
+}
