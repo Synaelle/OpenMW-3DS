@@ -38,9 +38,13 @@
 #include "../mwrender/animation.hpp"
 
 #include "constants.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/nullsound.hpp"
+#else
 #include "ffmpegdecoder.hpp"
-#include "headcache.hpp"
 #include "openaloutput.hpp"
+#endif
+#include "headcache.hpp"
 #include "sound.hpp"
 #include "soundbuffer.hpp"
 #include "sounddecoder.hpp"

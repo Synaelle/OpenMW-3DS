@@ -118,6 +118,13 @@ add_openmw_dir (mwbase
 
 # Main executable
 
+if (OPENMW_PLATFORM_3DS)
+    # Nintendo 3DS: no OpenAL, FFmpeg or video playback. Replacements live in apps/openmw/n3ds/.
+    list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
+    list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
+    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp)
+endif()
+
 add_library(openmw-lib STATIC
     ${OPENMW_FILES}
     ${OPENMW_SOURCES}
@@ -186,10 +193,14 @@ target_link_libraries(openmw-lib
     ${MyGUI_LIBRARIES}
     SDL2::SDL2
     ${RecastNavigation_LIBRARIES}
-    osg-ffmpeg-videoplayer
     oics
     components
 )
+if (OPENMW_PLATFORM_3DS)
+    target_link_libraries(openmw-lib platform3ds)
+else()
+    target_link_libraries(openmw-lib osg-ffmpeg-videoplayer)
+endif()
 
 if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
     target_precompile_headers(openmw-lib PRIVATE

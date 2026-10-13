@@ -328,6 +328,9 @@ set(USED_OSG_PLUGINS
     osgdb_png
     osgdb_serializers_osg
     osgdb_tga)
+if (OPENMW_PLATFORM_3DS)
+    list(REMOVE_ITEM USED_OSG_PLUGINS osgdb_dae) # no Collada on 3DS
+endif()
 
 option(OPENMW_USE_SYSTEM_ICU "Use system ICU library instead of internal. If disabled, requires autotools" ON)
 if(OPENMW_USE_SYSTEM_ICU)
@@ -354,6 +357,11 @@ add_subdirectory(extern)
 
 # Sound setup
 
+if (OPENMW_PLATFORM_3DS)
+    # 3DS: no video playback and no FFmpeg (code size, CPU). Audio decoding is replaced (M7).
+    set(FFmpeg_FOUND TRUE)
+    set(FFVER_OK TRUE)
+else()
 # Require at least FFmpeg 4.0
 SET(FFVER_OK FALSE)
 
@@ -391,6 +399,7 @@ endif()
 if(NOT FFmpeg_FOUND)
     message(FATAL_ERROR "FFmpeg was not found" )
 endif()
+endif() # OPENMW_PLATFORM_3DS
 
 # Required for building the FFmpeg headers
 add_compile_definitions(__STDC_CONSTANT_MACROS)
@@ -545,14 +554,28 @@ if(HAVE_MULTIVIEW)
 endif(HAVE_MULTIVIEW)
 
 set(BOOST_COMPONENTS iostreams program_options)
+if (OPENMW_PLATFORM_3DS)
+    # Only boost::iostreams::stream (header-only) is used; the compiled part needs mmap.
+    set(BOOST_COMPONENTS program_options)
+    add_compile_definitions(BOOST_HAS_PTHREADS) # no Boost.Config platform file for __3DS__
+endif()
 
 find_package(Boost 1.70.0 CONFIG REQUIRED COMPONENTS ${BOOST_COMPONENTS} OPTIONAL_COMPONENTS ${BOOST_OPTIONAL_COMPONENTS})
+if (OPENMW_PLATFORM_3DS AND NOT TARGET Boost::iostreams)
+    add_library(Boost::iostreams INTERFACE IMPORTED) # header-only use (see BOOST_COMPONENTS above)
+    target_link_libraries(Boost::iostreams INTERFACE Boost::headers)
+endif()
 
 if(OPENMW_USE_SYSTEM_MYGUI)
     find_package(MyGUI 3.4.3 REQUIRED)
 endif()
 find_package(SDL2 2.26 REQUIRED)
+if (NOT OPENMW_PLATFORM_3DS) # 3DS: sound output goes through NDSP instead of OpenAL (M7)
 find_package(OpenAL REQUIRED)
+else()
+set(OPENAL_INCLUDE_DIR "")
+set(OPENAL_LIBRARY "")
+endif()
 find_package(ZLIB REQUIRED)
 
 option(USE_LUAJIT "Switch Lua/LuaJit (TRUE is highly recommended)" TRUE)
@@ -564,7 +587,7 @@ else(USE_LUAJIT)
     find_package(Lua REQUIRED)
     add_compile_definitions(NO_LUAJIT)
 endif(USE_LUAJIT)
-if (NOT WIN32 AND NOT ANDROID)
+if (NOT WIN32 AND NOT ANDROID AND NOT OPENMW_PLATFORM_3DS) # try_run is impossible when cross-compiling; PUC Lua 5.1 supports custom allocators
     include(cmake/CheckLuaCustomAllocator.cmake)
 endif()
 
@@ -690,7 +713,12 @@ endif()
 
 # Extern
 
+if (NOT OPENMW_PLATFORM_3DS) # no video playback on 3DS
 add_subdirectory (extern/osg-ffmpeg-videoplayer)
+else()
+# Port platform layer (logging, crash logger, bottom screen, memory budget), kept outside openmw/.
+add_subdirectory(${OPENMW3DS_ROOT}/platform3ds ${CMAKE_BINARY_DIR}/platform3ds)
+endif()
 add_subdirectory (extern/oics)
 add_subdirectory (extern/Base64)
 if (BUILD_OPENCS OR BUILD_OPENCS_TESTS)
@@ -1024,7 +1052,7 @@ if (APPLE)
 
     set(CPACK_PRE_BUILD_SCRIPTS ${CMAKE_SOURCE_DIR}/cmake/SignMacApplications.cmake)
 
-elseif(NOT APPLE)
+elseif(NOT APPLE AND NOT OPENMW_PLATFORM_3DS) # 3DS: packaged as .3dsx/.cia, no desktop install
     if(WIN32)
         # this just deals with Qt plugins now as if we get windeployqt.exe to do it, it adds things we don't need like ANGLE
         INSTALL(DIRECTORY

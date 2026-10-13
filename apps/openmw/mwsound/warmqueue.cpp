@@ -3,7 +3,11 @@
 #include <components/debug/debuglog.hpp>
 #include <components/misc/thread.hpp>
 
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/nullsound.hpp"
+#else
 #include "ffmpegdecoder.hpp"
+#endif
 #include "headcache.hpp"
 
 namespace MWSound
