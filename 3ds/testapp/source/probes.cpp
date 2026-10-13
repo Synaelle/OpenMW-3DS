@@ -24,6 +24,9 @@
 #include <typeinfo>
 #include <vector>
 
+#include <dirent.h>
+#include <sys/stat.h>
+
 namespace
 {
     FILE* gOut = nullptr;
@@ -258,42 +261,107 @@ namespace
     }
 
     // ---- filesystem ----
+    // std::filesystem::remove_all hangs forever on real hardware (hardware test #1, attempt 2).
+    // This replacement collects a directory's children first, closes the directory, then deletes.
+    uintmax_t safeRemoveAll(const std::filesystem::path& p)
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const fs::file_status st = fs::symlink_status(p, ec);
+        if (ec || !fs::exists(st))
+            return 0;
+        uintmax_t n = 0;
+        if (fs::is_directory(st))
+        {
+            std::vector<fs::path> children;
+            for (const auto& e : fs::directory_iterator(p))
+                children.push_back(e.path());
+            for (const auto& child : children)
+                n += safeRemoveAll(child);
+        }
+        fs::remove(p);
+        return n + 1;
+    }
+
+    // Times one filesystem operation as its own watched step. `name` must be a string literal.
+    template <class F>
+    void fsOp(const char* name, F&& op)
+    {
+        step(name);
+        std::string result;
+        bool ok = true;
+        const double ms = timeMs([&] {
+            try
+            {
+                result = op();
+            }
+            catch (const std::exception& e)
+            {
+                ok = false;
+                result = std::string("exception: ") + e.what();
+            }
+        });
+        report(ok, name, std::format("{:8.1f} ms  {}", ms, result));
+    }
+
     void probeFilesystem()
     {
-        guarded("std-filesystem", [] {
-            namespace fs = std::filesystem;
-            const fs::path root = "sdmc:/openmw/probe_fs";
-            step("fs: remove_all (pre-clean)");
-            fs::remove_all(root);
-            step("fs: create_directories");
-            fs::create_directories(root / "a" / "b");
-            step("fs: ofstream write");
+        namespace fs = std::filesystem;
+        const fs::path root = "sdmc:/openmw/probe_fs";
+        const char* rootC = "sdmc:/openmw/probe_fs";
+
+        fsOp("fs: pre-clean (safe)", [&] { return std::format("removed {}", safeRemoveAll(root)); });
+        fsOp("posix stat", [] {
+            struct stat st;
+            return std::format("rc {}", stat("sdmc:/openmw", &st));
+        });
+        fsOp("fs::exists", [] { return std::format("{}", fs::exists("sdmc:/openmw")); });
+        fsOp("fs::status", [] { return std::format("dir {}", fs::is_directory(fs::status("sdmc:/openmw"))); });
+        fsOp("posix mkdir", [&] { return std::format("rc {}", mkdir(rootC, 0777)); });
+        fsOp("fs::create_directory", [&] { return std::format("{}", fs::create_directory(root / "a")); });
+        fsOp("fs::create_directories", [&] { return std::format("{}", fs::create_directories(root / "c" / "d" / "e")); });
+        fsOp("ofstream write", [&] {
+            std::ofstream f(root / "a" / "hello.txt", std::ios::binary);
+            f << "hello 3ds";
+            return std::string(f ? "ok" : "failed");
+        });
+        fsOp("fs::file_size", [&] { return std::format("{}", fs::file_size(root / "a" / "hello.txt")); });
+        fsOp("fs::directory_iterator", [&] {
+            int n = 0;
+            for (const auto& e : fs::directory_iterator(root))
             {
-                std::ofstream f(root / "a" / "b" / "hello.txt", std::ios::binary);
-                f << "hello 3ds";
+                (void)e;
+                if (++n > 100)
+                    throw std::runtime_error("does not terminate");
             }
-            step("fs: file_size");
-            const auto size = fs::file_size(root / "a" / "b" / "hello.txt");
-            step("fs: recursive_directory_iterator");
-            int entries = 0;
+            return std::format("{} entries", n);
+        });
+        fsOp("posix readdir", [&] {
+            int n = 0;
+            if (DIR* d = opendir(rootC))
+            {
+                while (readdir(d) != nullptr && n < 100)
+                    ++n;
+                closedir(d);
+            }
+            return std::format("{} entries", n);
+        });
+        fsOp("fs::recursive_dir_iter", [&] {
+            int n = 0;
             for (const auto& e : fs::recursive_directory_iterator(root))
             {
                 (void)e;
-                if (++entries > 100)
-                    throw std::runtime_error("directory iteration does not terminate");
+                if (++n > 100)
+                    throw std::runtime_error("does not terminate");
             }
-            step("fs: exists / is_directory");
-            const bool exists = fs::exists(root / "a");
-            const bool isDir = fs::is_directory(root / "a" / "b");
-            const std::string ext = (root / "x.esm").extension().string();
-            step("fs: remove_all");
-            const auto removed = fs::remove_all(root);
-            const bool ok = size == 9 && entries == 3 && exists && isDir && ext == ".esm" && removed == 4;
-            report(ok, "std-filesystem",
-                std::format("size {} entries {} exists {} dir {} ext {} removed {}", size, entries, exists, isDir, ext, removed));
+            return std::format("{} entries", n);
         });
+        fsOp("fs::remove file", [&] { return std::format("{}", fs::remove(root / "a" / "hello.txt")); });
+        fsOp("fs::remove empty dir", [&] { return std::format("{}", fs::remove(root / "a")); });
+        fsOp("safeRemoveAll", [&] { return std::format("removed {}", safeRemoveAll(root)); });
+        fsOp("fs::exists after", [&] { return std::format("{}", fs::exists(root)); });
+        // Deliberately NOT calling fs::remove_all: it never returns on hardware.
     }
-
     // ---- SD card throughput ----
     void probeSd()
     {
