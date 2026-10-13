@@ -1,5 +1,6 @@
 #include "probes.hpp"
 
+#include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memstats.hpp>
 #include <platform3ds/platform.hpp>
@@ -40,6 +41,16 @@ namespace
             fprintf(gOut, "%-16s %s  %s\n", name, pass ? "PASS" : "FAIL", detail.c_str());
             fflush(gOut);
         }
+        if (gProgress != nullptr)
+            gProgress();
+    }
+
+    // Announces a (sub)step: logged (synced to SD), shown on the bottom screen, and fed to the
+    // watchdog so a hang report names it. `name` must be a string literal.
+    void step(const char* name)
+    {
+        P3DS_LOGI("  step: %s", name);
+        p3ds::crash::kick(name);
         if (gProgress != nullptr)
             gProgress();
     }
@@ -252,22 +263,30 @@ namespace
         guarded("std-filesystem", [] {
             namespace fs = std::filesystem;
             const fs::path root = "sdmc:/openmw/probe_fs";
+            step("fs: remove_all (pre-clean)");
             fs::remove_all(root);
+            step("fs: create_directories");
             fs::create_directories(root / "a" / "b");
+            step("fs: ofstream write");
             {
                 std::ofstream f(root / "a" / "b" / "hello.txt", std::ios::binary);
                 f << "hello 3ds";
             }
+            step("fs: file_size");
             const auto size = fs::file_size(root / "a" / "b" / "hello.txt");
+            step("fs: recursive_directory_iterator");
             int entries = 0;
             for (const auto& e : fs::recursive_directory_iterator(root))
             {
                 (void)e;
-                ++entries;
+                if (++entries > 100)
+                    throw std::runtime_error("directory iteration does not terminate");
             }
+            step("fs: exists / is_directory");
             const bool exists = fs::exists(root / "a");
             const bool isDir = fs::is_directory(root / "a" / "b");
             const std::string ext = (root / "x.esm").extension().string();
+            step("fs: remove_all");
             const auto removed = fs::remove_all(root);
             const bool ok = size == 9 && entries == 3 && exists && isDir && ext == ".esm" && removed == 4;
             report(ok, "std-filesystem",
@@ -280,45 +299,54 @@ namespace
     {
         guarded("sd-bench", [] {
             const char* path = "sdmc:/openmw/sdbench.bin";
-            const size_t total = 8u * 1024 * 1024;
-            std::vector<char> chunk(1024 * 1024);
+            const size_t total = 2u * 1024 * 1024;
+            std::vector<char> chunk(256 * 1024);
             for (size_t i = 0; i < chunk.size(); ++i)
                 chunk[i] = char(i * 31);
+            const auto mbps = [&](size_t bytes, double ms) { return ms > 0 ? (double(bytes) / (1024.0 * 1024.0)) / (ms / 1000.0) : 0.0; };
 
+            step("sd: write 2 MB");
             FILE* f = fopen(path, "wb");
             if (f == nullptr)
                 throw std::runtime_error("cannot create bench file");
             const double writeMs = timeMs([&] {
                 for (size_t done = 0; done < total; done += chunk.size())
+                {
                     fwrite(chunk.data(), 1, chunk.size(), f);
+                    p3ds::crash::kick();
+                }
                 fclose(f);
             });
-            const auto mbps = [&](size_t bytes, double ms) { return ms > 0 ? (double(bytes) / (1024.0 * 1024.0)) / (ms / 1000.0) : 0.0; };
             std::string detail = std::format("write {:.2f} MB/s", mbps(total, writeMs));
 
-            for (size_t bs : { size_t(4096), size_t(65536), size_t(262144), size_t(1048576) })
+            static const char* const kReadSteps[] = { "sd: read 4K blocks", "sd: read 64K blocks", "sd: read 256K blocks" };
+            const size_t sizes[] = { 4096, 65536, 262144 };
+            for (int k = 0; k < 3; ++k)
             {
+                step(kReadSteps[k]);
+                const size_t bs = sizes[k];
                 FILE* r = fopen(path, "rb");
                 setvbuf(r, nullptr, _IONBF, 0);
                 const double ms = timeMs([&] {
                     while (fread(chunk.data(), 1, bs, r) == bs)
-                    {
-                    }
+                        p3ds::crash::kick();
                 });
                 fclose(r);
                 detail += std::format(", read {}K {:.2f} MB/s", bs / 1024, mbps(total, ms));
             }
 
+            step("sd: random 4K reads");
             FILE* r = fopen(path, "rb");
             setvbuf(r, nullptr, _IONBF, 0);
             uint32_t seed = 12345;
-            const int seeks = 256;
+            const int seeks = 128;
             const double rms = timeMs([&] {
                 for (int i = 0; i < seeks; ++i)
                 {
                     seed = seed * 1664525u + 1013904223u;
                     fseek(r, long((seed % (total / 4096)) * 4096), SEEK_SET);
                     fread(chunk.data(), 1, 4096, r);
+                    p3ds::crash::kick();
                 }
             });
             fclose(r);
@@ -328,7 +356,6 @@ namespace
         });
     }
 }
-
 int runProbes(bool includeSdBenchmark, void (*onProgress)())
 {
     gFailures = 0;
@@ -344,19 +371,19 @@ int runProbes(bool includeSdBenchmark, void (*onProgress)())
             p3ds::info().launchedAsCia ? "cia" : "3dsx", sysver[0] ? sysver : "sysver n/a"));
 
     // Each step is announced first, so a freeze leaves the culprit as the last log line.
-    P3DS_LOGI("probe step: memory");
+    step("probe: memory");
     probeMemory();
-    P3DS_LOGI("probe step: cpu");
+    step("probe: cpu");
     probeCpu();
-    P3DS_LOGI("probe step: c++ runtime");
+    step("probe: c++ runtime");
     probeCxx();
-    P3DS_LOGI("probe step: cores");
+    step("probe: cores");
     probeCores();
-    P3DS_LOGI("probe step: filesystem");
+    step("probe: filesystem");
     probeFilesystem();
     if (includeSdBenchmark)
     {
-        P3DS_LOGI("probe step: sd benchmark (8 MB)");
+        step("probe: sd benchmark (2 MB)");
         probeSd();
     }
 

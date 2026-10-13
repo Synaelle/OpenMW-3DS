@@ -7,7 +7,7 @@
 // Automation: if sdmc:/openmw/autorun.txt exists, its whitespace-separated commands drive the run:
 //   probes        run the probe suite (incl. SD benchmark)
 //   bench         cycle all GPU scenes (90 frames each), logging averages + screenshots
-//   crash:data | crash:throw | crash:abort   trigger that crash after the other steps
+//   crash:data | crash:throw | crash:abort | crash:hang   trigger that failure after the other steps
 // The app then writes sdmc:/openmw/autorun.done and exits.
 
 #include "probes.hpp"
@@ -57,6 +57,12 @@ namespace
             crashThrow();
         else if (strcmp(kind, "abort") == 0)
             abort();
+        else if (strcmp(kind, "hang") == 0)
+        {
+            p3ds::crash::kick("deliberate hang test");
+            for (;;)
+                asm volatile("" ::: "memory"); // spin: only the watchdog can end this
+        }
     }
 
     struct Autorun
@@ -96,6 +102,10 @@ int main(int argc, char** argv)
     P3DS_LOGI("OpenMW3DS testapp M0 (built " __DATE__ " " __TIME__ ")");
 
     const Autorun autorun = parseAutorun();
+
+    // Any 15 s without progress => hang report + exit to HOME instead of a frozen console.
+    p3ds::crash::startWatchdog(15, p3ds::info().syscoreLimit > 0 ? 1 : 0);
+    p3ds::crash::kick("renderer init");
 
     p3ds::DebugBottomScreen bottom;
     p3ds::IBottomScreen& screen = bottom; // the game loop only knows the interface
@@ -163,6 +173,7 @@ int main(int argc, char** argv)
             screen.onTouch({ tp.px, tp.py, true });
         }
 
+        p3ds::crash::kick(TestRenderer::sceneName(renderer.scene()));
         renderer.renderFrame(stats);
 
         const uint64_t now = p3ds::ticks();

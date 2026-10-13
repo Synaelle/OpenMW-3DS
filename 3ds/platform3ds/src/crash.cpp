@@ -214,7 +214,7 @@ namespace p3ds::crash
         {
             using namespace textfb;
             clear(color::darkRed);
-            drawText(1, 1, "OpenMW 3DS crashed", color::white, color::darkRed);
+            drawText(1, 1, "OpenMW 3DS stopped", color::white, color::darkRed);
             drawText(1, 3, headline, color::yellow, color::darkRed, kCols - 2);
             drawText(1, 5, "Report written to", color::white, color::darkRed);
             drawText(1, 6, "sdmc:/openmw/crash.log", color::cyan, color::darkRed);
@@ -400,6 +400,80 @@ namespace p3ds::crash
         writeReportFile();
         showScreenAndExit(reason);
         __builtin_unreachable();
+    }
+}
+
+// ---- hang watchdog ----
+namespace p3ds::crash
+{
+    namespace
+    {
+        const char* volatile gStep = "startup";
+        volatile u64 gLastKick = 0;
+        volatile u64 gTimeoutTicks = 0;
+        volatile bool gWatchdogRun = false;
+        Thread gWatchdog = nullptr;
+
+        [[noreturn]] void reportHang()
+        {
+            if (__atomic_fetch_add(&gInCrash, 1, __ATOMIC_SEQ_CST) != 0)
+                svcExitProcess();
+            const u32 stalledSec = u32((svcGetSystemTick() - gLastKick) / SYSCLOCK_ARM11);
+            beginReport("hang (watchdog)");
+            put("Stuck in step: ");
+            put(gStep);
+            put("\nNo progress for ");
+            putDec(stalledSec);
+            put(" s\n");
+            appendMemAndLog();
+            writeReportFile();
+
+            static char headline[48];
+            strcpy(headline, "hang: ");
+            strncat(headline, gStep, sizeof(headline) - strlen(headline) - 1);
+            showScreenAndExit(headline);
+            __builtin_unreachable();
+        }
+
+        void watchdogMain(void*)
+        {
+            installForCurrentThread();
+            while (gWatchdogRun)
+            {
+                svcSleepThread(500LL * 1000 * 1000);
+                const u64 timeout = gTimeoutTicks;
+                if (timeout != 0 && svcGetSystemTick() - gLastKick > timeout)
+                    reportHang();
+            }
+        }
+    }
+
+    void kick(const char* step)
+    {
+        if (step != nullptr)
+            gStep = step;
+        gLastKick = svcGetSystemTick();
+    }
+
+    void setWatchdogTimeout(int seconds)
+    {
+        gLastKick = svcGetSystemTick();
+        gTimeoutTicks = seconds > 0 ? u64(seconds) * SYSCLOCK_ARM11 : 0;
+    }
+
+    bool startWatchdog(int seconds, int core)
+    {
+        if (gWatchdog != nullptr)
+            return true;
+        setWatchdogTimeout(seconds);
+        gWatchdogRun = true;
+        // Highest application priority: it sleeps almost always, and must preempt a spinning thread
+        // when it does wake up (the 3DS scheduler never time-slices equal priorities).
+        gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, core, true);
+        if (gWatchdog == nullptr && core != 0)
+            gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, 0, true);
+        P3DS_LOGI("watchdog: %s (timeout %d s, core %d)", gWatchdog ? "running" : "FAILED to start", seconds, core);
+        return gWatchdog != nullptr;
     }
 }
 

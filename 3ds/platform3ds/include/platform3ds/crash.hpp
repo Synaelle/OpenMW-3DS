@@ -22,4 +22,12 @@ namespace p3ds::crash
     void setContextString(const char* const* ctx);
 
     [[noreturn]] void fatal(const char* reason);
+
+    // Hang watchdog: a high-priority thread (core 1 if available) that writes a "hang" report naming
+    // the last step passed to kick() and exits to the HOME Menu if kick() isn't called for `seconds`.
+    // Turns software hangs into a report instead of a frozen console needing a forced power-off.
+    bool startWatchdog(int seconds, int core);
+    void setWatchdogTimeout(int seconds); // 0 disables (e.g. while a dialog legitimately blocks)
+    // Call regularly from the main loop / long operations. `step` must point to static storage.
+    void kick(const char* step = nullptr);
 }
