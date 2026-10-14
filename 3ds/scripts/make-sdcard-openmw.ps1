@@ -35,9 +35,10 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-What this tests: OpenMW itself, headless (NO picture on the top screen yet - the 3DS renderer is the
-next milestone). It loads Morrowind.esm, starts a new game in "$Start" and runs the game loop.
-We want: loading time, memory, and the real frame time without rendering.
+What this tests: the first 3DS renderer (milestone M3). OpenMW loads Morrowind.esm, starts a new game in
+"$Start" and now DRAWS it on the top screen with the 3DS GPU: textured, lit, fogged. No HUD/menus yet,
+no flames/particles, no movement controls yet. We want: does it look right, and the real frame time
+with rendering (the "gpu:" lines in the log).
 
 1. First time: copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
    Later test builds come as a small update folder (sdcard-openmw-update) with only the changed
@@ -47,8 +48,8 @@ We want: loading time, memory, and the real frame time without rendering.
      Morrowind.bsa   (~310 MB)
    (Nothing else is needed. The files are only read, never modified.)
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
-4. The top screen stays black. The bottom screen shows the debug display: "(loading)" and log lines
-   while loading, then FPS and the cell name once the game loop runs. Loading takes minutes.
+4. While loading, the top screen is black (dark) and the bottom screen shows the debug display:
+   "(loading)" and log lines, then FPS, draw calls and triangles once the game runs. Loading takes ~1.5 min.
    ALIVE INDICATOR = the last line of the bottom screen, redrawn every second:
      |   245s counting refs   idle   0s  53.0MB
      ^spinner ^uptime ^current step  ^seconds without progress  ^memory
@@ -56,13 +57,17 @@ We want: loading time, memory, and the real frame time without rendering.
    - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes openmw3ds-crash.log and
      returns to HOME by itself.
    - the spinner/uptime stop moving = real freeze (then force the power off).
-   HOME works during loading too now (Close exits immediately).
-5. Once the bottom screen shows the cell name and an FPS value, let it run ~1 minute, then press
+   HOME works during loading too (Close exits immediately).
+5. In the game (temporary debug controls, real controls come in the next milestone):
+     D-pad LEFT / RIGHT  turn the player 45 degrees (you start facing the door: press 4 times to face the shop)
+     SELECT              save a screenshot of the top screen to sdmc:/openmw/screenshots/ (takes ~2 s)
+   Look around for ~1 minute (stay a few seconds on each view), take a screenshot or two, then press
    HOME and close the software.
 6. Send back these logs:
      sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
      sdmc:/openmw/config/openmw.log      OpenMW's own log
      sdmc:/openmw/openmw3ds-crash.log    only if there is one
+     sdmc:/openmw/screenshots/*.bmp      your screenshots
    (Older test builds wrote sdmc:/openmw/openmw.log and crash.log: those files can be deleted.)
 
 If you have to force the power off anyway, still send openmw3ds.log.

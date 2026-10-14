@@ -1504,6 +1504,7 @@ namespace Render3DS
             if (!gInFrame)
                 return;
             p3ds::perf::Phase phase("frameEnd");
+            gStats.mCmdBufUsage = C3D_GetCmdBufUsage();
             // GX_CMDLIST_FLUSH: flush only the command list; we flush every buffer we write ourselves, so
             // citro3d doesn't need to flush the whole linear heap from the data cache every frame.
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
@@ -1519,7 +1520,9 @@ namespace Render3DS
     {
         if (gActive)
             return true;
-        if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 2))
+        // 1 MB of GPU commands per frame (~100-200 bytes per draw). libctru silently drops commands that don't
+        // fit, so usage is reported in the perf log.
+        if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 4))
         {
             P3DS_LOGE("render3ds: C3D_Init failed");
             return false;

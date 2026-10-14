@@ -38,6 +38,7 @@ namespace Render3DS
         uint32_t mLinearFreeKb = 0;
         float mEmitMs = 0; // CPU time walking the render graph and emitting commands
         float mGpuMs = 0; // PICA time of the previous frame
+        float mCmdBufUsage = 0; // fraction of the GPU command buffer used
     };
     const FrameStats& getLastFrameStats();
 
