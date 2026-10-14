@@ -35,11 +35,11 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-What this tests: EXTERIORS (milestone M5), with the fixes from hardware test #18: FIRE and other particle
-effects are drawn now (fire pits, candles, torches, spell effects), no more sparkling pixels on the water,
-and models are loaded in the background before you reach them (fewer stalls while walking; people may
-still cause a short stall when they appear). OpenMW starts a new game in "$Start"; the front door leads
-OUTSIDE into Seyda Neen. Still missing: menus/HUD (M8), sound (M7).
+What this tests: EXTERIORS (milestone M5), with the fix from hardware test #19: the half-missing,
+flashing water (and any other geometry cut off close to the camera). Fires, particles and background
+loading as in the previous build. OpenMW starts a new game in "$Start"; the front door leads OUTSIDE
+into Seyda Neen. People may still cause a short stall when they appear. Still missing: menus/HUD (M8),
+sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in

@@ -154,7 +154,14 @@ namespace Render3DS
                 // osg::Matrix::getPerspective
                 gNear = projection(3, 2) / (projection(2, 2) - 1.f);
                 gFar = projection(3, 2) / (projection(2, 2) + 1.f);
-                out[2] = FVec4_Scale(p[3], -1.f / gFar);
+                // W-buffer: z' = -(w - near) / (far - near), depth = -z' = (w - near) / (far - near), linear in the
+                // distance. The PICA clips at z' > 0, i.e. at w = near. With z' = -w / far (until hardware test #19) it
+                // clipped at w = 0: polygons reaching behind the camera (the water plane's 30000-unit quads when
+                // looking down) were cut at w ~ 0, their screen positions blew up and the fixed-point rasterizer
+                // dropped part of them: half of the water missing, flashing as the view moved. Emulators clip in
+                // floating point and don't show it.
+                const float range = gFar - gNear;
+                out[2] = FVec4_Scale(FVec4_Add(FVec4_Scale(p[3], -1.f), FVec4_New(0.f, 0.f, 0.f, gNear)), 1.f / range);
                 C3D_DepthMap(false, -1.f, 0.f);
             }
             else
@@ -1725,7 +1732,7 @@ namespace Render3DS
                 float data[256];
                 for (int i = 0; i <= 128; ++i)
                 {
-                    const float distance = i / 128.f * gFar; // W-buffer depth = distance / far
+                    const float distance = gNear + i / 128.f * (gFar - gNear); // depth = (distance - near) / (far - near)
                     const float visibility = 1.f - std::clamp((distance - start) / (end - start), 0.f, 1.f);
                     if (i < 128)
                         data[i] = visibility;
