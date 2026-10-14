@@ -1,4 +1,5 @@
 #include "animation.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -662,6 +663,7 @@ namespace MWRender
     std::shared_ptr<Animation::AnimSource> Animation::addSingleAnimSource(
         VFS::Path::NormalizedView kfname, const std::string& baseModel)
     {
+        OMW3DS_DETAIL("anim.source");
         if (!mResourceSystem->getVFS()->exists(kfname))
             return nullptr;
 
@@ -1551,6 +1553,7 @@ namespace MWRender
 
     void Animation::setObjectRoot(const std::string& model, bool forceskeleton, bool baseonly, bool isCreature)
     {
+        OMW3DS_DETAIL("anim.root");
         osg::ref_ptr<osg::StateSet> previousStateset;
         if (mObjectRoot)
         {

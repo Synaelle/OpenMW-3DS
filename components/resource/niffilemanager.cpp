@@ -6,6 +6,8 @@
 
 #include "objectcache.hpp"
 
+#include <components/misc/omw3dsdetail.hpp>
+
 namespace Resource
 {
 
@@ -26,7 +28,12 @@ namespace Resource
 
         auto file = std::make_shared<Nif::NIFFile>(name);
         Nif::Reader reader(*file, mEncoder);
-        reader.parse(mVFS->get(name));
+        Files::IStreamPtr stream;
+        {
+            OMW3DS_DETAIL("vfs.get");
+            stream = mVFS->get(name);
+        }
+        reader.parse(std::move(stream));
         mCache->addEntryToObjectCache(name.value(), file);
         return file;
     }

@@ -1,4 +1,5 @@
 #include "scenemanager.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <cstdlib>
 #include <filesystem>
@@ -837,7 +838,15 @@ namespace Resource
     {
         const std::string_view ext = Misc::getFileExtension(normalizedFilename.value());
         if (ext == "nif")
-            return NifOsg::Loader::load(*nifFileManager->get(normalizedFilename), imageManager, materialMgr);
+        {
+            Nif::NIFFilePtr file;
+            {
+                OMW3DS_DETAIL("nif.read");
+                file = nifFileManager->get(normalizedFilename);
+            }
+            OMW3DS_DETAIL("nif.osg");
+            return NifOsg::Loader::load(*file, imageManager, materialMgr);
+        }
         else if (ext == "spt")
         {
             Log(Debug::Warning) << "Ignoring SpeedTree data file " << normalizedFilename;
@@ -1004,6 +1013,8 @@ namespace Resource
             return osg::ref_ptr<const osg::Node>(static_cast<osg::Node*>(obj.get()));
         else
         {
+            OMW3DS_DETAIL("tmpl.load");
+            OMW3DS_LOG_MISS("model", path);
             osg::ref_ptr<osg::Node> loaded;
             try
             {
@@ -1016,15 +1027,23 @@ namespace Resource
             }
 
             // set filtering settings
-            SetFilterSettingsVisitor setFilterSettingsVisitor(mMinFilter, mMagFilter, mMaxAnisotropy);
-            loaded->accept(setFilterSettingsVisitor);
-            SetFilterSettingsControllerVisitor setFilterSettingsControllerVisitor(
-                mMinFilter, mMagFilter, mMaxAnisotropy);
-            loaded->accept(setFilterSettingsControllerVisitor);
+            OMW3DS_DETAIL("tmpl.post");
+            {
+                OMW3DS_DETAIL("post.filter");
+                SetFilterSettingsVisitor setFilterSettingsVisitor(mMinFilter, mMagFilter, mMaxAnisotropy);
+                loaded->accept(setFilterSettingsVisitor);
+                SetFilterSettingsControllerVisitor setFilterSettingsControllerVisitor(
+                    mMinFilter, mMagFilter, mMaxAnisotropy);
+                loaded->accept(setFilterSettingsControllerVisitor);
+            }
 
-            osg::ref_ptr<Shader::ShaderVisitor> shaderVisitor(createShaderVisitor());
-            loaded->accept(*shaderVisitor);
+            {
+                OMW3DS_DETAIL("post.shader");
+                osg::ref_ptr<Shader::ShaderVisitor> shaderVisitor(createShaderVisitor());
+                loaded->accept(*shaderVisitor);
+            }
 
+            OMW3DS_DETAIL("post.optimize");
             if (canOptimize(path.value()))
             {
                 SceneUtil::Optimizer optimizer;
@@ -1080,6 +1099,7 @@ namespace Resource
 
     osg::ref_ptr<osg::Node> SceneManager::getInstance(const osg::Node* base)
     {
+        OMW3DS_DETAIL("clone");
         osg::ref_ptr<osg::Node> cloned = cloneNode(base);
         // we can skip any scene graphs without update callbacks since we know that particle emitters will have an
         // update callback set

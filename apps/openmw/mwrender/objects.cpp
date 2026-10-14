@@ -1,4 +1,5 @@
 #include "objects.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <osg/Group>
 
@@ -39,6 +40,7 @@ namespace MWRender
 
     void Objects::insertBegin(const MWWorld::Ptr& ptr)
     {
+        OMW3DS_DETAIL("obj.begin");
         assert(mObjects.find(ptr.mRef) == mObjects.end());
 
         osg::ref_ptr<osg::Group> cellnode;
@@ -73,6 +75,7 @@ namespace MWRender
 
     void Objects::insertModel(const MWWorld::Ptr& ptr, const std::string& mesh, bool allowLight)
     {
+        OMW3DS_DETAIL("obj.model");
         insertBegin(ptr);
         ptr.getRefData().getBaseNode()->setNodeMask(Mask_Object);
         bool animated = ptr.getClass().useAnim();
@@ -116,6 +119,7 @@ namespace MWRender
 
     void Objects::insertNPC(const MWWorld::Ptr& ptr)
     {
+        OMW3DS_DETAIL("obj.npc");
         insertBegin(ptr);
         ptr.getRefData().getBaseNode()->setNodeMask(Mask_Actor);
 

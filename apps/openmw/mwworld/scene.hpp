@@ -197,7 +197,14 @@ namespace MWWorld
 
         bool isCellActive(const CellStore& cell);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // withShape: also load the collision shape (an object's own model; not an NPC's body parts or equipment).
+        // Returns the queued work item, which holds the model (and shape) once done.
+        std::shared_ptr<SceneUtil::WorkItem> preload(
+            const std::string& mesh, bool useAnim = false, bool withShape = true);
+#else
         void preload(const std::string& mesh, bool useAnim = false);
+#endif
 
         void testExteriorCells();
         void testInteriorCells();

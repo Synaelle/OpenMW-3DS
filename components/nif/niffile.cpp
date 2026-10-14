@@ -21,6 +21,8 @@
 #include "property.hpp"
 #include "texture.hpp"
 
+#include <components/misc/omw3dsdetail.hpp>
+
 namespace Nif
 {
 
@@ -542,8 +544,12 @@ namespace Nif
         if (writeDebug)
             Log(Debug::Verbose) << "NIF Debug: Reading file: '" << mFilename << "'";
 
+#ifndef OPENMW_PLATFORM_3DS
+        // 3DS: skipped. The hash only keys the navmesh cache (the navigator is off), and computing it read the whole
+        // file before parsing it, then seeked back (a second SD read for files bigger than the first chunk).
         const std::array<std::uint64_t, 2> fileHash = Files::getHash(mFilename, *stream);
         mHash.append(reinterpret_cast<const char*>(fileHash.data()), fileHash.size() * sizeof(std::uint64_t));
+#endif
 
         NIFStream nif(*this, std::move(stream), mEncoder);
 
@@ -661,6 +667,7 @@ namespace Nif
             nif.readVector(groups, nif.get<std::uint32_t>());
         }
 
+        OMW3DS_DETAIL("nif.records");
         for (std::size_t i = 0; i < recordsCount; i++)
         {
             std::unique_ptr<Record> r;
@@ -724,6 +731,7 @@ namespace Nif
                                 << " more roots did not point to a record. File: " << mFilename;
 
         // Once parsing is done, do post-processing.
+        OMW3DS_DETAIL("nif.post");
         for (const auto& record : mRecords)
             record->post(*this);
     }

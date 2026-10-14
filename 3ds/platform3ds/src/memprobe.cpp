@@ -106,6 +106,80 @@ namespace p3ds::perf
     }
 }
 
+namespace p3ds::perf::detail
+{
+    namespace
+    {
+        struct DetailSum
+        {
+            const char* label;
+            uint64_t ticks;
+            unsigned count;
+        };
+        constexpr int kMaxDetails = 32;
+        thread_local bool tActive = false;
+        thread_local bool tLogMisses = false;
+        thread_local DetailSum tDetails[kMaxDetails];
+        thread_local int tDetailCount = 0;
+    }
+
+    void begin()
+    {
+        tActive = true;
+        tDetailCount = 0;
+    }
+
+    bool active()
+    {
+        return tActive;
+    }
+
+    void setLogMisses(bool enabled)
+    {
+        tLogMisses = enabled;
+    }
+
+    bool logMisses()
+    {
+        return tLogMisses;
+    }
+
+    void add(const char* label, uint64_t ticks)
+    {
+        int i = 0;
+        while (i < tDetailCount && tDetails[i].label != label)
+            ++i;
+        if (i < tDetailCount)
+        {
+            tDetails[i].ticks += ticks;
+            ++tDetails[i].count;
+        }
+        else if (tDetailCount < kMaxDetails)
+            tDetails[tDetailCount++] = DetailSum{ label, ticks, 1 };
+    }
+
+    void end(char* out, unsigned size)
+    {
+        tActive = false;
+        std::sort(tDetails, tDetails + tDetailCount,
+            [](const DetailSum& a, const DetailSum& b) { return a.ticks > b.ticks; });
+        unsigned len = 0;
+        if (size > 0)
+            out[0] = '\0';
+        for (int i = 0; i < tDetailCount && len + 1 < size; ++i)
+        {
+            const double ms = double(tDetails[i].ticks) * 1000.0 / SYSCLOCK_ARM11;
+            if (ms < 1.0)
+                break;
+            const int n = snprintf(out + len, size - len, " %s %.0f/%u", tDetails[i].label, ms, tDetails[i].count);
+            if (n < 0)
+                break;
+            len += unsigned(n);
+        }
+        tDetailCount = 0;
+    }
+}
+
 namespace p3ds::memprobe
 {
 

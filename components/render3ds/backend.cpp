@@ -315,9 +315,10 @@ namespace Render3DS
         {
             Slot<osg::Texture> mTexture;
             Slot<osg::TexMat> mTexMat;
-            Slot<osg::Texture> mTexture1; // terrain blend map
+            Slot<osg::Texture> mTexture1; // unit 1: a blend map only on terrain layers (see blendMapOf)
             Slot<osg::Uniform> mTexMat0; // terrain layer tiling (uniform "texMat0"; else mTexMat)
             Slot<osg::Uniform> mTexMat1; // terrain blend map placement
+            Slot<osg::Uniform> mBlendMap; // sampler uniform "blendMap": only terrain layers have it
             Slot<SceneUtil::Material> mMaterial;
             Slot<osg::BlendFunc> mBlendFunc;
             Slot<osg::AlphaFunc> mAlphaFunc;
@@ -344,6 +345,13 @@ namespace Render3DS
             Slot<osg::Uniform> mMoonBlend;
             Slot<osg::Uniform> mAtmosphereFade;
         };
+
+        // The terrain layer's blend map. Other textures on unit 1 (an enchantment glow, a NIF's dark, detail or glow
+        // map) aren't drawn: taken for blend maps, they made objects translucent.
+        const osg::Texture* blendMapOf(const ResolvedState& rs)
+        {
+            return rs.mBlendMap.mValue != nullptr ? rs.mTexture1.mValue : nullptr;
+        }
 
         // Resolved state of a StateGraph node, recomputed once per frame (memoized through the parent chain).
         struct StateGraphTag : public osg::Referenced
@@ -466,6 +474,10 @@ namespace Render3DS
                     case 'p':
                         if (name == "pass")
                             rs.mSkyPass.merge(uniform, flags);
+                        break;
+                    case 'b':
+                        if (name == "blendMap")
+                            rs.mBlendMap.merge(uniform, flags);
                         break;
                     case 'd':
                         if (name == "diffuseColor")
@@ -1178,7 +1190,7 @@ namespace Render3DS
                 // once per layer. The PICA draws some pixels on chunk borders twice, which added the weights twice:
                 // white specks where the fog is thick (hardware test #17). Here the first layer is opaque and the
                 // others are blended over it, which a second draw of a pixel can't brighten.
-                if (rs.mTexture1.mValue && bf.getSource() == osg::BlendFunc::SRC_ALPHA)
+                if (blendMapOf(rs) != nullptr && bf.getSource() == osg::BlendFunc::SRC_ALPHA)
                 {
                     if (bf.getDestination() == osg::BlendFunc::ZERO)
                         fs.mBlend = 0;
@@ -1690,7 +1702,7 @@ namespace Render3DS
             const osg::BlendFunc* bf = rs.mBlendFunc.mValue;
             return rs.mBlend.mOn && bf != nullptr && bf->getSource() == osg::BlendFunc::SRC_ALPHA
                 && bf->getDestination() == osg::BlendFunc::ONE
-                && rs.mTexture1.mValue == nullptr; // terrain layers are blended over, not added (computeFixedState)
+                && blendMapOf(rs) == nullptr; // terrain layers are blended over, not added (computeFixedState)
         }
 
         void uploadFog(const ResolvedState& rs, int sky)
@@ -2337,7 +2349,8 @@ namespace Render3DS
                 if (texture)
                     C3D_TexBind(0, texture);
             }
-            C3D_Tex* blendMap = texture && rs.mTexture1.mValue ? textureFor(*rs.mTexture1.mValue) : nullptr;
+            const osg::Texture* blendMapTexture = blendMapOf(rs);
+            C3D_Tex* blendMap = texture && blendMapTexture ? textureFor(*blendMapTexture) : nullptr;
             C3D_Tex* unit1 = blendMap ? blendMap : &gUnusedTex1;
             if (unit1 != gBound.mTexture1)
             {

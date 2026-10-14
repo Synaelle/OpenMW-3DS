@@ -135,6 +135,7 @@ namespace
             , mStart(svcGetSystemTick())
             , mLast(mStart)
         {
+            p3ds::perf::detail::begin();
         }
 
         void step(const char* name)
@@ -147,8 +148,12 @@ namespace
 
         ~InsertTimer()
         {
+            // The detail line breaks the steps down (ms/calls, nested scopes included in their parents).
+            char detail[300];
+            p3ds::perf::detail::end(detail, sizeof(detail));
             if (toMs(mLast - mStart) > 50.0)
-                Log(Debug::Info) << "3ds insert " << mPtr.getCellRef().getRefId() << " (ms):" << mText;
+                Log(Debug::Info) << "3ds insert " << mPtr.getCellRef().getRefId() << " (ms):" << mText
+                                 << " | detail:" << detail;
         }
 
     private:
@@ -1202,12 +1207,16 @@ namespace MWWorld
 
             try
             {
-                mSceneManager->getTemplate(mMesh);
 #ifdef OPENMW_PLATFORM_3DS
+                // Held while the item is (hydration keeps it until the object is inserted): the resource cache drops
+                // what nothing references after 5 s, and an object can wait longer than that in the preload ring.
+                mTemplate = mSceneManager->getTemplate(mMesh);
                 // The collision shape too (as CellPreloader does): inserting the object later would otherwise read
                 // and parse the file again on the main thread.
                 if (mShapeManager != nullptr)
-                    mShapeManager->getShape(mMesh);
+                    mShape = mShapeManager->getShape(mMesh);
+#else
+                mSceneManager->getTemplate(mMesh);
 #endif
             }
             catch (const std::exception& e)
@@ -1227,10 +1236,33 @@ namespace MWWorld
         Resource::SceneManager* mSceneManager;
 #ifdef OPENMW_PLATFORM_3DS
         Resource::BulletShapeManager* mShapeManager = nullptr;
+        osg::ref_ptr<const osg::Node> mTemplate;
+        std::shared_ptr<const Resource::BulletShape> mShape;
 #endif
         std::atomic_bool mAborted{ false };
     };
 
+#ifdef OPENMW_PLATFORM_3DS
+    std::shared_ptr<SceneUtil::WorkItem> Scene::preload(const std::string& mesh, bool useAnim, bool withShape)
+    {
+        const VFS::Path::Normalized meshPath = useAnim
+            ? Misc::ResourceHelpers::correctActorModelPath(
+                VFS::Path::toNormalized(mesh), mRendering.getResourceSystem()->getVFS())
+            : VFS::Path::toNormalized(mesh);
+
+        // Queued even when the model is loaded: the item holds it (and the collision shape, which can be missing
+        // anyway: physics keeps only an actor's extents, so its shape expires 5 s after each insertion) until the
+        // caller lets go of the item. A cache hit on the work queue thread costs little.
+        auto item = std::make_shared<PreloadMeshItem>(meshPath, mRendering.getResourceSystem()->getSceneManager());
+        if (withShape)
+            item->setShapeManager(mPhysics->getShapeManager());
+        mRendering.getWorkQueue()->addWorkItem(item);
+        const auto isDone = [](const std::shared_ptr<SceneUtil::WorkItem>& v) { return v->isDone(); };
+        mWorkItems.erase(std::remove_if(mWorkItems.begin(), mWorkItems.end(), isDone), mWorkItems.end());
+        mWorkItems.emplace_back(item);
+        return item;
+    }
+#else
     void Scene::preload(const std::string& mesh, bool useAnim)
     {
         const VFS::Path::Normalized meshPath = useAnim
@@ -1242,14 +1274,12 @@ namespace MWWorld
             return;
 
         auto item = std::make_shared<PreloadMeshItem>(meshPath, mRendering.getResourceSystem()->getSceneManager());
-#ifdef OPENMW_PLATFORM_3DS
-        item->setShapeManager(mPhysics->getShapeManager());
-#endif
         mRendering.getWorkQueue()->addWorkItem(item);
         const auto isDone = [](const std::shared_ptr<SceneUtil::WorkItem>& v) { return v->isDone(); };
         mWorkItems.erase(std::remove_if(mWorkItems.begin(), mWorkItems.end(), isDone), mWorkItems.end());
         mWorkItems.emplace_back(std::move(item));
     }
+#endif
 
     void Scene::preloadCells(float dt)
     {

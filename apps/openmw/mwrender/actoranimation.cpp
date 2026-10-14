@@ -1,5 +1,6 @@
 #include "actoranimation.hpp"
 #include <utility>
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <osg/Group>
 #include <osg/Node>
@@ -89,6 +90,7 @@ namespace MWRender
     osg::ref_ptr<osg::Node> ActorAnimation::attach(
         VFS::Path::NormalizedView model, std::string_view bonename, std::string_view bonefilter, bool isLight)
     {
+        OMW3DS_DETAIL("actor.attach");
         osg::ref_ptr<const osg::Node> templateNode = mResourceSystem->getSceneManager()->getTemplate(model);
 
         const NodeMap& nodeMap = getNodeMap();

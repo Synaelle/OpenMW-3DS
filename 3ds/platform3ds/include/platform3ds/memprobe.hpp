@@ -62,6 +62,43 @@ namespace p3ds::perf
     };
 }
 
+// Detail capture: while a capture is open on a thread (e.g. around one object insertion), Detail scopes on
+// that thread add their time and count to a small table; end() formats it, largest first. Scopes nest (a
+// parent's time includes its children's). Label: a string literal (keyed by pointer). Cost when no capture is
+// open: one thread-local read.
+namespace p3ds::perf::detail
+{
+    void begin();
+    // Closes the capture; writes " label ms/count ..." (entries of at least 1 ms) to out.
+    void end(char* out, unsigned size);
+    bool active();
+    void add(const char* label, uint64_t ticks);
+    // While set (this thread), resource managers log each cache miss by name (OMW3DS_LOG_MISS).
+    void setLogMisses(bool enabled);
+    bool logMisses();
+
+    class Scope
+    {
+    public:
+        explicit Scope(const char* label)
+            : mLabel(active() ? label : nullptr)
+            , mStart(mLabel ? memprobe::ticks() : 0)
+        {
+        }
+        ~Scope()
+        {
+            if (mLabel)
+                add(mLabel, memprobe::ticks() - mStart);
+        }
+        Scope(const Scope&) = delete;
+        Scope& operator=(const Scope&) = delete;
+
+    private:
+        const char* mLabel;
+        uint64_t mStart;
+    };
+}
+
 namespace p3ds::memprobe
 {
     class Scope

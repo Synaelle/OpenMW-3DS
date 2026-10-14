@@ -9,6 +9,10 @@
 
 namespace Files
 {
+#ifdef OPENMW_PLATFORM_3DS
+    struct SharedArchiveFile;
+#endif
+
     /// A file streambuf constrained to a specific region in the file, specified by the 'start' and 'length' parameters.
     class ConstrainedFileStreamBuf final : public std::streambuf
     {
@@ -28,7 +32,10 @@ namespace Files
 #ifdef OPENMW_PLATFORM_3DS
         // Every SD request is expensive (ms), so: tellg() and seeks inside the buffer don't touch the file
         // (upstream discards the buffer on any seek, and ESMReader::skip/tellg are frequent), and the read
-        // size grows from 32 KB to 256 KB while reads stay sequential.
+        // size grows from 32 KB to 256 KB while reads stay sequential. Entries of up to 256 KB are read at once.
+        // Archive entries (a constrained region) read through one handle per archive, kept open: opening a
+        // file on the SD card costs 15-25 ms, and every model and animation in a BSA reopened it.
+        std::shared_ptr<SharedArchiveFile> mShared;
         std::unique_ptr<char[]> mBuffer;
         std::size_t mCapacity = 0;
         std::size_t mChunk = 0; // current read size
@@ -36,6 +43,7 @@ namespace Files
         std::size_t mFilePos = 0; // stream position the file handle is at
         std::size_t position() const { return mBufferPos + (gptr() - eback()); }
         pos_type seekTo(std::size_t newPos);
+        std::size_t readAt(std::size_t pos, char* data, std::size_t size);
 #else
         char mBuffer[8192]{ 0 };
 #endif

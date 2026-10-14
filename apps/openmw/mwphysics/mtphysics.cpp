@@ -1,4 +1,5 @@
 #include "mtphysics.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <cassert>
 #include <functional>
@@ -660,6 +661,7 @@ namespace MWPhysics
     void PhysicsTaskScheduler::addCollisionObject(
         btCollisionObject* collisionObject, int collisionFilterGroup, int collisionFilterMask)
     {
+        OMW3DS_DETAIL("phys.addObject");
         MaybeExclusiveLock lock(mCollisionWorldMutex, mLockingPolicy);
         mCollisionObjects.insert(collisionObject);
         mCollisionWorld->addCollisionObject(collisionObject, collisionFilterGroup, collisionFilterMask);

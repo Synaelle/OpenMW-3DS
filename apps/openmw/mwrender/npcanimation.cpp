@@ -1,4 +1,5 @@
 #include "npcanimation.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <osg/Depth>
 #include <osg/MatrixTransform>
@@ -290,6 +291,7 @@ namespace MWRender
 
         std::fill(mSounds.begin(), mSounds.end(), nullptr);
 
+        OMW3DS_DETAIL("npc.base");
         updateNpcBase();
     }
 
@@ -552,6 +554,7 @@ namespace MWRender
 
     std::string NpcAnimation::getSheathedShieldMesh(const MWWorld::ConstPtr& shield) const
     {
+        OMW3DS_DETAIL("npc.shieldMesh");
         std::string mesh = getShieldMesh(shield, !mNpc->isMale());
 
         if (mesh.empty())
@@ -573,6 +576,7 @@ namespace MWRender
 
     void NpcAnimation::updateParts()
     {
+        OMW3DS_DETAIL("npc.parts");
         if (!mObjectRoot.get())
             return;
 

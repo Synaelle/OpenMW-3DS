@@ -1,4 +1,5 @@
 #include "util.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <algorithm>
 #include <array>
@@ -201,6 +202,7 @@ namespace SceneUtil
     osg::ref_ptr<GlowUpdater> addEnchantedGlow(osg::ref_ptr<osg::Node> node, Resource::ResourceSystem* resourceSystem,
         const osg::Vec4f& glowColor, float glowDuration)
     {
+        OMW3DS_DETAIL("glow");
         std::vector<osg::ref_ptr<osg::Texture2D>> textures;
         for (const VFS::Path::Normalized& name : glowTextureNames)
         {

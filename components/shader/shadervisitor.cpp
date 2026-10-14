@@ -501,6 +501,12 @@ namespace Shader
 
     void ShaderVisitor::createProgram(const ShaderRequirements& reqs)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // The citro3d backend draws everything with its own shader from the fixed-function state (osg::AlphaFunc,
+        // Material, BlendFunc...). The GLSL program built here cost about 1 ms per drawable and 40-80 ms per new
+        // shader variant, and it replaced the alpha test with a RemovedAlphaFunc whose threshold is 1.0.
+        return;
+#endif
         /**
          * The shader visitor is supposed to be idempotent and undoable.
          * That means we need to back up state we've removed (so it can be restored and/or considered by further

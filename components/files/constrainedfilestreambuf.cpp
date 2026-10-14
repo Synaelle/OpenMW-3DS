@@ -3,29 +3,81 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#ifdef OPENMW_PLATFORM_3DS
+#include <map>
+#include <mutex>
+#include <string>
+#endif
+
+#include <components/misc/omw3dsdetail.hpp>
 
 namespace Files
 {
     namespace File = Platform::File;
 
 #ifdef OPENMW_PLATFORM_3DS
+    struct SharedArchiveFile
+    {
+        File::ScopedHandle mHandle;
+        std::mutex mMutex; // a read is seek + read
+    };
+
     namespace
     {
         constexpr std::size_t kMinChunk = 32 * 1024;
         constexpr std::size_t kMaxChunk = 256 * 1024;
+
+        // Archives stay open for the session (a handful of BSAs).
+        std::shared_ptr<SharedArchiveFile> openSharedArchive(const std::filesystem::path& fname)
+        {
+            static std::mutex sMutex;
+            static std::map<std::string, std::shared_ptr<SharedArchiveFile>> sFiles;
+            const std::lock_guard lock(sMutex);
+            std::shared_ptr<SharedArchiveFile>& file = sFiles[fname.string()];
+            if (file == nullptr)
+            {
+                auto opened = std::make_shared<SharedArchiveFile>();
+                opened->mHandle = File::open(fname);
+                file = std::move(opened);
+            }
+            return file;
+        }
     }
 
     ConstrainedFileStreamBuf::ConstrainedFileStreamBuf(
         const std::filesystem::path& fname, std::size_t start, std::size_t length)
         : mOrigin(start)
     {
-        mFile = File::open(fname);
-        mSize = length != std::numeric_limits<std::size_t>::max() ? length : File::size(mFile) - start;
+        OMW3DS_DETAIL("io.open");
+        if (length != std::numeric_limits<std::size_t>::max())
+        {
+            mShared = openSharedArchive(fname);
+            mSize = length;
+        }
+        else
+        {
+            mFile = File::open(fname);
+            mSize = File::size(mFile) - start;
+            File::seek(mFile, start);
+        }
         mCapacity = std::max<std::size_t>(1, std::min(mSize, kMaxChunk));
         mBuffer.reset(new char[mCapacity]); // not value-initialized
-        mChunk = std::min(mCapacity, kMinChunk);
-        File::seek(mFile, start);
+        mChunk = mSize <= kMaxChunk ? mCapacity : kMinChunk;
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
+    }
+
+    std::size_t ConstrainedFileStreamBuf::readAt(std::size_t pos, char* data, std::size_t size)
+    {
+        OMW3DS_DETAIL("io.read");
+        if (mShared != nullptr)
+        {
+            const std::lock_guard lock(mShared->mMutex);
+            File::seek(mShared->mHandle, mOrigin + pos);
+            return File::read(mShared->mHandle, data, size);
+        }
+        if (pos != mFilePos)
+            File::seek(mFile, mOrigin + pos);
+        return File::read(mFile, data, size);
     }
 
     std::streambuf::int_type ConstrainedFileStreamBuf::underflow()
@@ -38,10 +90,8 @@ namespace Files
         // Consumed a whole fill without seeking away: sequential reading, read bigger chunks.
         if (pos == mFilePos && egptr() != eback())
             mChunk = std::min(mChunk * 2, mCapacity);
-        if (pos != mFilePos)
-            File::seek(mFile, mOrigin + pos);
         const std::size_t toRead = std::min(mChunk, mSize - pos);
-        const std::size_t got = File::read(mFile, mBuffer.get(), toRead);
+        const std::size_t got = readAt(pos, mBuffer.get(), toRead);
         mFilePos = pos + got;
         mBufferPos = pos;
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get() + got);

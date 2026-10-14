@@ -1,4 +1,5 @@
 #include "keyframemanager.hpp"
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <array>
 
@@ -211,6 +212,7 @@ namespace Resource
     {
         if (std::shared_ptr<const SceneUtil::KeyframeHolder> cached = mCache->getRefFromObjectCache(name))
             return cached;
+        OMW3DS_DETAIL("kf.load");
 
         auto loaded = std::make_shared<SceneUtil::KeyframeHolder>();
         constexpr VFS::Path::ExtensionView kf("kf");

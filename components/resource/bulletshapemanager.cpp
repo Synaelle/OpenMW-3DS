@@ -1,5 +1,7 @@
 #include "bulletshapemanager.hpp"
 #include <memory>
+#include <components/debug/debuglog.hpp>
+#include <components/misc/omw3dsdetail.hpp>
 
 #include <cstring>
 
@@ -112,6 +114,8 @@ namespace Resource
     {
         if (std::shared_ptr<const BulletShape> cached = mCache->getRefFromObjectCache(name))
             return cached;
+        OMW3DS_DETAIL("shape.load");
+        OMW3DS_LOG_MISS("shape", name);
 
         std::shared_ptr<BulletShape> shape;
 
