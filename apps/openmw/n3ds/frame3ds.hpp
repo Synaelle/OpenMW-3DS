@@ -26,7 +26,8 @@ namespace omw3ds
 
     void shutdownBottomScreen();
 
-    // Exteriors don't fit in memory yet (M5): doors to them are refused unless sdmc:/openmw/exteriors exists.
+    // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
+    // hydration they ran out of memory; the switch stays for memory experiments.
     bool exteriorsEnabled();
 }
 

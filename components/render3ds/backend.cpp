@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -92,7 +93,7 @@ namespace Render3DS
         struct UniformLocations
         {
             int mProjection, mModelView, mTexMat, mTexMat1, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse,
-                mMatAmbient, mMatEmission, mColorSel, mLights;
+                mMatAmbient, mMatEmission, mColorSel, mLighting, mLights;
         } gLoc;
 
         FrameStats gStats;
@@ -328,6 +329,12 @@ namespace Render3DS
             Slot<osg::Uniform> mFogStart;
             Slot<osg::Uniform> mFogEnd;
             Slot<osg::Uniform> mFogColor;
+            // Sky shader uniforms (files/shaders/compatibility/sky.frag)
+            Slot<osg::Uniform> mSkyPass; // "pass"
+            Slot<osg::Uniform> mDiffuseColor;
+            Slot<osg::Uniform> mOpacity;
+            Slot<osg::Uniform> mMoonBlend;
+            Slot<osg::Uniform> mAtmosphereFade;
         };
 
         // Resolved state of a StateGraph node, recomputed once per frame (memoized through the parent chain).
@@ -445,6 +452,24 @@ namespace Render3DS
                             rs.mAlpha.merge(uniform, flags);
                         else if (name == "actorFade")
                             rs.mActorFade.merge(uniform, flags);
+                        else if (name == "atmosphereFade")
+                            rs.mAtmosphereFade.merge(uniform, flags);
+                        break;
+                    case 'p':
+                        if (name == "pass")
+                            rs.mSkyPass.merge(uniform, flags);
+                        break;
+                    case 'd':
+                        if (name == "diffuseColor")
+                            rs.mDiffuseColor.merge(uniform, flags);
+                        break;
+                    case 'o':
+                        if (name == "opacity")
+                            rs.mOpacity.merge(uniform, flags);
+                        break;
+                    case 'm':
+                        if (name == "moonBlend")
+                            rs.mMoonBlend.merge(uniform, flags);
                         break;
                     case 't':
                         if (name == "texMat0")
@@ -665,6 +690,12 @@ namespace Render3DS
                     const uint32_t bytes = elements->getNumIndices() * (elements->getType() == osg::PrimitiveSet::DrawElementsUBytePrimitiveType ? 1 : 2);
                     indexBytes += (bytes + 3) & ~3u;
                 }
+                else if (set->getMode() == osg::PrimitiveSet::QUADS
+                    && set->getType() == osg::PrimitiveSet::DrawArraysPrimitiveType)
+                {
+                    const uint32_t quads = static_cast<const osg::DrawArrays*>(set.get())->getCount() / 4;
+                    indexBytes += (quads * 6 * 2 + 3) & ~3u;
+                }
             }
             if (indexBytes > 0 && (gpu.mIbo == nullptr || gpu.mIboSize < indexBytes))
             {
@@ -681,6 +712,29 @@ namespace Render3DS
             uint32_t offset = 0;
             for (const auto& set : geometry.getPrimitiveSetList())
             {
+                if (set->getMode() == osg::PrimitiveSet::QUADS)
+                {
+                    // The PICA has no quads (OpenMW's water plane is GL_QUADS): two indexed triangles per quad.
+                    if (set->getType() != osg::PrimitiveSet::DrawArraysPrimitiveType)
+                        continue;
+                    auto* arrays = static_cast<const osg::DrawArrays*>(set.get());
+                    const uint32_t quads = arrays->getCount() > 0 ? arrays->getCount() / 4 : 0;
+                    const uint32_t first = arrays->getFirst() > 0 ? arrays->getFirst() : 0;
+                    if (quads == 0 || first + quads * 4 > gpu.mVertexCount || first + quads * 4 > 65536)
+                        continue;
+                    auto* out16 = reinterpret_cast<uint16_t*>(static_cast<uint8_t*>(gpu.mIbo) + offset);
+                    for (uint32_t q = 0; q < quads; ++q)
+                    {
+                        const uint16_t v = static_cast<uint16_t>(first + q * 4);
+                        const uint16_t triangles[6] = { v, uint16_t(v + 1), uint16_t(v + 2), v, uint16_t(v + 2),
+                            uint16_t(v + 3) };
+                        std::memcpy(out16 + q * 6, triangles, sizeof(triangles));
+                    }
+                    const uint32_t count = quads * 6;
+                    gpu.mPrimitives.push_back({ GPU_TRIANGLES, count, offset, C3D_UNSIGNED_SHORT, quads * 2 });
+                    offset += (count * 2 + 3) & ~3u;
+                    continue;
+                }
                 bool ok;
                 const GPU_Primitive_t mode = toPicaMode(set->getMode(), ok);
                 if (!ok)
@@ -1123,6 +1177,13 @@ namespace Render3DS
         }
 
         // What is currently set on the GPU, to skip redundant uniform/state uploads.
+        // The scene shader's material uniforms (matDiffuse, matAmbient, matEmission, colorSel, lighting).
+        struct MaterialValues
+        {
+            osg::Vec4f mDiffuse, mAmbient, mEmission, mColorSel, mLighting;
+            bool operator==(const MaterialValues&) const = default;
+        };
+
         struct Bound
         {
             const osg::RefMatrix* mProjection = nullptr;
@@ -1134,6 +1195,8 @@ namespace Render3DS
             unsigned mSunModified[3] = {};
             const SceneUtil::Material* mMaterial = nullptr;
             float mAlpha = -1;
+            MaterialValues mMaterialValues;
+            bool mMaterialValid = false;
             const osg::TexMat* mTexMat = nullptr;
             const osg::Uniform* mTexMatU[2] = {};
             unsigned mTexMatUModified[2] = {};
@@ -1225,6 +1288,35 @@ namespace Render3DS
             if (slot.mValue)
                 slot.mValue->get(value);
             return value;
+        }
+
+        osg::Vec4f uniformVec4(const Slot<osg::Uniform>& slot, const osg::Vec4f& fallback)
+        {
+            osg::Vec4f value = fallback;
+            if (slot.mValue)
+                slot.mValue->get(value);
+            return value;
+        }
+
+        // OpenMW's sky shader passes (files/shaders/lib/sky/passes.glsl).
+        enum SkyPass
+        {
+            Sky_None = -1,
+            Sky_Atmosphere = 0,
+            Sky_AtmosphereNight = 1,
+            Sky_Clouds = 2,
+            Sky_Moon = 3,
+            Sky_Sun = 4,
+            Sky_SunflashQuery = 5,
+            Sky_Sunglare = 6,
+        };
+
+        int skyPass(const ResolvedState& rs)
+        {
+            int pass = Sky_None;
+            if (rs.mSkyPass.mValue)
+                rs.mSkyPass.mValue->get(pass);
+            return pass;
         }
 
         void setVec4(int location, const osg::Vec4f& v)
@@ -1374,41 +1466,98 @@ namespace Render3DS
             writeLights(count > 0 ? &(*buffer->getFloatArray())[0] : nullptr, count);
         }
 
-        void uploadMaterial(const ResolvedState& rs)
+        // Sky passes as unlit draws (lighting = 0, color = E): the colors of files/shaders/compatibility/sky.frag.
+        // The cloud fade to the fog color at the horizon and the moon's shadow mask are left out.
+        MaterialValues skyMaterial(const ResolvedState& rs, int pass)
         {
-            const float alpha = uniformFloat(rs.mAlpha, 1.f) * uniformFloat(rs.mActorFade, 1.f);
-            const SceneUtil::Material* material = rs.mMaterial.mValue;
-            if (material == gBound.mMaterial && alpha == gBound.mAlpha)
-                return;
-            gBound.mMaterial = material;
-            gBound.mAlpha = alpha;
-
-            static const SceneUtil::Material sDefault;
-            const SceneUtil::Material& m = material ? *material : sDefault;
-            osg::Vec4f emission = m.getEmission() * m.getEmissiveMultiplier();
-            emission.a() = m.getEmission().a();
-            setVec4(gLoc.mMatDiffuse, m.getDiffuse());
-            setVec4(gLoc.mMatAmbient, m.getAmbient());
-            setVec4(gLoc.mMatEmission, emission);
-            float d = 0, a = 0, e = 0;
-            switch (m.getVertexColorMode())
+            const osg::Vec4f diffuseColor = uniformVec4(rs.mDiffuseColor, osg::Vec4f(1, 1, 1, 1));
+            const float opacity = uniformFloat(rs.mOpacity, 1.f);
+            MaterialValues v;
+            v.mDiffuse = osg::Vec4f(1, 1, 1, 1);
+            v.mEmission = osg::Vec4f(1, 1, 1, 1);
+            // colorSel.x = 1: alpha from the vertex color (the dome's fade toward the horizon)
+            switch (pass)
             {
-                case SceneUtil::VertexColorModes::Emission:
-                    e = 1;
+                case Sky_Atmosphere:
+                    v.mEmission = diffuseColor;
+                    v.mColorSel = osg::Vec4f(1, 0, 0, diffuseColor.a());
                     break;
-                case SceneUtil::VertexColorModes::AmbientAndDiffuse:
-                    d = a = 1;
+                case Sky_AtmosphereNight:
+                    v.mColorSel = osg::Vec4f(1, 0, 0, opacity);
                     break;
-                case SceneUtil::VertexColorModes::Ambient:
-                    a = 1;
+                case Sky_Clouds:
+                    v.mEmission = diffuseColor;
+                    v.mColorSel = osg::Vec4f(1, 0, 0, opacity);
                     break;
-                case SceneUtil::VertexColorModes::Diffuse:
-                    d = 1;
+                case Sky_Moon:
+                    v.mEmission = uniformVec4(rs.mMoonBlend, osg::Vec4f(1, 1, 1, 1));
+                    v.mColorSel = osg::Vec4f(0, 0, 0, uniformVec4(rs.mAtmosphereFade, osg::Vec4f(1, 1, 1, 1)).a());
                     break;
-                default:
+                case Sky_Sunglare:
+                    v.mEmission = diffuseColor;
+                    v.mColorSel = osg::Vec4f(0, 0, 0, diffuseColor.a());
+                    break;
+                default: // Sky_Sun
+                    v.mColorSel = osg::Vec4f(0, 0, 0, opacity);
                     break;
             }
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, d, a, e, alpha);
+            return v;
+        }
+
+        void uploadMaterial(const ResolvedState& rs, int sky)
+        {
+            MaterialValues v;
+            if (sky == Sky_None)
+            {
+                const float alpha = uniformFloat(rs.mAlpha, 1.f) * uniformFloat(rs.mActorFade, 1.f);
+                const SceneUtil::Material* material = rs.mMaterial.mValue;
+                if (gBound.mMaterialValid && material == gBound.mMaterial && alpha == gBound.mAlpha)
+                    return;
+                gBound.mMaterial = material;
+                gBound.mAlpha = alpha;
+
+                static const SceneUtil::Material sDefault;
+                const SceneUtil::Material& m = material ? *material : sDefault;
+                v.mDiffuse = m.getDiffuse();
+                v.mAmbient = m.getAmbient();
+                v.mEmission = m.getEmission() * m.getEmissiveMultiplier();
+                v.mEmission.a() = m.getEmission().a();
+                float d = 0, a = 0, e = 0;
+                switch (m.getVertexColorMode())
+                {
+                    case SceneUtil::VertexColorModes::Emission:
+                        e = 1;
+                        break;
+                    case SceneUtil::VertexColorModes::AmbientAndDiffuse:
+                        d = a = 1;
+                        break;
+                    case SceneUtil::VertexColorModes::Ambient:
+                        a = 1;
+                        break;
+                    case SceneUtil::VertexColorModes::Diffuse:
+                        d = 1;
+                        break;
+                    default:
+                        break;
+                }
+                v.mColorSel = osg::Vec4f(d, a, e, alpha);
+                v.mLighting = osg::Vec4f(1, 0, 0, 0);
+            }
+            else
+            {
+                gBound.mMaterial = nullptr;
+                gBound.mAlpha = -1; // the next lit draw recomputes
+                v = skyMaterial(rs, sky);
+            }
+            if (gBound.mMaterialValid && v == gBound.mMaterialValues)
+                return;
+            setVec4(gLoc.mMatDiffuse, v.mDiffuse);
+            setVec4(gLoc.mMatAmbient, v.mAmbient);
+            setVec4(gLoc.mMatEmission, v.mEmission);
+            setVec4(gLoc.mColorSel, v.mColorSel);
+            setVec4(gLoc.mLighting, v.mLighting);
+            gBound.mMaterialValues = v;
+            gBound.mMaterialValid = true;
         }
 
         void writeTexMat(int location, const osg::Matrixf& m)
@@ -1422,10 +1571,12 @@ namespace Render3DS
 
         // Texture matrices: the diffuse map's (an osg::TexMat for UV animation, or the terrain's "texMat0" uniform
         // for layer tiling) and the terrain blend map's ("texMat1").
-        void uploadTexMat(const ResolvedState& rs)
+        void uploadTexMat(const ResolvedState& rs, int sky)
         {
             const osg::TexMat* texMat = rs.mTexMat.mValue;
-            const osg::Uniform* u[2] = { rs.mTexMat0.mValue, rs.mTexMat1.mValue };
+            // The sky shader applies texMat0 to the clouds only.
+            const bool useTexMat0 = sky == Sky_None || sky == Sky_Clouds;
+            const osg::Uniform* u[2] = { useTexMat0 ? rs.mTexMat0.mValue : nullptr, rs.mTexMat1.mValue };
             unsigned modified[2];
             for (int i = 0; i < 2; ++i)
                 modified[i] = u[i] ? u[i]->getModifiedCount() : 0;
@@ -1467,7 +1618,7 @@ namespace Render3DS
         } gFog;
         C3D_FogLut gFogLut;
 
-        void uploadFog(const ResolvedState& rs)
+        void uploadFog(const ResolvedState& rs, int sky)
         {
             const float start = uniformFloat(rs.mFogStart, 0.f);
             const float end = uniformFloat(rs.mFogEnd, 0.f);
@@ -1476,16 +1627,23 @@ namespace Render3DS
                 rs.mFogColor.mValue->get(color);
             auto channel = [](float v) { return static_cast<u32>(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
             const u32 packed = channel(color.r()) | channel(color.g()) << 8 | channel(color.b()) << 16;
-            const bool enabled = end > start && end > 0 && gPerspective;
+            const bool enabled = end > start && end > 0 && gPerspective && sky == Sky_None; // no fog on the sky
 
             if (gFog.mValid && gFog.mEnabled == enabled && gFog.mColor == packed && gFog.mStart == start
                 && gFog.mEnd == end && gFog.mNear == gNear && gFog.mFar == gFar)
                 return;
             const bool lutChanged = !gFog.mValid || gFog.mStart != start || gFog.mEnd != end || gFog.mNear != gNear
                 || gFog.mFar != gFar;
-            if (lutChanged)
+            // Weather transitions move the fog a little every frame: log only real changes (an SD write each).
+            static float loggedStart = -1, loggedEnd = -1;
+            if (lutChanged
+                && (std::abs(start - loggedStart) > 0.05f * end || std::abs(end - loggedEnd) > 0.05f * end))
+            {
+                loggedStart = start;
+                loggedEnd = end;
                 Log(Debug::Info) << "render3ds: fog " << start << ".." << end << " color " << std::hex << packed
-                                    << std::dec << " near " << gNear << " far " << gFar;
+                                 << std::dec << " near " << gNear << " far " << gFar;
+            }
             gFog = FogState{ gNear, gFar, start, end, packed, enabled, true };
             if (!enabled)
             {
@@ -1509,6 +1667,18 @@ namespace Render3DS
                 FogLut_FromArray(&gFogLut, data);
             }
             C3D_FogLutBind(&gFogLut);
+        }
+
+        // What is not drawn, once per kind of drawable (class and name): the list of missing features.
+        void logSkipped(const osg::Drawable* drawable, const char* why)
+        {
+            static std::set<std::string> logged;
+            if (drawable == nullptr || logged.size() >= 64)
+                return;
+            std::string key = std::string(drawable->className()) + " '" + drawable->getName() + "'";
+            if (!logged.insert(key).second)
+                return;
+            P3DS_LOGI("render3ds: not drawn: %s (%s)", key.c_str(), why);
         }
 
         // ------------------------------------------------------------------ GPU hang diagnostics
@@ -1782,6 +1952,7 @@ namespace Render3DS
                 setTestMatrices(gLoc.mProjection, gLoc.mModelView);
                 writeTexMat(gLoc.mTexMat, osg::Matrixf());
                 writeTexMat(gLoc.mTexMat1, osg::Matrixf());
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mLighting, 1, 0, 0, 0);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDir, 0, 0, 1, 0);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDiffuse, 0.5f, 0.5f, 0.5f, 1);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunAmbient, 0.3f, 0.3f, 0.3f, 1);
@@ -1927,16 +2098,21 @@ namespace Render3DS
                 || leaf->_parent == nullptr)
             {
                 ++gStats.mSkipped; // particles, MyGUI, ... (not drawn yet)
+                logSkipped(leaf->_drawable.get(), "not a geometry");
                 return;
             }
             GpuGeometry* gpu = geometryFor(*geometry);
             if (gpu == nullptr || gpu->mPrimitives.empty())
             {
                 ++gStats.mSkipped;
+                logSkipped(geometry, "no usable vertices/primitives");
                 return;
             }
             lap(gEmitProfile.mGeometry);
             const ResolvedState& rs = resolve(leaf->_parent);
+            const int sky = skyPass(rs);
+            if (sky == Sky_SunflashQuery)
+                return; // an occlusion query for the sun glare: draws nothing visible
 
             const FixedState fixed = computeFixedState(rs);
             if (fixed.mCull == 3)
@@ -1949,7 +2125,9 @@ namespace Render3DS
             }
 
             lap(gEmitProfile.mState);
-            C3D_Tex* texture = rs.mTexture.mValue ? textureFor(*rs.mTexture.mValue) : nullptr;
+            // The sky's atmosphere and sun glare passes don't sample their texture.
+            const bool skyUntextured = sky == Sky_Atmosphere || sky == Sky_Sunglare;
+            C3D_Tex* texture = rs.mTexture.mValue && !skyUntextured ? textureFor(*rs.mTexture.mValue) : nullptr;
             if (texture != gBound.mTexture)
             {
                 gBound.mTexture = texture;
@@ -1978,9 +2156,9 @@ namespace Render3DS
                 setRows(rows, *leaf->_modelview, 3);
             }
             uploadLighting(rs);
-            uploadMaterial(rs);
-            uploadTexMat(rs);
-            uploadFog(rs);
+            uploadMaterial(rs, sky);
+            uploadTexMat(rs, sky);
+            uploadFog(rs, sky);
             lap(gEmitProfile.mUniforms);
 
             if (gSceneBuffer == nullptr)
@@ -2231,6 +2409,7 @@ namespace Render3DS
         gLoc.mModelView = loc("modelView");
         gLoc.mTexMat = loc("texMat");
         gLoc.mTexMat1 = loc("texMat1");
+        gLoc.mLighting = loc("lighting");
         gLoc.mSunDir = loc("sunDir");
         gLoc.mSunDiffuse = loc("sunDiffuse");
         gLoc.mSunAmbient = loc("sunAmbient");

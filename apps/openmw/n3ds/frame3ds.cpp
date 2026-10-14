@@ -287,7 +287,7 @@ namespace omw3ds
                 {
                     ScriptedInput input;
                     const char* end = q;
-                    while (*end != ' ' && !std::isspace(static_cast<unsigned char>(*end)))
+                    while (*end != '\0' && !std::isspace(static_cast<unsigned char>(*end)))
                         ++end;
                     input.mText.assign(q, end);
                     if (parse(q + std::strlen(tag), input))
@@ -363,10 +363,10 @@ namespace omw3ds
     {
         static const bool enabled = [] {
             struct stat st;
-            const bool exists = stat("sdmc:/openmw/exteriors", &st) == 0;
-            if (exists)
-                P3DS_LOGW("exteriors enabled (sdmc:/openmw/exteriors)");
-            return exists;
+            const bool disabled = stat("sdmc:/openmw/no-exteriors", &st) == 0;
+            if (disabled)
+                P3DS_LOGW("exteriors disabled (sdmc:/openmw/no-exteriors)");
+            return !disabled;
         }();
         return enabled;
     }

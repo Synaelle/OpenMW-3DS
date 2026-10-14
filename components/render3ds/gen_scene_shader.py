@@ -21,6 +21,7 @@ HEADER = """; OpenMW 3DS port: scene vertex shader (citro3d backend, components/
 ;   lighting = D * (sun.diffuse * lambert + sum(light.diffuse * lambert * att))
 ;            + A * (sun.ambient + sum(light.ambient * att)) + E
 ;   color.rgb = clamp(lighting, 0, 1), color.a = D.a * alpha
+; With lighting.x = 0 the light terms drop out and color.rgb = E: unlit draws (the sky passes).
 ; D, A, E are the material diffuse/ambient/emission colors, or the vertex color when the material's
 ; vertex color mode says so (colorSel). The TEV stage then multiplies by the diffuse texture.
 ;
@@ -39,6 +40,7 @@ HEADER = """; OpenMW 3DS port: scene vertex shader (citro3d backend, components/
 .fvec sunDir, sunDiffuse, sunAmbient
 .fvec matDiffuse, matAmbient, matEmission
 .fvec colorSel      ; x/y/z: diffuse/ambient/emission come from the vertex color (0 or 1); w: alpha multiplier
+.fvec lighting      ; x: 1 = lit, 0 = unlit (only E)
 .fvec lights[{uniforms}]    ; {lights} point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
 
 .constf consts(0.0, 1.0, 0.00392156863, 3.0)
@@ -150,6 +152,7 @@ FOOTER = """
 	; lighting = D * diffuseLight + A * ambientLight + E, clamped
 	mul r10.xyz, r3, r6
 	mad r10.xyz, r4, r7, r10
+	mul r10.xyz, lighting.xxxx, r10
 	add r10.xyz, r9, r10
 	max r10.xyz, zeros, r10
 	min r10.xyz, ones, r10

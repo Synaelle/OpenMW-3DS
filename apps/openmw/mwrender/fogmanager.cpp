@@ -57,6 +57,12 @@ namespace MWRender
         }
         else
         {
+#ifdef OPENMW_PLATFORM_3DS
+            // The 3DS sees 2560 units (PC: 7168), so the weather's fog depth over that short range fogs objects a
+            // few hundred units away. Use 60% of it, and always fade out the far clip (no fog-free weather).
+            mLandFogStart = viewDistance * (1 - std::max(fogDepth, 0.5f) * 0.6f);
+            mLandFogEnd = viewDistance;
+#else
             if (fogDepth == 0.0)
             {
                 mLandFogStart = 0.0f;
@@ -67,6 +73,7 @@ namespace MWRender
                 mLandFogStart = viewDistance * (1 - fogDepth);
                 mLandFogEnd = viewDistance;
             }
+#endif
             mUnderwaterFogStart = std::min(viewDistance, 7168.f) * (1 - underwaterFog);
             mUnderwaterFogEnd = std::min(viewDistance, 7168.f);
         }

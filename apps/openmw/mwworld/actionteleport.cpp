@@ -35,11 +35,12 @@ namespace MWWorld
     void ActionTeleport::executeImp(const Ptr& actor)
     {
 #ifdef OPENMW_PLATFORM_3DS
-        // Exteriors don't fit in memory yet (M5): say so instead of running out of memory while loading them.
+        // Exteriors switched off (sdmc:/openmw/no-exteriors, see omw3ds::exteriorsEnabled): say so.
         if (!omw3ds::exteriorsEnabled() && actor == MWBase::Environment::get().getWorld()->getPlayerPtr()
             && MWBase::Environment::get().getWorldModel()->getCell(mCellId).isExterior())
         {
-            MWBase::Environment::get().getWindowManager()->messageBox("Exteriors are not supported yet (M5).");
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                "Exteriors are switched off (sdmc:/openmw/no-exteriors).");
             return;
         }
 #endif
