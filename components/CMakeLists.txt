@@ -589,6 +589,11 @@ if (OPENMW_PLATFORM_3DS)
     list(APPEND COMPONENT_FILES sdlutil/sdlgraphicswindow_3ds.cpp)
     # Dialogue/book text read from the content files on demand (esm3/lazystring.hpp).
     list(APPEND COMPONENT_FILES esm3/lazystring.cpp)
+    # Per-frame hot code at -O2; everything else stays -Os (image size is memory). Scene graph callbacks,
+    # light manager, CPU skinning (sceneutil), keyframe controllers (nifosg), MyGUI rendering.
+    set(OMW3DS_HOT_COMPONENTS ${COMPONENT_FILES})
+    list(FILTER OMW3DS_HOT_COMPONENTS INCLUDE REGEX "/(sceneutil|nifosg|myguiplatform)/[^/]*\\.cpp$")
+    set_source_files_properties(${OMW3DS_HOT_COMPONENTS} PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 
 add_library(components STATIC ${COMPONENT_FILES})

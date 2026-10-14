@@ -481,7 +481,14 @@ namespace MWPhysics
         if (budgetMeasurement < 0.5f)
             maxAllowedSteps = static_cast<unsigned>(std::ceil(1.f / budgetMeasurement));
         // limit to a reasonable amount
+#ifdef OPENMW_PLATFORM_3DS
+        // A step costs ~3 ms on the 3DS, which the budget heuristic above considers cheap, so at 100 ms frames
+        // it ran ~6 fixed steps (~18 ms). Cap at 2: physics then switches to longer delta-time steps
+        // (2 x ~50 ms at 10 fps), as it does when physics-bound.
+        maxAllowedSteps = std::min(2u, maxAllowedSteps);
+#else
         maxAllowedSteps = std::min(10u, maxAllowedSteps);
+#endif
 
         // fall back to delta time for this frame if fixed timestep physics would fall behind
         float actualDelta = mDefaultPhysicsDt;

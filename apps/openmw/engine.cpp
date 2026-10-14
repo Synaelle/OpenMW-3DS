@@ -90,8 +90,10 @@
 #include <platform3ds/memprobe.hpp>
 #include "n3ds/frame3ds.hpp"
 #define OMW3DS_MEMSTAGE(label) p3ds::memprobe::stage(label)
+#define OMW3DS_PHASE(label) omw3ds::PhaseTimer omw3dsPhase(label)
 #else
 #define OMW3DS_MEMSTAGE(label)
+#define OMW3DS_PHASE(label)
 #endif
 
 namespace
@@ -213,7 +215,10 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         // Stop the background GC started at the previous frame's end.
         // Input handling can run Lua (the menu key does), so the state
         // must not be collected from this point on.
-        mLuaWorker->finishGc();
+        {
+            OMW3DS_PHASE("luaFinishGc");
+            mLuaWorker->finishGc();
+        }
 
         // update input
         {
@@ -337,7 +342,10 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     if (reportResource)
         stats->setAttribute(frameNumber, "UnrefQueue", static_cast<double>(mUnrefQueue->getSize()));
 
-    mUnrefQueue->flush(*mWorkQueue);
+    {
+        OMW3DS_PHASE("unrefFlush");
+        mUnrefQueue->flush(*mWorkQueue);
+    }
 
     if (reportResource)
     {
@@ -369,13 +377,22 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     // if there is a separate Lua thread, it starts the update now
     mLuaWorker->allowUpdate(frameStart, frameNumber, *stats);
 
-    mViewer->renderingTraversals();
+    {
+        OMW3DS_PHASE("rendering"); // = cull + draw + OSG overhead
+        mViewer->renderingTraversals();
+    }
 
-    mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
+    {
+        OMW3DS_PHASE("luaUpdate"); // the Lua update itself when "lua num threads = 0"
+        mLuaWorker->finishUpdate(frameStart, frameNumber, *stats);
+    }
 
     // The Lua state is unused until the next frame starts: the worker collects
     // garbage through the frame tail and the framerate-limiter sleep.
-    mLuaWorker->gc();
+    {
+        OMW3DS_PHASE("luaGc");
+        mLuaWorker->gc();
+    }
 
     return true;
 }
@@ -1100,7 +1117,12 @@ void OMW::Engine::go()
 
         const unsigned frameNumber = mViewer->getFrameStamp()->getFrameNumber();
 
-        if (!frame(frameNumber, static_cast<float>(dt)))
+        bool frameDone;
+        {
+            OMW3DS_PHASE("engineFrame"); // all of Engine::frame
+            frameDone = frame(frameNumber, static_cast<float>(dt));
+        }
+        if (!frameDone)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
@@ -1127,7 +1149,10 @@ void OMW::Engine::go()
             }
         }
 
-        frameRateLimiter.limit();
+        {
+            OMW3DS_PHASE("limiter");
+            frameRateLimiter.limit();
+        }
     }
 
     mLuaWorker->join();

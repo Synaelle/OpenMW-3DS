@@ -85,8 +85,34 @@ namespace omw3ds
             ++gTimingFrames;
         }
 
+        // PhaseTimer sums (keyed by label pointer).
+        struct Phase
+        {
+            const char* mLabel;
+            unsigned long long mTicks;
+        };
+        Phase gPhases[16];
+        int gPhaseCount = 0;
+
+        void logPhases(unsigned frames)
+        {
+            if (frames == 0 || gPhaseCount == 0)
+                return;
+            std::string line = "perf/more:";
+            char item[48];
+            for (int i = 0; i < gPhaseCount; ++i)
+            {
+                const double ms = double(gPhases[i].mTicks) * 1000.0 / SYSCLOCK_ARM11 / frames;
+                std::snprintf(item, sizeof(item), " %s %.1f", gPhases[i].mLabel, ms);
+                line += item;
+                gPhases[i].mTicks = 0;
+            }
+            P3DS_LOGI("%s", line.c_str());
+        }
+
         void logTimings()
         {
+            logPhases(gTimingFrames);
             if (gTimingFrames == 0)
                 return;
             std::string line = "perf/ms:";
@@ -181,6 +207,23 @@ namespace omw3ds
             p3ds::shutdown();
             svcExitProcess();
         }
+    }
+
+    unsigned long long phaseTicks()
+    {
+        return svcGetSystemTick();
+    }
+
+    void addPhaseTime(const char* label, unsigned long long ticks)
+    {
+        for (int i = 0; i < gPhaseCount; ++i)
+            if (gPhases[i].mLabel == label)
+            {
+                gPhases[i].mTicks += ticks;
+                return;
+            }
+        if (gPhaseCount < int(sizeof(gPhases) / sizeof(gPhases[0])))
+            gPhases[gPhaseCount++] = Phase{ label, ticks };
     }
 
     void setViewer(osgViewer::Viewer* viewer)
@@ -281,6 +324,7 @@ namespace omw3ds
             snap.playerPos[i] = gPos[i];
         snap.status = "headless (no renderer yet)";
         gBottom.update(snap);
+        PhaseTimer phase("bottomScreen");
         gBottom.render(); // rate-limited internally
     }
 

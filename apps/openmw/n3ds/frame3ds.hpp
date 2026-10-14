@@ -25,6 +25,26 @@ namespace omw3ds
     void onLoadingTick();
 
     void shutdownBottomScreen();
+
+    // Time spent in parts of the frame OpenMW's own profiling doesn't cover (Lua GC, rendering traversal
+    // overhead, ...); averaged per frame and logged as "perf/more" every 5 s. Label: string literal.
+    unsigned long long phaseTicks();
+    void addPhaseTime(const char* label, unsigned long long ticks);
+
+    struct PhaseTimer
+    {
+        explicit PhaseTimer(const char* label)
+            : mLabel(label)
+            , mStart(phaseTicks())
+        {
+        }
+        ~PhaseTimer() { addPhaseTime(mLabel, phaseTicks() - mStart); }
+        PhaseTimer(const PhaseTimer&) = delete;
+        PhaseTimer& operator=(const PhaseTimer&) = delete;
+
+        const char* mLabel;
+        unsigned long long mStart;
+    };
 }
 
 #endif
