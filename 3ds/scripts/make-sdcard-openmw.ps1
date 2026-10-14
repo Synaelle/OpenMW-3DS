@@ -61,6 +61,9 @@ with rendering (the "gpu:" lines in the log).
 5. In the game (temporary debug controls, real controls come in the next milestone):
      D-pad LEFT / RIGHT  turn the player 45 degrees (you start facing the door: press 4 times to face the shop)
      SELECT              save a screenshot of the top screen to sdmc:/openmw/screenshots/ (takes ~2 s)
+   OpenMW's own controller defaults are also live now (untuned): circle pad = walk, C-stick = look.
+   Avoid A/B/X/Y/L/R/START: they open menus that are not drawn yet (the picture freezes = a hidden menu
+   is open; press START or B again to close it).
    Look around for ~1 minute (stay a few seconds on each view), take a screenshot or two, then press
    HOME and close the software.
 6. Send back these logs:
