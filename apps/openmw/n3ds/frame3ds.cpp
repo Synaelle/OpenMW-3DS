@@ -18,6 +18,7 @@
 #include "../profile.hpp"
 
 #include <components/esm/position.hpp>
+#include <components/settings/values.hpp>
 
 #include <osg/Stats>
 #include <osgViewer/Viewer>
@@ -187,6 +188,13 @@ namespace omw3ds
 
     void setViewer(osgViewer::Viewer* viewer)
     {
+        // The settings that matter for performance, as actually loaded (the SD card may hold an older
+        // settings.cfg than the package).
+        P3DS_LOGI("settings: physics async threads %d, lua threads %d, viewing distance %.0f, preload %s, "
+                  "actors range %.0f",
+            int(Settings::physics().mAsyncNumThreads), int(Settings::lua().mLuaNumThreads),
+            double(Settings::camera().mViewingDistance), Settings::cells().mPreloadEnabled ? "on" : "off",
+            double(Settings::game().mActorsProcessingRange));
         gViewer = viewer;
         osg::Stats* stats = viewer->getViewerStats();
         stats->collectStats("engine", true); // OMW::ScopedProfile in Engine::frame

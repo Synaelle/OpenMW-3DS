@@ -35,7 +35,8 @@ What this tests: OpenMW itself, headless (NO picture on the top screen yet - the
 next milestone). It loads Morrowind.esm, starts a new game in "$Start" and runs the game loop.
 We want: loading time, memory, and the real frame time without rendering.
 
-1. Copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
+1. Copy the CONTENTS of this folder to the ROOT of your SD card (merge folders, overwrite files).
+   Do it every time, not only the CIA: openmw/config/settings.cfg changes between test builds.
 2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
      Morrowind.esm   (~79 MB)
      Morrowind.bsa   (~310 MB)
@@ -53,7 +54,8 @@ We want: loading time, memory, and the real frame time without rendering.
    HOME works during loading too now (Close exits immediately).
 5. Once the bottom screen shows the cell name and an FPS value, let it run ~1 minute, then press
    HOME and close the software.
-6. Send back sdmc:/openmw/openmw.log, and sdmc:/openmw/crash.log if there is one.
+6. Send back sdmc:/openmw/openmw.log and sdmc:/openmw/config/openmw.log (OpenMW's own log),
+   and sdmc:/openmw/crash.log if there is one.
 
 If you have to force the power off anyway, still send openmw.log.
 "@ | Set-Content "$sd\README.txt"
