@@ -505,6 +505,7 @@ namespace omw3ds
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
             std::vector<ScriptedInput> mInputs;
             std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
+            unsigned mLuaProfileAt = 0; // "luaprof:F": write the Lua profiler table (needs "lua profiler = true")
         };
         static const Autorun autorun = [] {
             Autorun result;
@@ -518,6 +519,8 @@ namespace omw3ds
                 if (const char* q = std::strstr(buf, "turn:"))
                     result.mTurnDegrees = std::strtof(q + 5, nullptr);
                 parseScriptedInput(buf, result.mInputs);
+                if (const char* q = std::strstr(buf, "luaprof:"))
+                    result.mLuaProfileAt = unsigned(std::strtoul(q + 8, nullptr, 10));
                 if (const char* q = std::strstr(buf, "door:"))
                 {
                     char* end = const_cast<char*>(q + 5);
@@ -539,6 +542,16 @@ namespace omw3ds
         {
             P3DS_LOGI("autorun: quitting after %u frames", autorun.mQuitAt);
             MWBase::Environment::get().getStateManager()->requestQuit();
+        }
+        if (autorun.mLuaProfileAt != 0 && gStats.frameIndex == autorun.mLuaProfileAt)
+        {
+            const std::string table = MWBase::Environment::get().getLuaManager()->formatResourceUsageStats();
+            if (std::FILE* f = std::fopen("sdmc:/openmw/lua_profile.txt", "w"))
+            {
+                std::fwrite(table.data(), 1, table.size(), f);
+                std::fclose(f);
+            }
+            P3DS_LOGI("autorun: Lua profile written to sdmc:/openmw/lua_profile.txt (%zu bytes)", table.size());
         }
         for (unsigned door : autorun.mDoors)
             if (door == gStats.frameIndex)
