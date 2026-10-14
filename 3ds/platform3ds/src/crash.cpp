@@ -780,6 +780,17 @@ namespace p3ds::memprobe
 {
     void callerProfileStart(bool allThreads)
     {
+        // Opt-in: costs 6 MB of linear memory and a lock per allocation while active.
+        static const bool enabled = [] {
+            FILE* f = fopen("sdmc:/openmw/memprofile", "r");
+            if (f != nullptr)
+                fclose(f);
+            if (f != nullptr)
+                P3DS_LOGI("caller profiles enabled (sdmc:/openmw/memprofile exists)");
+            return f != nullptr;
+        }();
+        if (!enabled)
+            return;
         static bool lockInit = false;
         if (!lockInit)
         {
@@ -822,6 +833,8 @@ namespace p3ds::memprobe
 
     void callerProfileStop(const char* label)
     {
+        if (gCallerTid == 0 && gLive == nullptr)
+            return; // not running (disabled)
         LightLock_Lock(&gCallerLock);
         gCallerTid = 0;
         P3DS_LOGI("caller profile [%s] (net = still allocated; symbolize with addr2line; %lu untracked):", label,

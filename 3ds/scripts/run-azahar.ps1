@@ -9,6 +9,7 @@ param(
     [string]$Autorun = '',
     [int]$TimeoutSec = 180,
     [switch]$NoBuild,
+    [switch]$MemProfile, # OpenMW: enable the caller profiles (sdmc:/openmw/memprofile)
     [string]$Azahar = 'D:\Emulators\Azahar3DS\azahar.exe',
     [string]$Config = 'RelWithDebInfo'
 )
@@ -27,6 +28,8 @@ New-Item -ItemType Directory -Force $SdOpenmw | Out-Null
 Get-ChildItem $SdOpenmw -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^(openmw\.log|crash\.log|probe\.txt|autorun\.(txt|done)|shot_.*\.bmp|perf.*\.csv)$' } |
     Remove-Item -Force
+$memFlag = Join-Path $SdOpenmw 'memprofile'
+if ($MemProfile) { Set-Content -Path $memFlag -Value '' } elseif (Test-Path $memFlag) { Remove-Item $memFlag -Force }
 if ($Autorun) {
     # Emulator runs always capture screenshots (cheap there; opt-in on hardware).
     if ($Autorun -match 'bench' -and $Autorun -notmatch 'screens') { $Autorun += ' screens' }
