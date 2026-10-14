@@ -373,8 +373,8 @@ namespace omw3ds
 
     namespace
     {
-        // autorun "door:F": activate the nearest door that leads somewhere, as if the player pressed A on it
-        // (tests cell changes without scripting a walk to the door).
+        // autorun "door:F": activate the nearest door that leads somewhere (an interior unless exteriors are
+        // enabled), as if the player pressed A on it (tests cell changes without scripting a walk to the door).
         void activateNearestDoor()
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -385,6 +385,8 @@ namespace omw3ds
             player.getCell()->forEachType<ESM::Door>([&](const MWWorld::Ptr& door) {
                 if (!door.getCellRef().getTeleport())
                     return true;
+                if (!exteriorsEnabled() && door.getCellRef().getDestCell().is<ESM::ESM3ExteriorCellRefId>())
+                    return true; // refused anyway (ActionTeleport)
                 const float distance = (door.getRefData().getPosition().asVec3() - playerPos).length2();
                 if (nearest.isEmpty() || distance < best)
                 {
