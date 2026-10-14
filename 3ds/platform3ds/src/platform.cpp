@@ -75,6 +75,27 @@ extern "C"
     }
 }
 
+// libctru carves the main thread's stack out of the start of the app heap (initSystem in
+// stack_adjust.s: [heap start, heap start + __stacksize__)), 32 KB by default. Bullet's GJK/EPA solver
+// alone needs ~30 KB in double precision and OSG/NIF traversals recurse deeply; desktop OpenMW
+// assumes 1-8 MB. Below the heap start nothing is mapped, so an overflow faults (on hardware).
+extern "C" u32 __stacksize__ = 1024 * 1024;
+
+// pthread_create / std::thread end up in libctru's __syscall_thread_create, which uses a 32 KB stack
+// when none is given (and priority 0x3F, core 0). OpenMW's worker threads load NIFs and traverse
+// scene graphs: give them 256 KB (linked with -Wl,--wrap=__syscall_thread_create).
+extern "C"
+{
+    int __real___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size);
+
+    int __wrap___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size)
+    {
+        if (stack_size == 0)
+            stack_size = 256 * 1024;
+        return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Two-segment sbrk (replaces libsysbase's weak _sbrk_r).
 //
@@ -157,6 +178,40 @@ namespace p3ds
     namespace
     {
         PlatformInfo gInfo;
+
+        // Main stack watermark: the unused part is filled with a pattern at init.
+        constexpr u32 kStackPattern = 0x5AC3A55Cu;
+        const u32* gStackBottom = nullptr;
+        u32 gStackSize = 0;
+
+        __attribute__((noinline)) void paintMainStack()
+        {
+            gStackBottom = reinterpret_cast<const u32*>(__ctru_heap);
+            gStackSize = __stacksize__;
+            // Paint up to 4 KB below the current frame (everything deeper is unused so far).
+            u32* const limit = reinterpret_cast<u32*>(__builtin_frame_address(0)) - 1024;
+            for (u32* p = const_cast<u32*>(gStackBottom); p < limit; ++p)
+                *p = kStackPattern;
+        }
+    }
+
+    bool mainStackUsage(unsigned& peakBytes, unsigned& sizeBytes)
+    {
+        if (gStackBottom == nullptr)
+            return false;
+        const u32* p = gStackBottom;
+        const u32* const end = gStackBottom + gStackSize / 4;
+        while (p < end && *p == kStackPattern)
+            ++p;
+        sizeBytes = gStackSize;
+        peakBytes = unsigned(reinterpret_cast<const char*>(end) - reinterpret_cast<const char*>(p));
+        return mainStackIntact();
+    }
+
+    bool mainStackIntact()
+    {
+        // Overflowed (or about to): the bottom words are gone.
+        return gStackBottom == nullptr || (gStackBottom[0] == kStackPattern && gStackBottom[1] == kStackPattern);
     }
 
     bool fileExists(const char* path)
@@ -187,6 +242,7 @@ namespace p3ds
 
     PlatformInfo init(const InitOptions& options)
     {
+        paintMainStack();
         mkdir(kBaseDir, 0777);
         remove(kAutorunDonePath);
 

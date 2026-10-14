@@ -1,6 +1,6 @@
 # Initial cache for configuring openmw/ for the Nintendo 3DS:
 #   cmake -C cmake/openmw-3ds-cache.cmake -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake openmw
-# (scripts/build.ps1 -OpenMW does this.)
+# (scripts/build-openmw.ps1 does this.)
 
 set(OPENMW_PLATFORM_3DS ON CACHE BOOL "Build the Nintendo 3DS port")
 get_filename_component(_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)

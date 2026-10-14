@@ -88,6 +88,7 @@
 #ifdef OPENMW_PLATFORM_3DS
 #include <platform3ds/crash.hpp>
 #include <platform3ds/memprobe.hpp>
+#include "n3ds/frame3ds.hpp"
 #define OMW3DS_MEMSTAGE(label) p3ds::memprobe::stage(label)
 #else
 #define OMW3DS_MEMSTAGE(label)
@@ -199,6 +200,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
 {
 #ifdef OPENMW_PLATFORM_3DS
     p3ds::crash::kick("engine frame"); // feed the hang watchdog
+    omw3ds::onEngineFrame(); // bottom-screen debug display, frame-time log
 #endif
     const osg::Timer_t frameStart = mViewer->getStartTick();
     const osg::Timer* const timer = osg::Timer::instance();
@@ -930,16 +932,10 @@ void OMW::Engine::prepareEngine()
     }
 
     listener->loadingOn();
-#ifdef OPENMW_PLATFORM_3DS
-    p3ds::memprobe::callerProfileStart(); // diagnostic: who allocates on the main thread while loading
-#endif
     {
         using namespace std::chrono_literals;
         while (dataLoading.wait_for(50ms) != std::future_status::ready)
             asyncListener.update();
-#ifdef OPENMW_PLATFORM_3DS
-        p3ds::memprobe::callerProfileStop("main thread during loadData");
-#endif
         dataLoading.get();
     }
     OMW3DS_MEMSTAGE("after loadData (main thread)");
@@ -948,11 +944,17 @@ void OMW::Engine::prepareEngine()
 
     mWorld->init(mMaxRecastLogLevel, mViewer, std::move(rootNode), mWorkQueue, *mUnrefQueue);
     OMW3DS_MEMSTAGE("World::init");
+#ifdef OPENMW_PLATFORM_3DS
+    p3ds::memprobe::callerProfileStart(true); // diagnostic: who allocates from here to the first frame
+#endif
     mEnvironment.setWorldScene(mWorld->getWorldScene());
     mWorld->setupPlayer();
+    OMW3DS_MEMSTAGE("setupPlayer");
     mWorld->setRandomSeed(mRandomSeed);
     mWindowManager->initUI();
+    OMW3DS_MEMSTAGE("initUI");
     mLuaManager->initPostLoad();
+    OMW3DS_MEMSTAGE("Lua initPostLoad");
 
     // scripts
     if (mCompileAll)
@@ -1062,7 +1064,12 @@ void OMW::Engine::go()
     }
     else
     {
+        OMW3DS_MEMSTAGE("before newGame");
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::callerProfileStop("World::init to newGame, all threads");
+#endif
         mStateManager->newGame(!mNewGame);
+        OMW3DS_MEMSTAGE("after newGame");
     }
 
     if (!mStartupScript.empty() && mStateManager->getState() == MWState::StateManager::State_Running)

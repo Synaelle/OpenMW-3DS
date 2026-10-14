@@ -7,15 +7,13 @@
 //   --skip-menu --start "Seyda Neen"
 // (--new-game is deliberately absent: it would start character generation and the intro movie.)
 
+#include "frame3ds.hpp"
+
 #include <platform3ds/crash.hpp>
-#include <platform3ds/debugscreen.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/platform.hpp>
 
 #include <components/debug/debugging.hpp>
-
-#include <osg/GLExtensions>
-#include <dlfcn.h>
 
 #include <3ds.h>
 
@@ -71,12 +69,7 @@ int main(int, char**)
     // Fed by Engine::frame() and LoadingScreen::draw() (see p3ds::crash::kick calls in openmw).
     p3ds::crash::startWatchdog(60, p3ds::info().syscoreLimit > 0 ? 1 : 0);
 
-    p3ds::DebugBottomScreen bottom;
-    bottom.init();
-    p3ds::GameSnapshot snap;
-    snap.cellName = "(starting OpenMW)";
-    bottom.update(snap);
-    bottom.forceRedraw();
+    omw3ds::initBottomScreen("(starting OpenMW)");
 
     // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)
     // does not consider "sdmc:/..." absolute, and OpenMW resolves relative paths against config dirs.
@@ -88,10 +81,6 @@ int main(int, char**)
     // the screens (gfxInit) and has no OpenGL, so use the dummy driver.
     setenv("SDL_VIDEODRIVER", "dummy", 1);
 
-    // TEMP diagnostic: GL 2.0 entry points resolution through the stub GL.
-    P3DS_LOGI("diag: dlsym(glCreateProgram)=%p getGLExtensionFuncPtr=%p resolver=%p", dlsym(nullptr, "glCreateProgram"),
-        osg::getGLExtensionFuncPtr("glCreateProgram"), (void*)&osg3ds_glGetProcAddress);
-
     std::vector<std::string> args = loadArguments();
     std::vector<char*> argv;
     for (std::string& a : args)
@@ -102,6 +91,7 @@ int main(int, char**)
     const int ret = Debug::wrapApplication(&runApplication, int(args.size()), argv.data(), "OpenMW");
 
     P3DS_LOGI("OpenMW exited with %d", ret);
+    omw3ds::shutdownBottomScreen();
     p3ds::shutdown();
     gfxExit();
     return ret;

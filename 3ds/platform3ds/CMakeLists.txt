@@ -29,7 +29,8 @@ target_compile_options(platform3ds PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # Frame pointers make the crash handler's backtrace walk reliable.
 target_compile_options(platform3ds PUBLIC -fno-omit-frame-pointer)
 
-# Route abort() through the crash logger.
-target_link_options(platform3ds INTERFACE -Wl,--wrap=abort)
+# Route abort() through the crash logger; give pthreads/std::thread a usable default stack
+# (libctru's is 32 KB, see platform.cpp).
+target_link_options(platform3ds INTERFACE -Wl,--wrap=abort -Wl,--wrap=__syscall_thread_create)
 
 target_link_libraries(platform3ds PUBLIC ctru m)

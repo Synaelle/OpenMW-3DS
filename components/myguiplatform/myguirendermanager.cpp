@@ -1,5 +1,8 @@
 #include "myguirendermanager.hpp"
 
+#include <cstring>
+#include <vector>
+
 #include <MyGUI_Timer.h>
 
 #include <osg/Drawable>
@@ -249,10 +252,24 @@ namespace MyGUIPlatform
 
         void destroy();
         osg::UByteArray* create();
+        osg::UByteArray* create(size_t bytes);
+
+#ifdef OPENMW_PLATFORM_3DS
+        // MyGUI sizes a render item's buffer for all of its draw items, visible or not, so every hidden
+        // window of OpenMW's UI costs vertex memory (~11 MB, double-buffered, once each layer has been
+        // drawn). Instead, MyGUI writes into one shared scratch buffer and commit() keeps only the
+        // vertices actually produced. lock/unlock/doRender run back to back for one render item.
+        static std::vector<MyGUI::Vertex> sScratch;
+        bool mPending = false; // scratch holds vertices for this buffer, not committed yet
+#endif
 
     public:
         OSGVertexBuffer();
         virtual ~OSGVertexBuffer() {}
+
+#ifdef OPENMW_PLATFORM_3DS
+        void commit(size_t vertexCount);
+#endif
 
         void markUsed();
 
@@ -291,8 +308,40 @@ namespace MyGUIPlatform
         return mNeedVertexCount;
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    std::vector<MyGUI::Vertex> OSGVertexBuffer::sScratch;
+
+    void OSGVertexBuffer::commit(size_t vertexCount)
+    {
+        if (!mPending)
+            return; // not re-locked since the last commit: the current array already holds the vertices
+        mPending = false;
+        if (mUsed)
+        {
+            mCurrentBuffer = (mCurrentBuffer + 1) % 2;
+            mUsed = false;
+        }
+        const size_t bytes = vertexCount * sizeof(MyGUI::Vertex);
+        osg::UByteArray* array = mVertexArray[mCurrentBuffer];
+        if (!array)
+            array = create(bytes);
+        else if (array->size() != bytes)
+            array->resize(bytes);
+        if (bytes != 0)
+            std::memcpy(&(*array)[0], sScratch.data(), bytes);
+        mVertexArray[mCurrentBuffer]->dirty();
+        mBuffer[mCurrentBuffer]->dirty();
+    }
+#endif
+
     MyGUI::Vertex* OSGVertexBuffer::lock()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        if (sScratch.size() < mNeedVertexCount)
+            sScratch.resize(mNeedVertexCount);
+        mPending = true;
+        return sScratch.data();
+#endif
         if (mUsed)
         {
             mCurrentBuffer = (mCurrentBuffer + 1) % 2;
@@ -313,14 +362,21 @@ namespace MyGUIPlatform
 
     void OSGVertexBuffer::unlock()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        return; // commit() does it
+#endif
         mVertexArray[mCurrentBuffer]->dirty();
         mBuffer[mCurrentBuffer]->dirty();
     }
 
     osg::UByteArray* OSGVertexBuffer::create()
     {
-        mVertexArray[mCurrentBuffer]
-            = new osg::UByteArray(static_cast<unsigned int>(mNeedVertexCount * sizeof(MyGUI::Vertex)));
+        return create(mNeedVertexCount * sizeof(MyGUI::Vertex));
+    }
+
+    osg::UByteArray* OSGVertexBuffer::create(size_t bytes)
+    {
+        mVertexArray[mCurrentBuffer] = new osg::UByteArray(static_cast<unsigned int>(bytes));
 
         mBuffer[mCurrentBuffer] = new osg::VertexBufferObject;
         mBuffer[mCurrentBuffer]->setDataVariance(osg::Object::DYNAMIC);
@@ -437,6 +493,9 @@ namespace MyGUIPlatform
     {
         Drawable::Batch batch;
         batch.mVertexCount = count;
+#ifdef OPENMW_PLATFORM_3DS
+        static_cast<OSGVertexBuffer*>(buffer)->commit(count);
+#endif
         batch.mVertexBuffer = static_cast<OSGVertexBuffer*>(buffer)->getVertexBuffer();
         batch.mArray = static_cast<OSGVertexBuffer*>(buffer)->getVertexArray();
         static_cast<OSGVertexBuffer*>(buffer)->markUsed();

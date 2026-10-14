@@ -122,7 +122,7 @@ if (OPENMW_PLATFORM_3DS)
     # Nintendo 3DS: no OpenAL, FFmpeg or video playback. Replacements live in apps/openmw/n3ds/.
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
-    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp)
+    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp n3ds/frame3ds.cpp)
 endif()
 
 add_library(openmw-lib STATIC

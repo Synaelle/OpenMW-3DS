@@ -18,9 +18,11 @@ namespace p3ds::memprobe
     // Logs this thread's cumulative net allocations and the heap at a named point (startup profiling).
     void stage(const char* label);
 
-    // Caller profile for the calling thread: bytes allocated per operator-new call site between
-    // start and stop (logs the top call sites; resolve with addr2line).
-    void callerProfileStart();
+    // Caller profile: bytes allocated per operator-new call site between start and stop, for the
+    // calling thread or every thread (logs the top call sites; resolve with addr2line). An active
+    // profile is also dumped automatically on out-of-memory.
+    void callerProfileStart(bool allThreads = false);
+    bool callerProfileActive();
     void callerProfileStop(const char* label);
 
     // Extra memory consumers the platform layer can't see (e.g. the Lua VM, which allocates with

@@ -53,6 +53,19 @@
 #include "player.hpp"
 #include "worldimp.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp>
+// Diagnostic: attributes main-thread heap growth while loading a cell to the object's record type
+// (rendering) and to subsystems ("+PHY" physics, "+MEC" mechanics, "+LUA" Lua).
+#define OMW3DS_MEMSCOPE(key) p3ds::memprobe::Scope omw3dsMemScope(key)
+#define OMW3DS_MEMSTAGE(label) p3ds::memprobe::stage(label)
+#define OMW3DS_MEMREPORT(label) p3ds::memprobe::report(label)
+#else
+#define OMW3DS_MEMSCOPE(key)
+#define OMW3DS_MEMSTAGE(label)
+#define OMW3DS_MEMREPORT(label)
+#endif
+
 namespace
 {
     using MWWorld::RotationOrder;
@@ -121,14 +134,20 @@ namespace
         const auto rotation = makeDirectNodeRotation(ptr);
 
         ESM::RefNum refnum = ptr.getCellRef().getRefNum();
-        if (!refnum.hasContentFile() || !std::binary_search(pagedRefs.begin(), pagedRefs.end(), refnum))
-            ptr.getClass().insertObjectRendering(ptr, model, rendering);
-        else
-            ptr.getRefData().setBaseNode(pagedNode);
-        setNodeRotation(ptr, rendering, rotation);
+        {
+            OMW3DS_MEMSCOPE(ptr.getType());
+            if (!refnum.hasContentFile() || !std::binary_search(pagedRefs.begin(), pagedRefs.end(), refnum))
+                ptr.getClass().insertObjectRendering(ptr, model, rendering);
+            else
+                ptr.getRefData().setBaseNode(pagedNode);
+            setNodeRotation(ptr, rendering, rotation);
+        }
 
         if (ptr.getClass().useAnim())
+        {
+            OMW3DS_MEMSCOPE(0x43454D2B); // "+MEC"
             MWBase::Environment::get().getMechanicsManager()->add(ptr);
+        }
 
         if (ptr.getClass().isActor())
             rendering.addWaterRippleEmitter(ptr);
@@ -137,8 +156,12 @@ namespace
         world.applyLoopingParticles(ptr);
 
         if (!model.empty())
+        {
+            OMW3DS_MEMSCOPE(0x5948502B); // "+PHY"
             ptr.getClass().insertObject(ptr, model, rotation, physics);
+        }
 
+        OMW3DS_MEMSCOPE(0x41554C2B); // "+LUA"
         MWBase::Environment::get().getLuaManager()->objectAddedToScene(ptr);
     }
 
@@ -259,7 +282,10 @@ namespace
             }
 
             if (mLoadingListener != nullptr)
+            {
+                OMW3DS_MEMSCOPE(0x53444C2B); // "+LDS" loading screen
                 mLoadingListener->increaseProgress(1);
+            }
         }
     }
 
@@ -491,16 +517,28 @@ namespace MWWorld
 
         // register local scripts
         // do this before insertCell, to make sure we don't add scripts from levelled creature spawning twice
+        OMW3DS_MEMSTAGE("loadCell: start");
         mWorld.getLocalScripts().addCell(&cell);
 
         if (respawn)
             cell.respawn();
+        OMW3DS_MEMSTAGE("loadCell: local scripts");
 
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::callerProfileStart(); // main thread
+#endif
         insertCell(cell, loadingListener, navigatorUpdateGuard);
+        OMW3DS_MEMSTAGE("loadCell: insertCell");
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::callerProfileStop("insertCell, main thread");
+#endif
+        OMW3DS_MEMREPORT("insertCell by record type");
 
         mRendering.addCell(&cell);
+        OMW3DS_MEMSTAGE("loadCell: rendering addCell");
 
         MWBase::Environment::get().getWindowManager()->addCell(&cell);
+        OMW3DS_MEMSTAGE("loadCell: windowmanager addCell");
         bool waterEnabled = cellVariant.hasWater() || cell.isExterior();
         float waterLevel = cell.getWaterLevel();
         mRendering.setWaterEnabled(waterEnabled);
@@ -1035,6 +1073,7 @@ namespace MWWorld
         insertVisitor.insert(
             [&](const MWWorld::Ptr& ptr) { addObject(ptr, mWorld, mPagedRefs, *mPhysics, mRendering); });
         insertVisitor.insert([&](const MWWorld::Ptr& ptr) {
+            OMW3DS_MEMSCOPE(0x56414E2B); // "+NAV"
             addObject(ptr, mWorld, *mPhysics, mLowestPoint, isInterior, mNavigator, navigatorUpdateGuard);
         });
     }

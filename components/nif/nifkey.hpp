@@ -31,6 +31,17 @@ namespace Nif
         T mOutTan; // Only for Quadratic interpolation, and never for QuaternionKeyList
     };
 
+#ifdef OPENMW_PLATFORM_3DS
+    // Quaternion keys never carry tangents (readQuadratic skips them, quaternion TCB tangents are not
+    // generated, NifOsg::ValueInterpolator only slerps mValue), so don't store them: 52 -> 20 bytes per
+    // key. Creature/NPC animation tracks are mostly rotations; this saves ~8 MB at the first cell.
+    template <>
+    struct KeyT<osg::Quat>
+    {
+        osg::Quat mValue;
+    };
+#endif
+
     template <typename T>
     struct TCBKey
     {
@@ -100,6 +111,11 @@ namespace Nif
                 nif->readVectorOfRecords(count, readTCBKey, tcbKeys);
                 generateTCBTangents(tcbKeys);
                 for (TCBKey<T>& tcbKey : tcbKeys)
+#ifdef OPENMW_PLATFORM_3DS
+                    if constexpr (std::is_same_v<T, osg::Quat>)
+                        mKeys.emplace_back(tcbKey.mTime, KeyType{ std::move(tcbKey.mValue) });
+                    else
+#endif
                     mKeys.emplace_back(tcbKey.mTime,
                         KeyType{ std::move(tcbKey.mValue), std::move(tcbKey.mInTan), std::move(tcbKey.mOutTan) });
             }

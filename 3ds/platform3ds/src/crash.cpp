@@ -16,6 +16,7 @@
 #include <typeinfo>
 
 #include <cxxabi.h>
+#include <unwind.h>
 
 extern "C"
 {
@@ -361,6 +362,8 @@ namespace p3ds::crash
                 free(gEmergency);
                 gEmergency = nullptr;
                 P3DS_LOGE("OOM: released the %u KB emergency reserve", unsigned(kEmergencyReserve / 1024));
+                if (memprobe::callerProfileActive())
+                    memprobe::callerProfileStop("at out-of-memory");
                 return;
             }
             fatal("out of memory (operator new)");
@@ -470,11 +473,18 @@ namespace p3ds::crash
                         mem::toMB(s.linearFree), gStep);
                     memprobe::logThreads();
                     memprobe::logReporters();
+                    unsigned stackPeak = 0, stackSize = 0;
+                    if (mainStackUsage(stackPeak, stackSize))
+                        P3DS_LOGI("mem/stack: main thread peak %u KB of %u KB", stackPeak / 1024, stackSize / 1024);
                     if (p3ds_sbrk_failures != 0)
                         P3DS_LOGW("sbrk: %lu failures, last incr %ld, linear free then %lu",
                             (unsigned long)p3ds_sbrk_failures, (long)p3ds_sbrk_last_fail_incr,
                             (unsigned long)p3ds_sbrk_last_fail_linear_free);
                 }
+                // Every 0.5 s: the emulator ignores the faulting accesses below the heap, so an overflow
+                // would otherwise just corrupt silently there.
+                if (!mainStackIntact())
+                    fatal("main thread stack overflow");
                 const u64 timeout = gTimeoutTicks;
                 if (timeout != 0 && svcGetSystemTick() - gLastKick > timeout)
                     reportHang();
@@ -581,67 +591,262 @@ namespace p3ds::memprobe
     }
 }
 
-// ---- caller profile: bytes allocated per call site, for one thread, while enabled ----
+// ---- caller profile: bytes per operator-new call site while enabled ----
+// Gross and net: every allocation made while profiling is remembered (pointer -> call site) in a
+// hash table in linear memory, so frees from any thread are matched back to their call site. The
+// table is taken out of the GPU reserve (unused until the renderer exists), so profiling doesn't
+// shrink the heap and move the out-of-memory point.
+extern "C" size_t p3ds_linear_gpu_reserve; // platform.cpp
+
 namespace
 {
     struct CallerEntry
     {
         void* caller;
-        uint64_t bytes;
+        uint64_t bytes; // allocated
+        int64_t net; // allocated minus freed (of the allocations made while profiling)
         uint32_t count;
     };
-    constexpr int kCallerSlots = 1024;
+    constexpr int kCallerSlots = 2048;
+    constexpr u32 kAllThreads = 0xFFFFFFFFu;
     CallerEntry gCallers[kCallerSlots];
-    volatile u32 gCallerTid = 0; // 0 = profiling off
+    volatile u32 gCallerTid = 0; // 0 = profiling off, kAllThreads = every thread
+    // Blocking lock (kernel address arbitration): a waiter sleeps, so a preempted lower-priority holder
+    // gets to run. A spinlock deadlocks here: the 3DS scheduler never time-slices.
+    LightLock gCallerLock;
+    u32 gCallerDropped = 0; // allocations not tracked (a table was full)
 
-    void recordCaller(void* caller, std::size_t size)
+    struct LiveEntry
     {
-        u32 tid = 0;
-        svcGetThreadId(&tid, CUR_THREAD_HANDLE);
-        if (tid != gCallerTid)
-            return;
-        uint32_t h = (uint32_t(uintptr_t(caller)) >> 2) * 2654435761u;
+        void* p; // nullptr = empty, kTomb = deleted
+        uint32_t size;
+        uint32_t slot;
+    };
+    void* const kTomb = reinterpret_cast<void*>(1);
+    constexpr u32 kLiveSlots = 1u << 19; // 512K entries, 6 MB
+    constexpr u32 kLiveMax = kLiveSlots / 4 * 3;
+    LiveEntry* volatile gLive = nullptr;
+    u32 gLiveUsed = 0; // entries ever filled (live + tombstones; no rehash)
+    size_t gLiveReserveTaken = 0;
+
+    inline u32 hashPtr(const void* p)
+    {
+        return (u32(uintptr_t(p)) >> 3) * 2654435761u;
+    }
+
+    int callerSlot(void* caller)
+    {
+        const u32 h = hashPtr(caller);
         for (int probe = 0; probe < kCallerSlots; ++probe)
         {
-            CallerEntry& e = gCallers[(h + probe) % kCallerSlots];
-            if (e.caller == caller || e.caller == nullptr)
+            const int i = int((h + u32(probe)) % kCallerSlots);
+            if (gCallers[i].caller == caller)
+                return i;
+            if (gCallers[i].caller == nullptr)
             {
-                e.caller = caller;
-                e.bytes += size;
-                ++e.count;
-                return;
+                gCallers[i].caller = caller;
+                return i;
             }
         }
+        return -1;
+    }
+
+    // Optional: full backtraces of a few allocations from one call site (sdmc:/openmw/trace.txt holds
+    // "<hex caller address> [count]"), read when a profile starts. Uses the EHABI unwinder, which
+    // works without frame pointers.
+    void* volatile gTraceCaller = nullptr;
+    int gTraceLeft = 0;
+
+    struct TraceState
+    {
+        char line[200];
+        int len;
+        int depth;
+    };
+
+    _Unwind_Reason_Code traceFrame(_Unwind_Context* ctx, void* arg)
+    {
+        auto* st = static_cast<TraceState*>(arg);
+        const uintptr_t pc = _Unwind_GetIP(ctx);
+        if (pc == 0 || st->depth >= 24)
+            return _URC_END_OF_STACK;
+        if (st->len > int(sizeof(st->line)) - 12)
+        {
+            P3DS_LOGI("%s", st->line);
+            st->len = snprintf(st->line, sizeof(st->line), "   ");
+        }
+        st->len += snprintf(st->line + st->len, sizeof(st->line) - st->len, " 0x%08lX", (unsigned long)pc);
+        ++st->depth;
+        return _URC_NO_REASON;
+    }
+
+    void traceAllocation(std::size_t size)
+    {
+        TraceState st;
+        st.len = snprintf(st.line, sizeof(st.line), "trace alloc %u B from %p:", unsigned(size), gTraceCaller);
+        st.depth = 0;
+        _Unwind_Backtrace(traceFrame, &st);
+        P3DS_LOGI("%s", st.line);
+    }
+
+    void loadTraceRequest()
+    {
+        FILE* f = fopen("sdmc:/openmw/trace.txt", "r");
+        if (f == nullptr)
+            return;
+        unsigned long addr = 0;
+        int count = 3;
+        if (fscanf(f, "%lx %d", &addr, &count) >= 1 && addr != 0)
+        {
+            gTraceLeft = count;
+            gTraceCaller = reinterpret_cast<void*>(addr);
+            P3DS_LOGI("caller profile: tracing %d allocations from 0x%08lX", count, addr);
+        }
+        fclose(f);
+    }
+
+    void recordAlloc(void* caller, void* p, std::size_t size)
+    {
+        const u32 want = gCallerTid;
+        if (want == 0)
+            return;
+        if (caller == gTraceCaller && gTraceLeft > 0)
+        {
+            --gTraceLeft;
+            traceAllocation(size);
+        }
+        if (want != kAllThreads)
+        {
+            u32 tid = 0;
+            svcGetThreadId(&tid, CUR_THREAD_HANDLE);
+            if (tid != want)
+                return;
+        }
+        LightLock_Lock(&gCallerLock);
+        const int slot = gCallerTid != 0 ? callerSlot(caller) : -1;
+        LiveEntry* live = gLive;
+        if (slot >= 0)
+        {
+            gCallers[slot].bytes += size;
+            ++gCallers[slot].count;
+            if (live != nullptr && gLiveUsed < kLiveMax)
+            {
+                for (u32 i = hashPtr(p);; ++i)
+                {
+                    LiveEntry& e = live[i & (kLiveSlots - 1)];
+                    if (e.p == nullptr)
+                    {
+                        e = LiveEntry{ p, uint32_t(size), uint32_t(slot) };
+                        ++gLiveUsed;
+                        gCallers[slot].net += int64_t(size);
+                        break;
+                    }
+                }
+            }
+            else
+                ++gCallerDropped;
+        }
+        else
+            ++gCallerDropped;
+        LightLock_Unlock(&gCallerLock);
+    }
+
+    // Called before the block is freed (so its address can't be reused and recorded meanwhile).
+    void recordFree(void* p)
+    {
+        if (gLive == nullptr)
+            return;
+        LightLock_Lock(&gCallerLock);
+        if (LiveEntry* live = gLive)
+        {
+            for (u32 i = hashPtr(p);; ++i)
+            {
+                LiveEntry& e = live[i & (kLiveSlots - 1)];
+                if (e.p == nullptr)
+                    break; // not allocated while profiling
+                if (e.p == p)
+                {
+                    gCallers[e.slot].net -= int64_t(e.size);
+                    e.p = kTomb;
+                    break;
+                }
+            }
+        }
+        LightLock_Unlock(&gCallerLock);
     }
 }
 
 namespace p3ds::memprobe
 {
-    void callerProfileStart()
+    void callerProfileStart(bool allThreads)
     {
+        static bool lockInit = false;
+        if (!lockInit)
+        {
+            LightLock_Init(&gCallerLock);
+            lockInit = true;
+        }
+        gCallerTid = 0;
+        loadTraceRequest();
+        // Outside the lock: linearAlloc may itself use operator new (LightLock isn't recursive).
+        LiveEntry* fresh = nullptr;
+        const size_t bytes = kLiveSlots * sizeof(LiveEntry);
+        if (gLive == nullptr)
+        {
+            fresh = static_cast<LiveEntry*>(linearAlloc(bytes));
+            if (fresh != nullptr)
+                memset(fresh, 0, bytes);
+            else
+                P3DS_LOGW("caller profile: no linear memory for the net table, gross bytes only");
+        }
+        LightLock_Lock(&gCallerLock);
         memset(gCallers, 0, sizeof(gCallers));
+        gCallerDropped = 0;
+        if (fresh != nullptr)
+        {
+            gLiveReserveTaken = bytes < p3ds_linear_gpu_reserve ? bytes : 0;
+            p3ds_linear_gpu_reserve -= gLiveReserveTaken;
+            gLiveUsed = 0;
+            gLive = fresh;
+        }
         u32 tid = 0;
         svcGetThreadId(&tid, CUR_THREAD_HANDLE);
-        gCallerTid = tid;
+        gCallerTid = allThreads ? kAllThreads : tid;
+        LightLock_Unlock(&gCallerLock);
+    }
+
+    bool callerProfileActive()
+    {
+        return gCallerTid != 0;
     }
 
     void callerProfileStop(const char* label)
     {
+        LightLock_Lock(&gCallerLock);
         gCallerTid = 0;
-        // Top 24 by bytes (selection; the table is small).
-        P3DS_LOGI("caller profile [%s] (bytes allocated, not net; symbolize with addr2line):", label);
-        for (int k = 0; k < 24; ++k)
+        P3DS_LOGI("caller profile [%s] (net = still allocated; symbolize with addr2line; %lu untracked):", label,
+            (unsigned long)gCallerDropped);
+        // Top 40 by net bytes (selection sort; the table is small).
+        for (int k = 0; k < 40; ++k)
         {
             int best = -1;
             for (int i = 0; i < kCallerSlots; ++i)
-                if (gCallers[i].caller != nullptr && (best < 0 || gCallers[i].bytes > gCallers[best].bytes))
+                if (gCallers[i].caller != nullptr && (best < 0 || gCallers[i].net > gCallers[best].net))
                     best = i;
-            if (best < 0)
+            if (best < 0 || gCallers[best].net <= 0)
                 break;
-            P3DS_LOGI("  caller 0x%08lX  %8.2f MB  %7lu allocs", (unsigned long)uintptr_t(gCallers[best].caller),
+            P3DS_LOGI("  caller 0x%08lX  net %7.2f MB  gross %7.2f MB  %7lu allocs",
+                (unsigned long)uintptr_t(gCallers[best].caller), double(gCallers[best].net) / 1048576.0,
                 double(gCallers[best].bytes) / 1048576.0, (unsigned long)gCallers[best].count);
             gCallers[best].caller = nullptr;
         }
+        LiveEntry* live = gLive;
+        gLive = nullptr;
+        p3ds_linear_gpu_reserve += gLiveReserveTaken;
+        gLiveReserveTaken = 0;
+        LightLock_Unlock(&gCallerLock);
+        if (live != nullptr)
+            linearFree(live);
     }
 }
 
@@ -649,8 +854,6 @@ void* operator new(std::size_t size)
 {
     if (size == 0)
         size = 1;
-    if (gCallerTid != 0)
-        recordCaller(__builtin_return_address(0), size);
     if (size >= kLargeAllocLog)
         P3DS_LOGW("large allocation: %u bytes (%.1f MB) from %p", unsigned(size), double(size) / 1048576.0,
             __builtin_return_address(0));
@@ -661,6 +864,8 @@ void* operator new(std::size_t size)
             if (!tRegistered)
                 registerThreadCounter();
             accountThread(int64_t(malloc_usable_size(p)));
+            if (gCallerTid != 0)
+                recordAlloc(__builtin_return_address(0), p, size);
             return p;
         }
         P3DS_LOGE("operator new(%u bytes) failed, caller %p", unsigned(size), __builtin_return_address(0));
@@ -688,6 +893,8 @@ void* operator new(std::size_t size, const std::nothrow_t&) noexcept
     if (!tRegistered)
         registerThreadCounter();
     accountThread(int64_t(malloc_usable_size(p)));
+    if (gCallerTid != 0)
+        recordAlloc(__builtin_return_address(0), p, size);
     return p;
 }
 
@@ -709,7 +916,11 @@ void operator delete[](void* p, const std::nothrow_t&) noexcept
 void operator delete(void* p) noexcept
 {
     if (p != nullptr)
+    {
         accountThread(-int64_t(malloc_usable_size(p)));
+        if (gLive != nullptr)
+            recordFree(p);
+    }
     std::free(p);
 }
 
@@ -717,6 +928,7 @@ void operator delete(void* p, std::size_t) noexcept
 {
     operator delete(p);
 }
+
 
 // Linked with -Wl,--wrap=abort (see platform3ds/CMakeLists.txt).
 extern "C" [[noreturn]] void __wrap_abort()

@@ -37,6 +37,11 @@ namespace p3ds
 
     const PlatformInfo& info();
 
+    // Main thread stack high-water mark (the stack is painted at init). Returns false once the
+    // bottom of the stack has been overwritten, i.e. it overflowed or is about to.
+    bool mainStackUsage(unsigned& peakBytes, unsigned& sizeBytes);
+    bool mainStackIntact(); // cheap: checks only the bottom words
+
     bool fileExists(const char* path);
     // Reads a small text file into buf (NUL-terminated). Returns false if missing.
     bool readSmallFile(const char* path, char* buf, unsigned bufSize);
