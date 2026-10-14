@@ -64,6 +64,7 @@ namespace omw3ds
             float mGpuWorst = 0;
             float mCmdBufPeak = 0;
             unsigned mVerified = 0;
+            double mLightSlots = 0;
         } gRender;
 
         // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
@@ -338,6 +339,7 @@ namespace omw3ds
         gRender.mGpuWorst = std::max(gRender.mGpuWorst, render.mGpuMs);
         gRender.mCmdBufPeak = std::max(gRender.mCmdBufPeak, render.mCmdBufUsage);
         gRender.mVerified += render.mVerified;
+        gRender.mLightSlots += render.mLightSlotWrites;
 
         gLogAccum += frameSeconds;
         ++gLogFrames;
@@ -354,11 +356,11 @@ namespace omw3ds
                 const double n = gLogFrames;
                 P3DS_LOGI("gpu: per frame %.0f draws, %.0f tris, %.0f leaves (%.0f skipped), emit %.1f ms, "
                           "PICA %.1f ms (worst %.1f), uploads %.0f KB/frame, %lu geometries, linear free %lu KB, "
-                          "cmdbuf peak %.0f%%, %u new objects GPU-checked",
+                          "cmdbuf peak %.0f%%, %u new objects GPU-checked, %.0f light slot uploads/frame",
                     gRender.mDraws / n, gRender.mTriangles / n, gRender.mLeaves / n, gRender.mSkipped / n,
                     gRender.mEmitMs / n, gRender.mGpuMs / n, double(gRender.mGpuWorst), gRender.mUploadKb / n,
                     (unsigned long)render.mGeometries, (unsigned long)render.mLinearFreeKb,
-                    double(gRender.mCmdBufPeak) * 100.0, gRender.mVerified);
+                    double(gRender.mCmdBufPeak) * 100.0, gRender.mVerified, gRender.mLightSlots / n);
             }
             gRender = RenderSums{};
             gLogAccum = 0;

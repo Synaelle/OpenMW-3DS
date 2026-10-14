@@ -195,6 +195,7 @@ namespace Render3DS
             void* mVbo = nullptr;
             uint32_t mVboSize = 0;
             uint32_t mVertexCount = 0;
+            u32 mVboOffset = 0; // physical address - vertex buffer base (GPUREG_ATTRIBBUFFER0_OFFSET)
             void* mIbo = nullptr;
             uint32_t mIboSize = 0;
             std::vector<GpuPrimitive> mPrimitives;
@@ -587,6 +588,7 @@ namespace Render3DS
             flushToGpu(gpu.mVbo, size);
 
             gpu.mVertexCount = count;
+            gpu.mVboOffset = osConvertVirtToPhys(gpu.mVbo) - gBufferBase;
             gpu.mArrays[Attr_Position] = positions;
             gpu.mArrays[Attr_Normal] = geometry.getNormalArray();
             gpu.mArrays[Attr_Color] = geometry.getColorArray();
@@ -1107,7 +1109,6 @@ namespace Render3DS
             const osg::Uniform* mLightBuffer = nullptr;
             unsigned mLightBufferModified = 0;
             int mLightCount = -1;
-            int mLightSlotsLit = kMaxLights; // slots that may hold a real light (all, until written once)
             const osg::Uniform* mSun[3] = {};
             unsigned mSunModified[3] = {};
             const SceneUtil::Material* mMaterial = nullptr;
@@ -1159,6 +1160,29 @@ namespace Render3DS
             BufInfo_Add(buf, vbo, sizeof(Vertex), 4, 0x3210);
         }
 
+        // Scene draws: citro3d re-sends all 12 attribute buffer configurations (~37 command words) whenever the
+        // buffer info changes, i.e. for every draw with its own vertex buffer. The configuration is set once per
+        // frame (sceneBufferInfo) and each draw only rewrites buffer 0's offset register. citro3d's copy of the
+        // offset is kept in step, so a re-send for any reason (it marks the info dirty itself) is still right.
+        C3D_BufCfg* gSceneBuffer = nullptr;
+        u32 gSceneBufferOffset = ~0u;
+
+        void sceneBufferInfo(const void* anyVbo)
+        {
+            bindVertexBuffer(anyVbo);
+            gSceneBuffer = &C3D_GetBufInfo()->buffers[0];
+            gSceneBufferOffset = gSceneBuffer->offset;
+        }
+
+        void setSceneBufferOffset(u32 offset)
+        {
+            if (offset == gSceneBufferOffset)
+                return;
+            gSceneBufferOffset = offset;
+            gSceneBuffer->offset = offset;
+            GPUCMD_AddWrite(GPUREG_ATTRIBBUFFER0_OFFSET, offset);
+        }
+
         float uniformFloat(const Slot<osg::Uniform>& slot, float fallback)
         {
             float value = fallback;
@@ -1172,36 +1196,93 @@ namespace Render3DS
             C3D_FVUnifSet(GPU_VERTEX_SHADER, location, v.x(), v.y(), v.z(), v.w());
         }
 
-        // The shader's lights are unrolled (scene.v.pica): every slot is evaluated. Slots past `count` get an "off"
-        // light (black, far away so no 1/0) - only those that held a real light before, to keep uploads small.
+        // The shader's lights are unrolled (scene.v.pica): every slot is evaluated and the sum doesn't depend on
+        // the order, so lights stay in their slot from one draw to the next and only differences are uploaded.
+        // Objects near each other share most lights (in different orders, OpenMW sorts per object), and a full
+        // 8-light upload per draw was ~20% of the GPU command buffer on hardware (test #13). A light is recognized
+        // by its data, which is identical within a frame for every list containing it (same light, same view).
+        struct LightSlot
+        {
+            float mData[16];
+            bool mLit = false;
+            bool mKnown = false; // false: whatever is in the GPU's registers is unknown (frame start, self-test)
+        };
+        LightSlot gLightSlots[kMaxLights];
+
+        void forgetLightSlots()
+        {
+            for (LightSlot& slot : gLightSlots)
+                slot.mKnown = false;
+        }
+
         // data: OpenMW's LightBuffer floats, 16 per light (lightmanager.cpp configure*(): row 0 position +
         // constant, row 1 ambient + linear, row 2 diffuse + quadratic, row 3 specular + radius).
+        void writeSlot(int slot, const float* m)
+        {
+            ++gStats.mLightSlotWrites;
+            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights + slot * 4, 4);
+            if (m)
+            {
+                const float radius = std::max(m[15], 1.f);
+                out[0] = FVec4_New(m[0], m[1], m[2], 4.f / radius);
+                out[1] = FVec4_New(m[8], m[9], m[10], 0.f);
+                out[2] = FVec4_New(m[4], m[5], m[6], 0.f);
+                out[3] = FVec4_New(m[3], m[7], m[11], 0.f);
+            }
+            else
+            {
+                // Off: black and far away (no 1/0 in the shader).
+                out[0] = FVec4_New(0.f, 0.f, 10000.f, 0.f);
+                out[1] = FVec4_New(0.f, 0.f, 0.f, 0.f);
+                out[2] = FVec4_New(0.f, 0.f, 0.f, 0.f);
+                out[3] = FVec4_New(1.f, 0.f, 0.f, 0.f);
+            }
+        }
+
         void writeLights(const float* data, int count)
         {
-            const int slots = std::max(count, gBound.mLightSlotsLit);
-            if (slots == 0)
-                return;
-            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, slots * 4);
-            for (int i = 0; i < slots; ++i)
+            bool used[kMaxLights] = {};
+            int pending[kMaxLights];
+            int pendingCount = 0;
+            // Lights already in a slot stay there.
+            for (int i = 0; i < count; ++i)
             {
-                if (i < count)
-                {
-                    const float* m = data + i * 16;
-                    const float radius = std::max(m[15], 1.f);
-                    out[i * 4 + 0] = FVec4_New(m[0], m[1], m[2], 4.f / radius);
-                    out[i * 4 + 1] = FVec4_New(m[8], m[9], m[10], 0.f);
-                    out[i * 4 + 2] = FVec4_New(m[4], m[5], m[6], 0.f);
-                    out[i * 4 + 3] = FVec4_New(m[3], m[7], m[11], 0.f);
-                }
+                const float* m = data + i * 16;
+                int found = -1;
+                for (int slot = 0; slot < kMaxLights && found < 0; ++slot)
+                    if (!used[slot] && gLightSlots[slot].mKnown && gLightSlots[slot].mLit
+                        && std::memcmp(gLightSlots[slot].mData, m, sizeof(LightSlot::mData)) == 0)
+                        found = slot;
+                if (found >= 0)
+                    used[found] = true;
                 else
-                {
-                    out[i * 4 + 0] = FVec4_New(0.f, 0.f, 10000.f, 0.f);
-                    out[i * 4 + 1] = FVec4_New(0.f, 0.f, 0.f, 0.f);
-                    out[i * 4 + 2] = FVec4_New(0.f, 0.f, 0.f, 0.f);
-                    out[i * 4 + 3] = FVec4_New(1.f, 0.f, 0.f, 0.f);
-                }
+                    pending[pendingCount++] = i;
             }
-            gBound.mLightSlotsLit = count;
+            // New lights go to free slots, preferably ones that are off already.
+            for (int k = 0; k < pendingCount; ++k)
+            {
+                int target = -1;
+                for (int slot = 0; slot < kMaxLights && target < 0; ++slot)
+                    if (!used[slot] && gLightSlots[slot].mKnown && !gLightSlots[slot].mLit)
+                        target = slot;
+                for (int slot = 0; slot < kMaxLights && target < 0; ++slot)
+                    if (!used[slot])
+                        target = slot;
+                const float* m = data + pending[k] * 16;
+                writeSlot(target, m);
+                used[target] = true;
+                std::memcpy(gLightSlots[target].mData, m, sizeof(LightSlot::mData));
+                gLightSlots[target].mLit = true;
+                gLightSlots[target].mKnown = true;
+            }
+            // Everything else off.
+            for (int slot = 0; slot < kMaxLights; ++slot)
+                if (!used[slot] && (!gLightSlots[slot].mKnown || gLightSlots[slot].mLit))
+                {
+                    writeSlot(slot, nullptr);
+                    gLightSlots[slot].mLit = false;
+                    gLightSlots[slot].mKnown = true;
+                }
         }
 
         void uploadLighting(const ResolvedState& rs)
@@ -1421,7 +1502,11 @@ namespace Render3DS
         // Verification mode: submit what was just recorded (one draw) and wait for the GPU to finish it.
         void verifyDraw(const GpuGeometry& gpu, const GpuPrimitive& prim, const osg::Geometry& geometry)
         {
+            // Not shown: the intermediate "frame" is the clear color plus a few objects, which flashed the fog
+            // color on screen whenever new objects came into view (test #13).
+            C3D_RenderTargetDetachOutput(gTarget);
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
+            C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, kDisplayTransferFlags);
             if (!waitGpuAndBegin(2000))
             {
                 logDraw(true, "GPU HANG on this draw", gpu, prim, geometry);
@@ -1454,7 +1539,9 @@ namespace Render3DS
         bool selfTestStep(const char* name)
         {
             const u64 start = svcGetSystemTick();
+            C3D_RenderTargetDetachOutput(gTarget);
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
+            C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, kDisplayTransferFlags);
             const bool fake = gSimulateHang && std::strncmp(name, "L2 ", 3) == 0;
             if (fake || !waitGpuAndBegin(2000))
             {
@@ -1639,7 +1726,7 @@ namespace Render3DS
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatAmbient, 1, 1, 1, 1);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatEmission, 0, 0, 0, 1);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 1, 0, 1);
-                gBound.mLightSlotsLit = kMaxLights;
+                forgetLightSlots();
                 setTestLights(0);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                 if (!selfTestStep("L2 scene shader (lights unrolled, all off), untextured, z-buffer"))
@@ -1735,6 +1822,8 @@ namespace Render3DS
             C3D_TexBind(0, nullptr);
             gFog = FogState{};
             gBound = Bound{};
+            forgetLightSlots();
+            gSceneBuffer = nullptr;
             gpuFree(vbo);
             gpuFree(probeVbo);
             gpuFree(ibo16);
@@ -1745,10 +1834,30 @@ namespace Render3DS
 
         // ------------------------------------------------------------------ leaves, bins, stages
 
+        // Where the CPU emit time goes, sampled on one frame in 8 (each lap is a system call): the perf log's
+        // "emit.*" phases, scaled back to a per-frame average.
+        bool gSampleEmit = false;
+        uint64_t gEmitLap = 0;
+        struct EmitProfile
+        {
+            uint64_t mGeometry = 0, mState = 0, mTexture = 0, mUniforms = 0, mDraw = 0;
+        } gEmitProfile;
+
+        inline void lap(uint64_t& bucket)
+        {
+            if (!gSampleEmit)
+                return;
+            const uint64_t now = p3ds::memprobe::ticks();
+            bucket += now - gEmitLap;
+            gEmitLap = now;
+        }
+
         void drawLeaf(osgUtil::RenderLeaf* leaf)
         {
             if (gFailure)
                 return;
+            if (gSampleEmit)
+                gEmitLap = p3ds::memprobe::ticks();
             ++gStats.mLeaves;
             const osg::Geometry* geometry = leaf->_drawable ? leaf->_drawable->asGeometry() : nullptr;
             if (geometry == nullptr || leaf->_modelview == nullptr || leaf->_projection == nullptr
@@ -1763,6 +1872,7 @@ namespace Render3DS
                 ++gStats.mSkipped;
                 return;
             }
+            lap(gEmitProfile.mGeometry);
             const ResolvedState& rs = resolve(leaf->_parent);
 
             const FixedState fixed = computeFixedState(rs);
@@ -1775,6 +1885,7 @@ namespace Render3DS
                 gBound.mFixedValid = true;
             }
 
+            lap(gEmitProfile.mState);
             C3D_Tex* texture = rs.mTexture.mValue ? textureFor(*rs.mTexture.mValue) : nullptr;
             if (texture != gBound.mTexture)
             {
@@ -1783,6 +1894,7 @@ namespace Render3DS
                     C3D_TexBind(0, texture);
             }
             setTexEnv(texture != nullptr);
+            lap(gEmitProfile.mTexture);
 
             if (leaf->_projection.get() != gBound.mProjection)
             {
@@ -1799,8 +1911,11 @@ namespace Render3DS
             uploadMaterial(rs);
             uploadTexMat(rs);
             uploadFog(rs);
+            lap(gEmitProfile.mUniforms);
 
-            bindVertexBuffer(gpu->mVbo);
+            if (gSceneBuffer == nullptr)
+                sceneBufferInfo(gpu->mVbo);
+            setSceneBufferOffset(gpu->mVboOffset);
             const bool verify = gVerifyThisFrame || !gpu->mVerified;
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
@@ -1820,6 +1935,7 @@ namespace Render3DS
                         return;
                 }
             }
+            lap(gEmitProfile.mDraw);
             if (verify && !gpu->mVerified)
             {
                 gpu->mVerified = true;
@@ -1900,6 +2016,8 @@ namespace Render3DS
             gResolvedCount = 0;
             gStats = FrameStats{};
             gBound = Bound{};
+            forgetLightSlots();
+            gSceneBuffer = nullptr;
             processPendingDeletes();
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             return true;
@@ -1938,7 +2056,18 @@ namespace Render3DS
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
+            gSampleEmit = gFrame % 8 == 0;
+            gEmitProfile = EmitProfile{};
             drawBin(stage);
+            if (gSampleEmit)
+            {
+                p3ds::perf::add("emit.geometry", gEmitProfile.mGeometry * 8);
+                p3ds::perf::add("emit.state", gEmitProfile.mState * 8);
+                p3ds::perf::add("emit.texture", gEmitProfile.mTexture * 8);
+                p3ds::perf::add("emit.uniforms", gEmitProfile.mUniforms * 8);
+                p3ds::perf::add("emit.draw", gEmitProfile.mDraw * 8);
+                gSampleEmit = false;
+            }
             if (gFailure)
                 return true;
             if (gVerifyThisFrame && gStats.mDraws > drawsBefore)
@@ -2072,6 +2201,11 @@ namespace Render3DS
     const char* failure()
     {
         return gFailure;
+    }
+
+    bool drawsGui()
+    {
+        return false; // MyGUI is not drawn yet (M8)
     }
 
     void requestCapture(const char* path)

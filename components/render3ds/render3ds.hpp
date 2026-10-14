@@ -28,6 +28,8 @@ namespace Render3DS
     bool isActive();
     // Why rendering stopped (a GPU hang: the GPU core was reset and the game runs on headless), or nullptr.
     const char* failure();
+    // Whether MyGUI is drawn. While it isn't, its batches aren't built either (cull time).
+    bool drawsGui();
 
     struct FrameStats
     {
@@ -42,6 +44,7 @@ namespace Render3DS
         float mEmitMs = 0; // CPU time walking the render graph and emitting commands
         float mGpuMs = 0; // PICA time of the previous frame
         float mCmdBufUsage = 0; // fraction of the GPU command buffer used
+        uint32_t mLightSlotWrites = 0; // light slots uploaded (4 vectors each)
     };
     const FrameStats& getLastFrameStats();
 

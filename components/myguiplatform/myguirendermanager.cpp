@@ -18,6 +18,7 @@
 
 #include "myguitexture.hpp"
 #ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
 #endif
 
@@ -539,6 +540,9 @@ namespace MyGUIPlatform
     void RenderManager::collectDrawCalls()
     {
 #ifdef OPENMW_PLATFORM_3DS
+        // MyGUI isn't drawn yet on the 3DS: building its batches cost ~2.6 ms of cull per frame on hardware.
+        if (!Render3DS::drawsGui())
+            return;
         p3ds::perf::Phase phase("guiCull"); // MyGUI layout -> batches, in the cull traversal
 #endif
         begin();
