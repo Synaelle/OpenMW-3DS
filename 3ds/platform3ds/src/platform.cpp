@@ -101,8 +101,10 @@ extern "C"
             if (Thread t = threadCreate(reinterpret_cast<ThreadFunc>(func), arg, stack_size, 0x30, 2, false))
             {
                 *thread = t;
+                P3DS_LOGI("thread: std::thread on core 2, prio 0x30, %u KB stack", unsigned(stack_size / 1024));
                 return 0;
             }
+            P3DS_LOGW("thread: core 2 unavailable, std::thread falls back to core 0 at prio 0x3F");
         }
         return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
     }
@@ -289,7 +291,7 @@ namespace p3ds
         gInfo.autorun = fileExists(kAutorunPath);
         crash::setWaitForInput(!gInfo.autorun);
 
-        const mem::Stats ms = mem::query();
+        const mem::Stats ms = mem::queryExact();
         P3DS_LOGI("build %s", p3ds_build_id);
         P3DS_LOGI("platform3ds: %s, %s (title %016llX), speedup %s, syscore limit %d%%, autorun %s",
             isNew ? "New 3DS" : "Old 3DS", gInfo.launchedAsCia ? "cia" : "3dsx", (unsigned long long)gInfo.programId,

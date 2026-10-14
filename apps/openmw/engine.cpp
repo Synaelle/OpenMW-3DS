@@ -90,7 +90,7 @@
 #include <platform3ds/memprobe.hpp>
 #include "n3ds/frame3ds.hpp"
 #define OMW3DS_MEMSTAGE(label) p3ds::memprobe::stage(label)
-#define OMW3DS_PHASE(label) omw3ds::PhaseTimer omw3dsPhase(label)
+#define OMW3DS_PHASE(label) p3ds::perf::Phase omw3dsPhase(label)
 #else
 #define OMW3DS_MEMSTAGE(label)
 #define OMW3DS_PHASE(label)

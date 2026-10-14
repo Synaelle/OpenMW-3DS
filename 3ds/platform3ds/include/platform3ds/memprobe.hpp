@@ -32,6 +32,38 @@ namespace p3ds::memprobe
     void addReporter(const char* name, Reporter fn, void* ctx);
     void logReporters();
 
+    class Scope;
+}
+
+// Frame phase timing: time spent in named parts of the frame, summed (thread-safe, any thread) and
+// logged per frame as a "perf/more" line by the game's frame hook. Label: a string literal (keyed by
+// pointer). Cost: two system tick reads and an uncontended lock per phase.
+namespace p3ds::perf
+{
+    void add(const char* label, uint64_t ticks);
+    // Logs "perf/more: label ms ..." averaged over `frames`, and resets.
+    void logAndReset(unsigned frames);
+
+    class Phase
+    {
+    public:
+        explicit Phase(const char* label)
+            : mLabel(label)
+            , mStart(memprobe::ticks())
+        {
+        }
+        ~Phase() { add(mLabel, memprobe::ticks() - mStart); }
+        Phase(const Phase&) = delete;
+        Phase& operator=(const Phase&) = delete;
+
+    private:
+        const char* mLabel;
+        uint64_t mStart;
+    };
+}
+
+namespace p3ds::memprobe
+{
     class Scope
     {
     public:

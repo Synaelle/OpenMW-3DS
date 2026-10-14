@@ -17,6 +17,9 @@
 #include <components/shader/shadermanager.hpp>
 
 #include "myguitexture.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
 
 #define MYGUI_PLATFORM_LOG_SECTION "Platform"
 #define MYGUI_PLATFORM_LOG(level, text) MYGUI_LOGGING(MYGUI_PLATFORM_LOG_SECTION, level, text)
@@ -535,6 +538,9 @@ namespace MyGUIPlatform
 
     void RenderManager::collectDrawCalls()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::perf::Phase phase("guiCull"); // MyGUI layout -> batches, in the cull traversal
+#endif
         begin();
         onRenderToTarget(this, mUpdate);
         end();

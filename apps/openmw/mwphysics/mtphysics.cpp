@@ -34,6 +34,9 @@
 #include "object.hpp"
 #include "physicssystem.hpp"
 #include "projectile.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
 
 namespace MWPhysics
 {
@@ -752,6 +755,9 @@ namespace MWPhysics
     {
         mWorkersSync->runWorker([this] {
             std::shared_lock lock(mSimulationMutex);
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::perf::Phase phase("physWorker"); // async worker (core 2)
+#endif
             doSimulation();
         });
     }
@@ -902,6 +908,11 @@ namespace MWPhysics
     void PhysicsTaskScheduler::waitForWorkers()
     {
         if (mWorkersSync != nullptr)
+        {
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::perf::Phase phase("physWait"); // main thread waiting for the async worker
+#endif
             mWorkersSync->waitForWorkers();
+        }
     }
 }

@@ -9,6 +9,9 @@
 
 #include "skeleton.hpp"
 #include "util.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
 
 namespace SceneUtil
 {
@@ -136,6 +139,9 @@ namespace SceneUtil
 
     void RigGeometry::cull(osg::NodeVisitor* nv)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::perf::Phase phase("skinning"); // CPU skinning, in the cull traversal
+#endif
         if (!mSkeleton)
         {
             Log(Debug::Error)

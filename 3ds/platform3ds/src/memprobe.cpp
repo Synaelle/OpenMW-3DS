@@ -52,6 +52,61 @@ namespace p3ds::memprobe
     {
         return svcGetSystemTick();
     }
+}
+
+namespace p3ds::perf
+{
+    namespace
+    {
+        struct PhaseSum
+        {
+            const char* label;
+            uint64_t ticks;
+        };
+        constexpr int kMaxPhases = 24;
+        PhaseSum gPhases[kMaxPhases];
+        int gPhaseCount = 0;
+        LightLock gPhaseLock;
+        bool gPhaseLockInit = [] {
+            LightLock_Init(&gPhaseLock);
+            return true;
+        }();
+    }
+
+    void add(const char* label, uint64_t ticks)
+    {
+        LightLock_Lock(&gPhaseLock);
+        int i = 0;
+        while (i < gPhaseCount && gPhases[i].label != label)
+            ++i;
+        if (i < gPhaseCount)
+            gPhases[i].ticks += ticks;
+        else if (gPhaseCount < kMaxPhases)
+            gPhases[gPhaseCount++] = PhaseSum{ label, ticks };
+        LightLock_Unlock(&gPhaseLock);
+    }
+
+    void logAndReset(unsigned frames)
+    {
+        if (frames == 0)
+            return;
+        char line[400];
+        int len = snprintf(line, sizeof(line), "perf/more:");
+        LightLock_Lock(&gPhaseLock);
+        for (int i = 0; i < gPhaseCount; ++i)
+        {
+            if (len < int(sizeof(line)) - 32)
+                len += snprintf(line + len, sizeof(line) - len, " %s %.1f", gPhases[i].label,
+                    double(gPhases[i].ticks) * 1000.0 / SYSCLOCK_ARM11 / frames);
+            gPhases[i].ticks = 0;
+        }
+        LightLock_Unlock(&gPhaseLock);
+        P3DS_LOGI("%s", line);
+    }
+}
+
+namespace p3ds::memprobe
+{
 
     void add(uint32_t key, int64_t bytes, uint64_t elapsedTicks)
     {

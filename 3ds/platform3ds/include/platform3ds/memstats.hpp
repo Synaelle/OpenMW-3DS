@@ -20,7 +20,12 @@ namespace p3ds::mem
         uint32_t vramFree = 0; // of 6 MB
     };
 
+    // Cheap: heapUsed/heapArena are the values from the last queryExact() (the watchdog refreshes them
+    // every 5 s). Safe to call every frame.
     Stats query();
+    // Also walks the malloc heap (mallinfo): ~10+ ms on hardware with a large fragmented heap, holding
+    // the malloc lock. Watchdog log, crash reports, startup only.
+    Stats queryExact();
 
     // Heap budget the hardware would give us. Emulators can over-provision the region; in that case
     // the budget is reduced by the excess so emulator runs fail like the console would.

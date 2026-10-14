@@ -13,6 +13,9 @@
 #include <components/shader/shadermanager.hpp>
 
 #include "memorybarrier.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
 
 namespace
 {
@@ -685,6 +688,9 @@ namespace SceneUtil
 
     bool LightListCallback::pushLightState(osg::Node* node, osgUtil::CullVisitor* cv)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::perf::Phase phase("lights"); // per-object light lists, in the cull traversal
+#endif
         if (!mLightManager)
         {
             mLightManager = findLightManager(cv->getNodePath());

@@ -19,6 +19,19 @@ namespace p3ds::mem
     namespace
     {
         bool gOverBudget = false;
+        // Last mallinfo() figures (see queryExact): mallinfo walks every free chunk under the malloc lock,
+        // ~10+ ms with OpenMW's fragmented heap on hardware, stalling every other thread's malloc.
+        uint32_t gHeapUsed = 0;
+        uint32_t gHeapArena = 0;
+    }
+
+    Stats queryExact()
+    {
+        const struct mallinfo mi = mallinfo();
+        const uint32_t gap = uint32_t(p3ds_heap_extension_gap());
+        __atomic_store_n(&gHeapArena, uint32_t(mi.arena) - gap, __ATOMIC_RELAXED);
+        __atomic_store_n(&gHeapUsed, uint32_t(mi.uordblks) - gap, __ATOMIC_RELAXED);
+        return query();
     }
 
     Stats query()
@@ -41,10 +54,10 @@ namespace p3ds::mem
         s.linearFree = linearSpaceFree();
         s.vramFree = vramSpaceFree();
 
-        const struct mallinfo mi = mallinfo();
-        const uint32_t gap = uint32_t(p3ds_heap_extension_gap());
-        s.heapArena = uint32_t(mi.arena) - gap;
-        s.heapUsed = uint32_t(mi.uordblks) - gap;
+        if (__atomic_load_n(&gHeapArena, __ATOMIC_RELAXED) == 0)
+            return queryExact(); // never sampled yet (e.g. no watchdog running)
+        s.heapArena = __atomic_load_n(&gHeapArena, __ATOMIC_RELAXED);
+        s.heapUsed = __atomic_load_n(&gHeapUsed, __ATOMIC_RELAXED);
         return s;
     }
 
