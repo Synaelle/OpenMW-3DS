@@ -105,8 +105,12 @@ foreach ($rel in $changed) {
     New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
     Copy-Item (Join-Path $sd $rel) $dst
 }
+# The tester copies the whole openmw folder when it changed, and only installs the CIA when it didn't.
+$openmwChanged = @($changed + $removed | Where-Object { $_ -like 'openmw/*' }).Count -gt 0
+$verdict = if ($openmwChanged) { 'openmw folder: CHANGED - copy the whole openmw folder, then install the CIA' }
+           else { 'openmw folder: UNCHANGED - only install the CIA' }
 $lines = @("OpenMW 3DS - update ${stamp}: copy the CONTENTS of this folder to the SD card root (overwrite).", '',
-    "Changed files ($($changed.Count)):") + ($changed | ForEach-Object { "  sdmc:/$_" })
+    $verdict, '', "Changed files ($($changed.Count)):") + ($changed | ForEach-Object { "  sdmc:/$_" })
 if ($removed.Count) { $lines += @('', "Delete these files from the SD card ($($removed.Count)):") + ($removed | ForEach-Object { "  sdmc:/$_" }) }
 if (-not (Test-Path $manifestPath)) { $lines += @('', '(No previous manifest: this is the full package.)') }
 $lines | Set-Content (Join-Path $update 'UPDATE.txt')
