@@ -2,6 +2,10 @@
 
 #include <components/debug/debuglog.hpp>
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <3ds.h>
+#endif
+
 #include <numeric>
 
 namespace SceneUtil
@@ -125,6 +129,12 @@ namespace SceneUtil
 
     void WorkThread::run()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // std::threads share core 2 at priority 0x30 (platform3ds) and the 3DS doesn't time-slice: a long model
+        // load here would hold up the physics thread, which the main thread waits for every frame. One step lower,
+        // physics preempts it.
+        svcSetThreadPriority(CUR_THREAD_HANDLE, 0x31);
+#endif
         while (true)
         {
             std::shared_ptr<WorkItem> item = mWorkQueue->removeWorkItem();

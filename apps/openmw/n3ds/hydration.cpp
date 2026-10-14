@@ -11,12 +11,14 @@
 #include "../mwworld/scene.hpp"
 
 #include <components/esm/position.hpp>
+#include <components/misc/resourcehelpers.hpp>
 
 #include <platform3ds/log.hpp>
 
 #include <3ds.h>
 
 #include <algorithm>
+#include <string>
 #include <unordered_set>
 
 namespace omw3ds::hydration
@@ -28,6 +30,7 @@ namespace omw3ds::hydration
         // Objects that failed to insert (a broken model): not retried on every pass.
         std::unordered_set<const MWWorld::LiveCellRefBase*> gFailed;
         std::vector<MWWorld::CellStore*> gCells; // active cells as of the last pass
+        std::unordered_set<const MWWorld::LiveCellRefBase*> gPreloaded; // asked for once per set of active cells
         std::size_t gCursor = 0;
 
         // Insertions stop for the frame once this much time went into them (a model not loaded yet comes from
@@ -89,6 +92,7 @@ namespace omw3ds::hydration
         {
             gCells.assign(active.begin(), active.end());
             gFailed.clear();
+            gPreloaded.clear();
         }
         MWWorld::CellStore* cell = gCells[gCursor++ % gCells.size()];
         if (!cell->isExterior())
@@ -98,6 +102,7 @@ namespace omw3ds::hydration
         const float removeLimit = kRemoveRadius * kRemoveRadius;
         std::vector<MWWorld::Ptr> toInsert;
         std::vector<MWWorld::Ptr> toRemove;
+        std::vector<MWWorld::Ptr> toPreload;
         // Collect first: inserting may change the cell (a levelled creature list spawns its creature).
         cell->forEach([&](const MWWorld::Ptr& ptr) {
             if (ptr == player || !managed(ptr))
@@ -107,6 +112,9 @@ namespace omw3ds::hydration
             const float radius = insertRadius(ptr);
             if (!inScene && d2 < radius * radius && !gFailed.contains(ptr.mRef))
                 toInsert.push_back(ptr);
+            else if (!inScene && d2 < (radius + kPreloadMargin) * (radius + kPreloadMargin)
+                && !gPreloaded.contains(ptr.mRef))
+                toPreload.push_back(ptr);
             else if (inScene && d2 > removeLimit)
                 toRemove.push_back(ptr);
             return true;
@@ -114,6 +122,18 @@ namespace omw3ds::hydration
 
         for (const MWWorld::Ptr& ptr : toRemove)
             scene.removeObjectFromScene(ptr);
+
+        // Every model the object uses: an NPC is a dozen (body parts, equipment), ~0.3-0.5 s to load on the main
+        // thread otherwise. Paths corrected as CellPreloader does.
+        std::vector<VFS::Path::NormalizedView> models;
+        for (const MWWorld::Ptr& ptr : toPreload)
+        {
+            gPreloaded.insert(ptr.mRef);
+            models.clear();
+            ptr.getClass().getModelsToPreload(ptr, models);
+            for (VFS::Path::NormalizedView model : models)
+                scene.preload(std::string(Misc::ResourceHelpers::correctMeshPath(model).value()), true);
+        }
 
         // Scenery before actors, then nearest first.
         std::sort(toInsert.begin(), toInsert.end(), [&](const MWWorld::Ptr& a, const MWWorld::Ptr& b) {
@@ -126,10 +146,15 @@ namespace omw3ds::hydration
         const uint64_t budget = uint64_t(kInsertBudgetMs * SYSCLOCK_ARM11 / 1000.0);
         for (const MWWorld::Ptr& ptr : toInsert)
         {
+            const uint64_t before = svcGetSystemTick();
             scene.addObjectToScene(ptr);
             if (ptr.getRefData().getBaseNode() == nullptr)
                 gFailed.insert(ptr.mRef);
-            if (svcGetSystemTick() - start > budget)
+            const uint64_t now = svcGetSystemTick();
+            const double ms = double(now - before) * 1000.0 / SYSCLOCK_ARM11;
+            if (ms > 50.0) // what still stalls (the model and collision shape were preloaded)
+                P3DS_LOGI("hydration: inserting %s took %.0f ms", ptr.getCellRef().getRefId().toDebugString().c_str(), ms);
+            if (now - start > budget)
                 break;
         }
     }

@@ -55,6 +55,9 @@
 
 #ifdef OPENMW_PLATFORM_3DS
 #include "../n3ds/hydration.hpp"
+#include <3ds.h>
+#include <cstdio>
+#include <components/resource/bulletshapemanager.hpp>
 #include <platform3ds/memprobe.hpp>
 // Diagnostic: attributes main-thread heap growth while loading a cell to the object's record type
 // (rendering) and to subsystems ("+PHY" physics, "+MEC" mechanics, "+LUA" Lua).
@@ -122,9 +125,52 @@ namespace
     // TODO: find a more clever way to make paging exclusion more reliable?
     static osg::ref_ptr<SceneUtil::PositionAttitudeTransform> pagedNode = new SceneUtil::PositionAttitudeTransform;
 
+#ifdef OPENMW_PLATFORM_3DS
+    // Times the steps of putting one object in the scene and logs them when it took long (hydration stalls).
+    class InsertTimer
+    {
+    public:
+        explicit InsertTimer(const MWWorld::Ptr& ptr)
+            : mPtr(ptr)
+            , mStart(svcGetSystemTick())
+            , mLast(mStart)
+        {
+        }
+
+        void step(const char* name)
+        {
+            const uint64_t now = svcGetSystemTick();
+            if (mLength < sizeof(mText))
+                mLength += std::snprintf(mText + mLength, sizeof(mText) - mLength, " %s %.0f", name, toMs(now - mLast));
+            mLast = now;
+        }
+
+        ~InsertTimer()
+        {
+            if (toMs(mLast - mStart) > 50.0)
+                Log(Debug::Info) << "3ds insert " << mPtr.getCellRef().getRefId() << " (ms):" << mText;
+        }
+
+    private:
+        static double toMs(uint64_t ticks) { return double(ticks) * 1000.0 / SYSCLOCK_ARM11; }
+
+        const MWWorld::Ptr& mPtr;
+        uint64_t mStart;
+        uint64_t mLast;
+        char mText[160] = {};
+        size_t mLength = 0;
+    };
+#define OMW3DS_INSERT_STEP(name) insertTimer.step(name)
+#else
+#define OMW3DS_INSERT_STEP(name)
+#endif
+
     void addObject(const MWWorld::Ptr& ptr, const MWWorld::World& world, const std::vector<ESM::RefNum>& pagedRefs,
         MWPhysics::PhysicsSystem& physics, MWRender::RenderingManager& rendering)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        InsertTimer insertTimer(ptr);
+#endif
         if (ptr.getRefData().getBaseNode() || physics.getActor(ptr))
         {
             Log(Debug::Warning) << "Warning: Tried to add " << ptr.getCellRef().getRefId() << " to the scene twice";
@@ -143,27 +189,32 @@ namespace
                 ptr.getRefData().setBaseNode(pagedNode);
             setNodeRotation(ptr, rendering, rotation);
         }
+        OMW3DS_INSERT_STEP("render");
 
         if (ptr.getClass().useAnim())
         {
             OMW3DS_MEMSCOPE(0x43454D2B); // "+MEC"
             MWBase::Environment::get().getMechanicsManager()->add(ptr);
         }
+        OMW3DS_INSERT_STEP("mechanics");
 
         if (ptr.getClass().isActor())
             rendering.addWaterRippleEmitter(ptr);
 
         // Restore effect particles
         world.applyLoopingParticles(ptr);
+        OMW3DS_INSERT_STEP("effects");
 
         if (!model.empty())
         {
             OMW3DS_MEMSCOPE(0x5948502B); // "+PHY"
             ptr.getClass().insertObject(ptr, model, rotation, physics);
         }
+        OMW3DS_INSERT_STEP("physics");
 
         OMW3DS_MEMSCOPE(0x41554C2B); // "+LUA"
         MWBase::Environment::get().getLuaManager()->objectAddedToScene(ptr);
+        OMW3DS_INSERT_STEP("lua");
     }
 
     void addObject(const MWWorld::Ptr& ptr, const MWWorld::World& world, const MWPhysics::PhysicsSystem& physics,
@@ -1152,6 +1203,12 @@ namespace MWWorld
             try
             {
                 mSceneManager->getTemplate(mMesh);
+#ifdef OPENMW_PLATFORM_3DS
+                // The collision shape too (as CellPreloader does): inserting the object later would otherwise read
+                // and parse the file again on the main thread.
+                if (mShapeManager != nullptr)
+                    mShapeManager->getShape(mMesh);
+#endif
             }
             catch (const std::exception& e)
             {
@@ -1161,9 +1218,16 @@ namespace MWWorld
 
         void abort() override { mAborted = true; }
 
+#ifdef OPENMW_PLATFORM_3DS
+        void setShapeManager(Resource::BulletShapeManager* shapeManager) { mShapeManager = shapeManager; }
+#endif
+
     private:
         VFS::Path::Normalized mMesh;
         Resource::SceneManager* mSceneManager;
+#ifdef OPENMW_PLATFORM_3DS
+        Resource::BulletShapeManager* mShapeManager = nullptr;
+#endif
         std::atomic_bool mAborted{ false };
     };
 
@@ -1178,6 +1242,9 @@ namespace MWWorld
             return;
 
         auto item = std::make_shared<PreloadMeshItem>(meshPath, mRendering.getResourceSystem()->getSceneManager());
+#ifdef OPENMW_PLATFORM_3DS
+        item->setShapeManager(mPhysics->getShapeManager());
+#endif
         mRendering.getWorkQueue()->addWorkItem(item);
         const auto isDone = [](const std::shared_ptr<SceneUtil::WorkItem>& v) { return v->isDone(); };
         mWorkItems.erase(std::remove_if(mWorkItems.begin(), mWorkItems.end(), isDone), mWorkItems.end());

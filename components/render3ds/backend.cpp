@@ -14,6 +14,7 @@
 #include <osg/Geometry>
 #include <osg/Observer>
 #include <osg/TexMat>
+#include <osgParticle/ParticleSystem>
 #include <osg/Texture2D>
 #include <osg/Uniform>
 #include <osg/View>
@@ -566,6 +567,40 @@ namespace Render3DS
             return static_cast<uint8_t>(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f);
         }
 
+        // Geometry drawn only as GL_QUADS arrays: every quad has its own 4 vertices.
+        bool onlyArrayQuads(const osg::Geometry& geometry)
+        {
+            if (geometry.getNumPrimitiveSets() == 0)
+                return false;
+            for (const auto& set : geometry.getPrimitiveSetList())
+                if (set->getMode() != osg::PrimitiveSet::QUADS
+                    || set->getType() != osg::PrimitiveSet::DrawArraysPrimitiveType)
+                    return false;
+            return true;
+        }
+
+        // OpenMW's water plane repeats its texture 900 times; near the player the texture coordinates are ~450,
+        // where the PICA's float24 (16-bit mantissa) is off by ~1 texel: noisy sampling, sparkles and shimmering on
+        // the water (hardware test #18). Each quad has its own vertices, so its coordinates can lose their common
+        // whole part, which a repeating texture doesn't see.
+        void rebaseQuadTexCoords(Vertex* vertices, uint32_t count)
+        {
+            for (uint32_t q = 0; q + 4 <= count; q += 4)
+            {
+                Vertex* quad = vertices + q;
+                for (int c = 0; c < 2; ++c)
+                {
+                    float lowest = quad[0].mTexCoord[c];
+                    for (int k = 1; k < 4; ++k)
+                        lowest = std::min(lowest, quad[k].mTexCoord[c]);
+                    const float shift = std::floor(lowest);
+                    if (shift != 0.f)
+                        for (int k = 0; k < 4; ++k)
+                            quad[k].mTexCoord[c] -= shift;
+                }
+            }
+        }
+
         bool buildVertices(GpuGeometry& gpu, const osg::Geometry& geometry)
         {
             const auto* positions = dynamic_cast<const osg::Vec3Array*>(geometry.getVertexArray());
@@ -631,6 +666,8 @@ namespace Render3DS
                 else
                     out->mTexCoord[0] = out->mTexCoord[1] = 0.f;
             }
+            if (texcoords && onlyArrayQuads(geometry))
+                rebaseQuadTexCoords(reinterpret_cast<Vertex*>(gpu.mVbo), count);
             flushToGpu(gpu.mVbo, size);
 
             gpu.mVertexCount = count;
@@ -2117,6 +2154,121 @@ namespace Render3DS
             gEmitLap = now;
         }
 
+        // Vertices built on the CPU every frame (particle quads). When beginFrame returns, the GPU has finished the
+        // previous frame, so the buffer is refilled from the start each frame.
+        constexpr uint32_t kTransientVertices = 4096; // 682 particles, 144 KB
+        Vertex* gTransient = nullptr; // linear memory (init)
+        uint32_t gTransientUsed = 0;
+        bool gWarnedTransient = false;
+
+        // osgParticle::ParticleSystem::drawImplementation's quads (OSG ParticleSystem.cpp), on the CPU: OpenMW's
+        // fires, flames, smoke and spell effects (they draw through immediate GL that never reaches us). Normal
+        // (0, 0, 1) like NifOsg::ParticleSystem's normal array.
+        bool buildParticles(
+            const osgParticle::ParticleSystem& ps, const osg::Matrix& modelview, uint32_t& first, uint32_t& count)
+        {
+            first = gTransientUsed;
+            count = 0;
+            if (gTransient == nullptr || ps.numParticles() <= 0)
+                return false;
+            const int detail = std::max(1, ps.getLevelOfDetail());
+            const float scale = std::sqrt(static_cast<float>(detail));
+            osg::Vec3 xAxis = ps.getAlignVectorX();
+            osg::Vec3 yAxis = ps.getAlignVectorY();
+            osg::Vec3 alignedX = xAxis;
+            osg::Vec3 alignedY = yAxis;
+            const bool billboard = ps.getParticleAlignment() == osgParticle::ParticleSystem::BILLBOARD;
+            if (billboard)
+            {
+                xAxis = osg::Matrix::transform3x3(modelview, xAxis);
+                yAxis = osg::Matrix::transform3x3(modelview, yAxis);
+                const float lengthX2 = xAxis.length2(), lengthY2 = yAxis.length2();
+                float xScale, yScale;
+                if (ps.getParticleScaleReferenceFrame() == osgParticle::ParticleSystem::LOCAL_COORDINATES)
+                {
+                    xScale = 1.f / std::sqrt(lengthX2);
+                    yScale = 1.f / std::sqrt(lengthY2);
+                }
+                else
+                {
+                    xScale = 1.f / lengthX2;
+                    yScale = 1.f / lengthY2;
+                }
+                alignedX *= xScale;
+                alignedY *= yScale;
+                xAxis *= xScale;
+                yAxis *= yScale;
+            }
+            const uint32_t room = kTransientVertices - gTransientUsed;
+            Vertex* out = gTransient + first;
+            for (int i = 0; i < ps.numParticles(); i += detail)
+            {
+                const osgParticle::Particle* particle = ps.getParticle(i);
+                if (!particle->isAlive())
+                    continue;
+                switch (particle->getShape())
+                {
+                    case osgParticle::Particle::QUAD:
+                    case osgParticle::Particle::QUAD_TRIANGLESTRIP:
+                    case osgParticle::Particle::HEXAGON:
+                    case osgParticle::Particle::USER:
+                        break;
+                    default:
+                        continue; // points and lines
+                }
+                if (count + 6 > room)
+                {
+                    if (!gWarnedTransient)
+                        Log(Debug::Warning) << "render3ds: more particles than the per-frame buffer holds";
+                    gWarnedTransient = true;
+                    break;
+                }
+                osg::Vec3 x = xAxis, y = yAxis;
+                const osg::Vec3& angle = particle->getAngle();
+                if (angle.x() != 0.f || angle.y() != 0.f || angle.z() != 0.f)
+                {
+                    osg::Matrix rotation;
+                    rotation.makeRotate(angle.x(), osg::Vec3(1, 0, 0), angle.y(), osg::Vec3(0, 1, 0), angle.z(),
+                        osg::Vec3(0, 0, 1));
+                    x = osg::Matrix::transform3x3(alignedX, rotation);
+                    y = osg::Matrix::transform3x3(alignedY, rotation);
+                    if (billboard)
+                    {
+                        x = osg::Matrix::transform3x3(modelview, x);
+                        y = osg::Matrix::transform3x3(modelview, y);
+                    }
+                }
+                osg::Vec4 color = particle->getCurrentColor();
+                color.a() *= particle->getCurrentAlpha();
+                const float size = particle->getCurrentSize() * scale;
+                const osg::Vec3 p1 = x * size, p2 = y * size;
+                const osg::Vec3& pos = particle->getPosition();
+                const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
+                const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
+                const osg::Vec3 corners[4] = { pos - p1 - p2, pos + p1 - p2, pos + p1 + p2, pos - p1 + p2 };
+                const float uv[4][2] = { { s0, t0 }, { s1, t0 }, { s1, t1 }, { s0, t1 } };
+                uint8_t rgba[4];
+                for (int k = 0; k < 4; ++k)
+                    rgba[k] = static_cast<uint8_t>(std::clamp(color[k], 0.f, 1.f) * 255.f + 0.5f);
+                static const int order[6] = { 0, 1, 2, 2, 3, 0 };
+                for (int corner : order)
+                {
+                    Vertex& v = out[count++];
+                    std::memcpy(v.mPosition, corners[corner].ptr(), 12);
+                    v.mNormal[0] = v.mNormal[1] = 0.f;
+                    v.mNormal[2] = 1.f;
+                    std::memcpy(v.mColor, rgba, 4);
+                    v.mTexCoord[0] = uv[corner][0];
+                    v.mTexCoord[1] = uv[corner][1];
+                }
+            }
+            if (count == 0)
+                return false;
+            flushToGpu(out, count * sizeof(Vertex));
+            gTransientUsed += count;
+            return true;
+        }
+
         void drawLeaf(osgUtil::RenderLeaf* leaf)
         {
             if (gFailure)
@@ -2125,19 +2277,32 @@ namespace Render3DS
                 gEmitLap = p3ds::memprobe::ticks();
             ++gStats.mLeaves;
             const osg::Geometry* geometry = leaf->_drawable ? leaf->_drawable->asGeometry() : nullptr;
-            if (geometry == nullptr || leaf->_modelview == nullptr || leaf->_projection == nullptr
-                || leaf->_parent == nullptr)
+            const osgParticle::ParticleSystem* particles = geometry == nullptr && leaf->_drawable
+                ? dynamic_cast<const osgParticle::ParticleSystem*>(leaf->_drawable.get())
+                : nullptr;
+            if ((geometry == nullptr && particles == nullptr) || leaf->_modelview == nullptr
+                || leaf->_projection == nullptr || leaf->_parent == nullptr)
             {
-                ++gStats.mSkipped; // particles, MyGUI, ... (not drawn yet)
+                ++gStats.mSkipped; // MyGUI, debug drawables, ... (not drawn)
                 logSkipped(leaf->_drawable.get(), "not a geometry");
                 return;
             }
-            GpuGeometry* gpu = geometryFor(*geometry);
-            if (gpu == nullptr || gpu->mPrimitives.empty())
+            GpuGeometry* gpu = nullptr;
+            uint32_t particleFirst = 0, particleCount = 0;
+            if (particles)
             {
-                ++gStats.mSkipped;
-                logSkipped(geometry, "no usable vertices/primitives");
-                return;
+                if (!buildParticles(*particles, *leaf->_modelview, particleFirst, particleCount))
+                    return; // no live particles
+            }
+            else
+            {
+                gpu = geometryFor(*geometry);
+                if (gpu == nullptr || gpu->mPrimitives.empty())
+                {
+                    ++gStats.mSkipped;
+                    logSkipped(geometry, "no usable vertices/primitives");
+                    return;
+                }
             }
             lap(gEmitProfile.mGeometry);
             const ResolvedState& rs = resolve(leaf->_parent);
@@ -2192,6 +2357,17 @@ namespace Render3DS
             uploadFog(rs, sky);
             lap(gEmitProfile.mUniforms);
 
+            if (particles)
+            {
+                if (gSceneBuffer == nullptr)
+                    sceneBufferInfo(gTransient);
+                setSceneBufferOffset(osConvertVirtToPhys(gTransient) - gBufferBase);
+                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(particleFirst), static_cast<int>(particleCount));
+                ++gStats.mDraws;
+                gStats.mTriangles += particleCount / 3;
+                lap(gEmitProfile.mDraw);
+                return;
+            }
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gpu->mVbo);
             setSceneBufferOffset(gpu->mVboOffset);
@@ -2297,6 +2473,7 @@ namespace Render3DS
             gBound = Bound{};
             forgetLightSlots();
             gSceneBuffer = nullptr;
+            gTransientUsed = 0;
             processPendingDeletes();
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             if (gSelfTestDone) // the self-test's first steps keep the exact M0 setup: unit 1 never bound
@@ -2421,6 +2598,9 @@ namespace Render3DS
         std::memset(gUnusedTex1.data, 0, gUnusedTex1.size);
         GSPGPU_FlushDataCache(gUnusedTex1.data, gUnusedTex1.size);
         gUnusedTex1Ready = true;
+        gTransient = static_cast<Vertex*>(gpuAlloc(kTransientVertices * sizeof(Vertex)));
+        if (gTransient == nullptr)
+            P3DS_LOGW("render3ds: no linear memory for the particle buffer; particles are not drawn");
 
         gDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(scene_shbin)), scene_shbin_size);
         shaderProgramInit(&gProgram);
