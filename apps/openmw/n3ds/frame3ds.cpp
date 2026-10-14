@@ -36,6 +36,8 @@
 #include <string>
 #include <vector>
 
+#include <sys/stat.h>
+
 namespace omw3ds
 {
     namespace
@@ -313,6 +315,8 @@ namespace omw3ds
         if (hidKeysDown() & KEY_SELECT)
         {
             static unsigned count = 0;
+            if (count == 0)
+                mkdir("sdmc:/openmw/screenshots", 0777); // may be missing (empty folders and FTP copies)
             char path[64];
             std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count++);
             Render3DS::requestCapture(path);
