@@ -188,8 +188,13 @@ namespace p3ds
         const PlatformInfo& pi = info();
 
         char title[kCols + 1];
-        snprintf(title, sizeof(title), " OpenMW3DS debug   %s %s", pi.isNew3DS ? "N3DS" : "O3DS",
-            pi.speedupEnabled ? "804MHz" : "268MHz");
+        // The build stamp ("YYYYMMDD-HHMMSS rev", UTC): "build 1014-2112" shows at a glance which CIA is installed
+        // (the package README names the one it contains).
+        char stamp[10] = "?";
+        if (strlen(p3ds_build_id) >= 13)
+            snprintf(stamp, sizeof(stamp), "%.4s-%.4s", p3ds_build_id + 4, p3ds_build_id + 9);
+        snprintf(title, sizeof(title), " OpenMW3DS  %s %s  build %s", pi.isNew3DS ? "N3DS" : "O3DS",
+            pi.speedupEnabled ? "804MHz" : "268MHz", stamp);
         if (gShadow[0][0] == 0) // header and buttons are static: draw once per clear
         {
             fillRows(0, 1, color::header);

@@ -27,6 +27,9 @@ Copy-Item "$app\openmw.cia" "$sd\cias\openmw3ds.cia"
 
 # The matching .elf (with debug info, ~1.8 GB) stays on the PC for crash symbolization.
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+# The build stamp compiled into the CIA (p3ds_build_id, UTC), shown on the bottom screen as "build MMDD-HHMM".
+$buildId = (Select-String -Path "$app\openmw.cia" -Pattern '20\d{6}-\d{6} [0-9a-f]{7}' -List).Matches[0].Value
+$shortBuild = if ($buildId) { $buildId.Substring(4, 4) + '-' + $buildId.Substring(9, 4) } else { '?' }
 New-Item -ItemType Directory -Force "$out\elf-archive" | Out-Null
 $elf = Get-Item (Join-Path $RepoRoot 'build\openmw\openmw.elf')
 $archived = Join-Path "$out\elf-archive" ('openmw-' + $elf.LastWriteTime.ToString('yyyyMMdd-HHmmss') + '.elf')
@@ -35,6 +38,8 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
+This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
+If the bottom screen shows another build, the new CIA is not the one installed.
 What this tests: EXTERIORS (milestone M5), with the fix from hardware test #19: the half-missing,
 flashing water (and any other geometry cut off close to the camera). Fires, particles and background
 loading as in the previous build. OpenMW starts a new game in "$Start"; the front door leads OUTSIDE
@@ -124,6 +129,7 @@ $openmwChanged = @($changed + $removed | Where-Object { $_ -like 'openmw/*' }).C
 $verdict = if ($openmwChanged) { 'openmw folder: CHANGED - copy the whole openmw folder, then install the CIA' }
            else { 'openmw folder: UNCHANGED - only install the CIA' }
 $lines = @("OpenMW 3DS - update ${stamp}: copy the CONTENTS of this folder to the SD card root (overwrite).", '',
+    "Build: $buildId (bottom screen: build $shortBuild)", '',
     $verdict, '', "Changed files ($($changed.Count)):") + ($changed | ForEach-Object { "  sdmc:/$_" })
 if ($removed.Count) { $lines += @('', "Delete these files from the SD card ($($removed.Count)):") + ($removed | ForEach-Object { "  sdmc:/$_" }) }
 if (-not (Test-Path $manifestPath)) { $lines += @('', '(No previous manifest: this is the full package.)') }
