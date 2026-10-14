@@ -14,7 +14,12 @@
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/refdata.hpp"
 
+#include "../profile.hpp"
+
 #include <components/esm/position.hpp>
+
+#include <osg/Stats>
+#include <osgViewer/Viewer>
 #include <components/esm3/loadbook.hpp>
 #include <components/esm3/loaddial.hpp>
 
@@ -25,6 +30,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace omw3ds
 {
@@ -44,6 +50,60 @@ namespace omw3ds
         double gLogAccum = 0;
         unsigned gLogFrames = 0;
         float gLogWorst = 0;
+
+        // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
+        struct Timing
+        {
+            std::string mLabel;
+            std::string mAttribute;
+            bool mCamera; // camera stats (cull/draw) instead of viewer stats
+            double mSum = 0;
+        };
+        osgViewer::Viewer* gViewer = nullptr;
+        std::vector<Timing> gTimings;
+        unsigned gTimingFrames = 0;
+
+        void accumulateTimings()
+        {
+            if (gViewer == nullptr)
+                return;
+            // Resource::StatsHandler turns "engine" off on every event while its overlay is hidden; turn it
+            // back on before Engine::frame's ScopedProfiles run (the handler runs later, in eventTraversal).
+            gViewer->getViewerStats()->collectStats("engine", true);
+            const unsigned frame = gViewer->getFrameStamp()->getFrameNumber();
+            if (frame == 0)
+                return;
+            osg::Stats* viewerStats = gViewer->getViewerStats();
+            osg::Stats* cameraStats = gViewer->getCamera()->getStats();
+            for (Timing& t : gTimings)
+            {
+                osg::Stats* stats = t.mCamera ? cameraStats : viewerStats;
+                double value = 0;
+                if (stats != nullptr && stats->getAttribute(frame - 1, t.mAttribute, value))
+                    t.mSum += value;
+            }
+            ++gTimingFrames;
+        }
+
+        void logTimings()
+        {
+            if (gTimingFrames == 0)
+                return;
+            std::string line = "perf/ms:";
+            char item[48];
+            for (Timing& t : gTimings)
+            {
+                const double ms = t.mSum * 1000.0 / gTimingFrames;
+                if (ms >= 0.05)
+                {
+                    std::snprintf(item, sizeof(item), " %s %.1f", t.mLabel.c_str(), ms);
+                    line += item;
+                }
+                t.mSum = 0;
+            }
+            gTimingFrames = 0;
+            P3DS_LOGI("%s", line.c_str());
+        }
 
         // Once: read a few texts that ESM::LazyString left in the content file, to check offsets and the
         // code page conversion in a headless run (books and dialogue can't be opened yet).
@@ -123,6 +183,25 @@ namespace omw3ds
         }
     }
 
+    void setViewer(osgViewer::Viewer* viewer)
+    {
+        gViewer = viewer;
+        osg::Stats* stats = viewer->getViewerStats();
+        stats->collectStats("engine", true); // OMW::ScopedProfile in Engine::frame
+        stats->collectStats("event", true);
+        stats->collectStats("update", true);
+        if (osg::Stats* cameraStats = viewer->getCamera()->getStats())
+            cameraStats->collectStats("rendering", true); // cull/draw
+        gTimings.clear();
+        OMW::forEachUserStatsValue([](const OMW::UserStats& value) {
+            gTimings.push_back(Timing{ value.mLabel, value.mTaken, false });
+        });
+        gTimings.push_back(Timing{ "event", "Event traversal time taken", false });
+        gTimings.push_back(Timing{ "update", "Update traversal time taken", false });
+        gTimings.push_back(Timing{ "cull", "Cull traversal time taken", true });
+        gTimings.push_back(Timing{ "draw", "Draw traversal time taken", true });
+    }
+
     void onLoadingTick()
     {
         serviceApt(true);
@@ -150,6 +229,7 @@ namespace omw3ds
         lastTick = now;
         const float ms = frameSeconds * 1000.f;
         gTimer.addFrame(ms);
+        accumulateTimings();
         if (++gStats.frameIndex == 100)
             lazyStringSelfCheck();
 
@@ -180,6 +260,7 @@ namespace omw3ds
         {
             P3DS_LOGI("perf: %u frames in %.1f s, %.1f fps, avg %.1f ms, worst %.1f ms [%s]", gLogFrames, gLogAccum,
                 gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst, gCellName.c_str());
+            logTimings();
             gLogAccum = 0;
             gLogFrames = 0;
             gLogWorst = 0;

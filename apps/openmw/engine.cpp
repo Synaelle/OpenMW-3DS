@@ -1009,6 +1009,9 @@ void OMW::Engine::go()
 
     // Do not try to outsmart the OS thread scheduler (see bug #4785).
     mViewer->setUseConfigureAffinity(false);
+#ifdef OPENMW_PLATFORM_3DS
+    omw3ds::setViewer(mViewer); // per-subsystem frame timings in the perf log
+#endif
 
     mEnvironment.setFrameRateLimit(Settings::video().mFramerateLimit);
 

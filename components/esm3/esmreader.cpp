@@ -5,6 +5,7 @@
 #include <components/esm3/cellid.hpp>
 #include <components/esm3/loadcell.hpp>
 #include <components/files/conversion.hpp>
+#include <components/files/constrainedfilestream.hpp>
 #include <components/files/openfile.hpp>
 #include <components/misc/strings/algorithm.hpp>
 
@@ -12,6 +13,23 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+
+namespace
+{
+    // On the 3DS, std::ifstream's buffer is newlib's BUFSIZ (1 KB) and every seekg/skip re-reads it from
+    // the SD card: Morrowind.esm took ~4 min to load and the reference count ~3 min on hardware. Files::
+    // ConstrainedFileStreamBuf (3DS version) keeps in-buffer seeks free and reads up to 256 KB at a time.
+    std::unique_ptr<std::istream> openContentFile(const std::filesystem::path& path)
+    {
+#ifdef OPENMW_PLATFORM_3DS
+        Files::IStreamPtr stream = Files::openConstrainedFileStream(path);
+        stream->exceptions(std::ios::badbit); // as openBinaryInputFileStream
+        return stream;
+#else
+        return Files::openBinaryInputFileStream(path);
+#endif
+    }
+}
 
 namespace ESM
 {
@@ -129,7 +147,7 @@ namespace ESM
 
     void ESMReader::openRaw(const std::filesystem::path& filename)
     {
-        openRaw(Files::openBinaryInputFileStream(filename), filename);
+        openRaw(openContentFile(filename), filename);
     }
 
     void ESMReader::open(std::unique_ptr<std::istream>&& stream, const std::filesystem::path& name)
@@ -146,7 +164,7 @@ namespace ESM
 
     void ESMReader::open(const std::filesystem::path& file)
     {
-        open(Files::openBinaryInputFileStream(file), file);
+        open(openContentFile(file), file);
     }
 
     std::string ESMReader::getHNOString(NAME name)
