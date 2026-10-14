@@ -494,19 +494,24 @@ namespace p3ds::crash
             while (gWatchdogRun)
             {
                 svcSleepThread(500LL * 1000 * 1000);
-                // Memory profile every 5 s (the log is thread-safe). Only then the exact heap walk
-                // (mallinfo holds the malloc lock for ~10+ ms on hardware); otherwise cached figures.
+                // Memory profile every 5 s (the log is thread-safe). The exact heap walk (mallinfo) holds the
+                // malloc lock for ~200 ms with OpenMW's heap from this core: a freeze every 5 s in game
+                // (hardware test #15). In game it only runs when the arena grew by 1 MB (a load, which
+                // stalls anyway); otherwise "used" is from the last walk.
                 const bool logTick = ++tick % 10 == 0;
-                const mem::Stats s = logTick ? mem::queryExact() : mem::query();
+                const bool inGame = strcmp(gStep, "engine frame") == 0;
+                const bool walk = logTick
+                    && (!inGame || mem::query().heapArena > mem::arenaAtLastWalk() + 1024u * 1024u);
+                const mem::Stats s = walk ? mem::queryExact() : mem::query();
                 if (s.heapUsed > peakHeap)
                     peakHeap = s.heapUsed;
                 if (tick % 2 == 0)
                     drawHeartbeat(tick, s.heapUsed);
                 if (logTick)
                 {
-                    P3DS_LOGI("mem: heap %.1f MB used (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
-                        mem::toMB(s.heapUsed), mem::toMB(s.heapArena), mem::toMB(s.heapTotal), mem::toMB(peakHeap),
-                        mem::toMB(s.linearFree), gStep);
+                    P3DS_LOGI("mem: heap %.1f MB used%s (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
+                        mem::toMB(s.heapUsed), walk ? "" : " (last walk)", mem::toMB(s.heapArena),
+                        mem::toMB(s.heapTotal), mem::toMB(peakHeap), mem::toMB(s.linearFree), gStep);
                     memprobe::logThreads();
                     memprobe::logReporters();
                     unsigned stackPeak = 0, stackSize = 0;

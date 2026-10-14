@@ -12,6 +12,7 @@ extern "C"
     extern char __end__[];
     size_t p3ds_heap_extension_size(); // platform.cpp: linear-heap segment used by malloc (0 if none)
     size_t p3ds_heap_extension_gap(); // address gap between the two segments (counted by mallinfo)
+    size_t p3ds_heap_arena();
 }
 
 namespace p3ds::mem
@@ -23,6 +24,12 @@ namespace p3ds::mem
         // ~10+ ms with OpenMW's fragmented heap on hardware, stalling every other thread's malloc.
         uint32_t gHeapUsed = 0;
         uint32_t gHeapArena = 0;
+        uint64_t gWalkTick = 0;
+    }
+
+    uint32_t arenaAtLastWalk()
+    {
+        return __atomic_load_n(&gHeapArena, __ATOMIC_RELAXED);
     }
 
     Stats queryExact()
@@ -31,6 +38,7 @@ namespace p3ds::mem
         const uint32_t gap = uint32_t(p3ds_heap_extension_gap());
         __atomic_store_n(&gHeapArena, uint32_t(mi.arena) - gap, __ATOMIC_RELAXED);
         __atomic_store_n(&gHeapUsed, uint32_t(mi.uordblks) - gap, __ATOMIC_RELAXED);
+        __atomic_store_n(&gWalkTick, svcGetSystemTick(), __ATOMIC_RELAXED);
         return query();
     }
 
@@ -56,8 +64,10 @@ namespace p3ds::mem
 
         if (__atomic_load_n(&gHeapArena, __ATOMIC_RELAXED) == 0)
             return queryExact(); // never sampled yet (e.g. no watchdog running)
-        s.heapArena = __atomic_load_n(&gHeapArena, __ATOMIC_RELAXED);
+        s.heapArena = uint32_t(p3ds_heap_arena());
         s.heapUsed = __atomic_load_n(&gHeapUsed, __ATOMIC_RELAXED);
+        s.heapUsedAgeMs = uint32_t((svcGetSystemTick() - __atomic_load_n(&gWalkTick, __ATOMIC_RELAXED))
+            / (SYSCLOCK_ARM11 / 1000));
         return s;
     }
 

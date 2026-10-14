@@ -420,14 +420,22 @@ namespace omw3ds
     {
         // HOME menu / power button: SDL only services APT in its 3DS video driver, which we don't use.
         // aptMainLoop() blocks while the app is suspended and returns false when it must close.
+        void closeRequested(bool loading);
+
         void serviceApt(bool loading)
         {
-            if (aptMainLoop())
-                return;
+            if (!aptMainLoop())
+                closeRequested(loading);
+        }
+
+        // The HOME Menu (or autorun "close:N") asked the app to close.
+        void closeRequested(bool loading)
+        {
             static bool quitRequested = false;
             if (quitRequested)
                 return;
             quitRequested = true;
+            Render3DS::releaseGpuForExit();
             if (!loading)
             {
                 P3DS_LOGI("APT: close requested, quitting");
@@ -445,9 +453,10 @@ namespace omw3ds
     {
         // The settings that matter for performance, as actually loaded (the SD card may hold an older
         // settings.cfg than the package).
-        P3DS_LOGI("settings: physics async threads %d, lua threads %d, viewing distance %.0f, preload %s, "
-                  "actors range %.0f",
+        P3DS_LOGI("settings: physics async threads %d, lua threads %d, lua gc steps %d, viewing distance %.0f, "
+                  "preload %s, actors range %.0f",
             int(Settings::physics().mAsyncNumThreads), int(Settings::lua().mLuaNumThreads),
+            int(Settings::lua().mGcStepsPerFrame),
             double(Settings::camera().mViewingDistance), Settings::cells().mPreloadEnabled ? "on" : "off",
             double(Settings::game().mActorsProcessingRange));
         gViewer = viewer;
@@ -503,6 +512,7 @@ namespace omw3ds
         struct Autorun
         {
             unsigned mQuitAt = 0;
+            unsigned mCloseAt = 0; // "close:N": like closing from the HOME Menu after N frames
             std::vector<unsigned> mShots;
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
             std::vector<ScriptedInput> mInputs;
@@ -518,6 +528,8 @@ namespace omw3ds
                 std::fclose(f);
                 if (const char* q = std::strstr(buf, "quit:"))
                     result.mQuitAt = unsigned(std::strtoul(q + 5, nullptr, 10));
+                if (const char* q = std::strstr(buf, "close:"))
+                    result.mCloseAt = unsigned(std::strtoul(q + 6, nullptr, 10));
                 if (const char* q = std::strstr(buf, "turn:"))
                     result.mTurnDegrees = std::strtof(q + 5, nullptr);
                 parseScriptedInput(buf, result.mInputs);
@@ -554,6 +566,11 @@ namespace omw3ds
                 std::fclose(f);
             }
             P3DS_LOGI("autorun: Lua profile written to sdmc:/openmw/lua_profile.txt (%zu bytes)", table.size());
+        }
+        if (autorun.mCloseAt != 0 && gStats.frameIndex == autorun.mCloseAt)
+        {
+            P3DS_LOGI("autorun: closing as if from the HOME Menu after %u frames", autorun.mCloseAt);
+            closeRequested(false);
         }
         for (unsigned door : autorun.mDoors)
             if (door == gStats.frameIndex)

@@ -1,5 +1,6 @@
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
+#include <platform3ds/memstats.hpp>
 
 #include <3ds.h>
 #include <malloc.h>
@@ -150,8 +151,10 @@ namespace p3ds::memprobe
     {
         static int64_t last = 0;
         const int64_t now = p3ds_thread_net_bytes;
-        P3DS_LOGI("memstage %-28s thread net %6.2f MB (+%5.2f)  heap %6.2f MB", label, double(now) / 1048576.0,
-            double(now - last) / 1048576.0, double(mallinfo().uordblks) / 1048576.0);
+        // The arena, not mallinfo's "used": the heap walk holds the malloc lock (~60+ ms per call on the
+        // main thread with a large heap), and stages run during every cell load.
+        P3DS_LOGI("memstage %-28s thread net %6.2f MB (+%5.2f)  arena %6.2f MB", label, double(now) / 1048576.0,
+            double(now - last) / 1048576.0, double(mem::query().heapArena) / 1048576.0);
         last = now;
     }
 

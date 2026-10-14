@@ -25,6 +25,9 @@ namespace Render3DS
     // OSG/window hooks. Returns false if citro3d could not start (the game then runs headless).
     bool init();
     void shutdown();
+    // The HOME Menu closed the app: it owns the GPU now, so work submitted from here on never completes
+    // (shutdown's C3D_Fini waited forever). Stops all drawing and makes shutdown skip the GPU teardown.
+    void releaseGpuForExit();
     bool isActive();
     // Why rendering stopped (a GPU hang: the GPU core was reset and the game runs on headless), or nullptr.
     const char* failure();

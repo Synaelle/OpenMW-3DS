@@ -2186,7 +2186,8 @@ namespace Render3DS
         SDLUtil::gSwapBuffersHook3DS = nullptr;
         gActive = false;
         if (gFailure)
-            return; // citro3d's command queue never completes after a GPU hang: C3D_Fini would wait forever
+            return; // after a GPU hang or a close from the HOME Menu, citro3d's queue never completes: C3D_Fini
+                    // would wait forever
         if (gInFrame)
         {
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
@@ -2204,6 +2205,14 @@ namespace Render3DS
     bool isActive()
     {
         return gActive && gFailure == nullptr;
+    }
+
+    void releaseGpuForExit()
+    {
+        if (!gActive || gFailure != nullptr)
+            return;
+        gFailure = "closing (the GPU belongs to the HOME Menu)";
+        P3DS_LOGI("render3ds: app closing, no more GPU work");
     }
 
     const char* failure()

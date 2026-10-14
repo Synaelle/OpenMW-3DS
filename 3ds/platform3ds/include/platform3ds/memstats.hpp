@@ -13,19 +13,21 @@ namespace p3ds::mem
         uint32_t regionUsed = 0; // code + heaps (libctru commits both heaps up front) + stacks
         uint32_t imageSize = 0; // executable image: text + rodata + data + bss
         uint32_t heapTotal = 0; // app heap (malloc/new)
-        uint32_t heapUsed = 0; // bytes in use by malloc
-        uint32_t heapArena = 0; // heap already obtained by malloc via sbrk
+        uint32_t heapUsed = 0; // bytes in use by malloc, as of the last heap walk (queryExact)
+        uint32_t heapArena = 0; // heap already obtained by malloc via sbrk (live)
+        uint32_t heapUsedAgeMs = 0; // how old heapUsed is
         uint32_t linearTotal = 0; // GPU-visible linear heap
         uint32_t linearFree = 0;
         uint32_t vramFree = 0; // of 6 MB
     };
 
-    // Cheap: heapUsed/heapArena are the values from the last queryExact() (the watchdog refreshes them
-    // every 5 s). Safe to call every frame.
+    // Cheap: heapArena is live; heapUsed is from the last queryExact(). Safe to call every frame.
     Stats query();
-    // Also walks the malloc heap (mallinfo): ~10+ ms on hardware with a large fragmented heap, holding
-    // the malloc lock. Watchdog log, crash reports, startup only.
+    // Also walks the malloc heap (mallinfo), holding the malloc lock: ~200 ms on hardware with OpenMW's heap
+    // from the watchdog's core (hardware test #15), a visible freeze. Loading, crash reports, startup only.
     Stats queryExact();
+    // Heap arena when queryExact() last ran.
+    uint32_t arenaAtLastWalk();
 
     // Heap budget the hardware would give us. Emulators can over-provision the region; in that case
     // the budget is reduced by the excess so emulator runs fail like the console would.

@@ -175,6 +175,17 @@ extern "C"
         return prev;
     }
 
+    // malloc's arena without mallinfo's walk: what sbrk handed out, not counting the gap to the extension.
+    size_t p3ds_heap_arena()
+    {
+        char* const cur = gSbrkCur;
+        if (cur == nullptr)
+            return 0;
+        if (gExtStart != nullptr && cur >= gExtStart)
+            return size_t(fake_heap_end - fake_heap_start) + size_t(cur - gExtStart);
+        return size_t(cur - fake_heap_start);
+    }
+
     size_t p3ds_heap_extension_size()
     {
         return gExtSize;

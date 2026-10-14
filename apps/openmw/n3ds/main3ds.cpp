@@ -103,8 +103,12 @@ int main(int, char**)
     P3DS_LOGI("OpenMW exited with %d", ret);
     if (p3ds::info().autorun)
         p3ds::writeSmallFile(p3ds::kAutorunDonePath, "done\n"); // run-azahar.ps1 waits for it
+    // Each step is named for the watchdog: a hang here gets a crash report that says where.
+    p3ds::crash::kick("shutdown: bottom screen");
     omw3ds::shutdownBottomScreen();
+    p3ds::crash::kick("shutdown: render3ds");
     Render3DS::shutdown();
+    p3ds::crash::kick("shutdown: platform");
     p3ds::shutdown();
     gfxExit();
     return ret;
