@@ -70,4 +70,13 @@ if (-not (Test-Path "$ToolsBin\bannertool.exe")) {
         Get-ChildItem $d -Recurse -Filter bannertool.exe | Select-Object -First 1 | Copy-Item -Destination $ToolsBin
     }
 }
+# 5. pycgfx (glTF -> CGFX) and Python packages, only needed to regenerate the HOME Menu assets
+#    (packaging/make_assets.py); the generated icon/banner are committed.
+$Pycgfx = Join-Path (Split-Path $ToolsBin) 'pycgfx'
+if (-not (Test-Path "$Pycgfx\main.py")) {
+    git clone -q https://github.com/skyfloogle/pycgfx.git $Pycgfx
+    git -C $Pycgfx checkout -q 1f78850
+}
+python -m pip install --user --quiet pillow numpy gltflib
+
 Write-Host "Bootstrap complete. Toolchain: $Msys2Root\opt\devkitpro ; extra tools: $ToolsBin"
