@@ -1,10 +1,12 @@
 # Builds out\sdcard-openmw\: an OpenMW hardware test package to copy onto the root of the 3DS SD card.
-#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Census and Excise Office"]
+#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"]
 # Morrowind's data files are NOT included: the tester copies Morrowind.esm and Morrowind.bsa from
 # their own installation into sdmc:/openmw/data/ (see the README in the package).
 param(
     [switch]$NoBuild,
-    [string]$Start = 'Seyda Neen, Census and Excise Office'
+    # Arrille's: the Census office's first door into it is the jail's PrisonMarker, whose destination is outside
+    # the walls, so --start dropped the player into the void (OpenMW behaviour, see PORTING_NOTES).
+    [string]$Start = "Seyda Neen, Arrille's Tradehouse"
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot

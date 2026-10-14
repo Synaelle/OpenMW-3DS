@@ -268,8 +268,9 @@ namespace omw3ds
             gLogWorst = ms;
         if (gLogAccum >= 5.0)
         {
-            P3DS_LOGI("perf: %u frames in %.1f s, %.1f fps, avg %.1f ms, worst %.1f ms [%s]", gLogFrames, gLogAccum,
-                gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst, gCellName.c_str());
+            P3DS_LOGI("perf: %u frames in %.1f s, %.1f fps, avg %.1f ms, worst %.1f ms [%s] pos %.0f %.0f %.0f",
+                gLogFrames, gLogAccum, gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst,
+                gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]));
             logTimings();
             gLogAccum = 0;
             gLogFrames = 0;

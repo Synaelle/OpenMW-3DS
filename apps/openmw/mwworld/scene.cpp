@@ -530,6 +530,9 @@ namespace MWWorld
         insertCell(cell, loadingListener, navigatorUpdateGuard);
         OMW3DS_MEMSTAGE("loadCell: insertCell");
 #ifdef OPENMW_PLATFORM_3DS
+        Log(Debug::Info) << "3ds collision: lowest point " << mLowestPoint;
+#endif
+#ifdef OPENMW_PLATFORM_3DS
         p3ds::memprobe::callerProfileStop("insertCell, main thread");
 #endif
         OMW3DS_MEMREPORT("insertCell by record type");

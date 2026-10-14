@@ -2669,8 +2669,16 @@ namespace MWWorld
         if (std::optional<ESM::Position> destPos = searchDoorDestInCell(*cellStore))
         {
             pos = *destPos;
+#ifdef OPENMW_PLATFORM_3DS
+            Log(Debug::Info) << "3ds findInteriorPosition " << name << ": door destination " << pos.pos[0] << ' '
+                             << pos.pos[1] << ' ' << pos.pos[2];
+#endif
             return cellId;
         }
+#ifdef OPENMW_PLATFORM_3DS
+        Log(Debug::Info) << "3ds findInteriorPosition " << name << ": no door destination ("
+                         << cellStore->getReadOnlyDoors().mList.size() << " doors in cell)";
+#endif
         if (std::optional<ESM::Position> destPos = searchMarkerPosition(*cellStore, "xmarkerheading"))
         {
             pos = *destPos;
@@ -2690,6 +2698,11 @@ namespace MWWorld
         {
             pos = statics.begin()->mRef.getPosition();
             pos.rot[0] = pos.rot[1] = pos.rot[2] = 0;
+#ifdef OPENMW_PLATFORM_3DS
+            Log(Debug::Info) << "3ds findInteriorPosition " << name << ": first static "
+                             << statics.begin()->mRef.getRefId() << " at " << pos.pos[0] << ' ' << pos.pos[1] << ' '
+                             << pos.pos[2];
+#endif
             return cellId;
         }
 
