@@ -41,13 +41,20 @@ We want: loading time, memory, and the real frame time without rendering.
      Morrowind.bsa   (~310 MB)
    (Nothing else is needed. The files are only read, never modified.)
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
-4. The top screen stays black. The bottom screen shows the debug display: memory, then FPS and the
-   cell name once the game loop runs. Loading takes a while (minutes: the SD card is slow).
+4. The top screen stays black. The bottom screen shows the debug display: "(loading)" and log lines
+   while loading, then FPS and the cell name once the game loop runs. Loading takes minutes.
+   ALIVE INDICATOR = the last line of the bottom screen, redrawn every second:
+     |   245s counting refs   idle   0s  53.0MB
+     ^spinner ^uptime ^current step  ^seconds without progress  ^memory
+   - spinner turning + uptime counting = the console is NOT frozen, just working.
+   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes crash.log and
+     returns to HOME by itself.
+   - the spinner/uptime stop moving = real freeze (then force the power off).
+   HOME works during loading too now (Close exits immediately).
 5. Once the bottom screen shows the cell name and an FPS value, let it run ~1 minute, then press
    HOME and close the software.
 6. Send back sdmc:/openmw/openmw.log, and sdmc:/openmw/crash.log if there is one.
 
-If it freezes: the watchdog writes crash.log and returns to HOME after 60 s without progress.
 If you have to force the power off anyway, still send openmw.log.
 "@ | Set-Content "$sd\README.txt"
 

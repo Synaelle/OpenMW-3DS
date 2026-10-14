@@ -81,9 +81,12 @@ extern "C"
 // assumes 1-8 MB. Below the heap start nothing is mapped, so an overflow faults (on hardware).
 extern "C" u32 __stacksize__ = 1024 * 1024;
 
-// pthread_create / std::thread end up in libctru's __syscall_thread_create, which uses a 32 KB stack
-// when none is given (and priority 0x3F, core 0). OpenMW's worker threads load NIFs and traverse
-// scene graphs: give them 256 KB (linked with -Wl,--wrap=__syscall_thread_create).
+// pthread_create / std::thread end up in libctru's __syscall_thread_create, which creates the thread on
+// core 0 at priority 0x3F (the lowest) with a 32 KB stack when none is given. On core 0 such a thread
+// only runs while the main thread waits (no time slicing), so OpenMW's async loading and work queue
+// crawled on hardware. Put them on core 2 instead: on the New 3DS it runs at full speed and nothing
+// else uses it (measured in M0). 256 KB stacks: they load NIFs and traverse scene graphs.
+// Linked with -Wl,--wrap=__syscall_thread_create.
 extern "C"
 {
     int __real___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size);
@@ -92,6 +95,15 @@ extern "C"
     {
         if (stack_size == 0)
             stack_size = 256 * 1024;
+        if (stack_addr == nullptr)
+        {
+            // Same as libctru's implementation (the pthread handle is the libctru Thread), other core.
+            if (Thread t = threadCreate(reinterpret_cast<ThreadFunc>(func), arg, stack_size, 0x30, 2, false))
+            {
+                *thread = t;
+                return 0;
+            }
+        }
         return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
     }
 }
@@ -294,6 +306,7 @@ namespace p3ds
     void shutdown()
     {
         P3DS_LOGI("platform3ds: shutdown");
+        crash::stopWatchdog();
         log::shutdown();
     }
 

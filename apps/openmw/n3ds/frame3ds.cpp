@@ -2,6 +2,7 @@
 
 #include <platform3ds/debugscreen.hpp>
 #include <platform3ds/log.hpp>
+#include <platform3ds/platform.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/statemanager.hpp"
@@ -97,20 +98,47 @@ namespace omw3ds
         gBottom.forceRedraw();
     }
 
-    void onEngineFrame()
+    namespace
     {
         // HOME menu / power button: SDL only services APT in its 3DS video driver, which we don't use.
         // aptMainLoop() blocks while the app is suspended and returns false when it must close.
-        if (!aptMainLoop())
+        void serviceApt(bool loading)
         {
+            if (aptMainLoop())
+                return;
             static bool quitRequested = false;
-            if (!quitRequested)
+            if (quitRequested)
+                return;
+            quitRequested = true;
+            if (!loading)
             {
-                quitRequested = true;
                 P3DS_LOGI("APT: close requested, quitting");
                 MWBase::Environment::get().getStateManager()->requestQuit();
+                return;
             }
+            // OpenMW can't abort a load; the user wants out now.
+            P3DS_LOGI("APT: close requested while loading, exiting");
+            p3ds::shutdown();
+            svcExitProcess();
         }
+    }
+
+    void onLoadingTick()
+    {
+        serviceApt(true);
+        if (!gBottomReady)
+            return;
+        p3ds::GameSnapshot snap;
+        snap.frame = &gStats;
+        snap.cellName = gCellName == "-" ? "(loading)" : gCellName.c_str();
+        snap.status = "loading";
+        gBottom.update(snap);
+        gBottom.render(); // rate-limited internally
+    }
+
+    void onEngineFrame()
+    {
+        serviceApt(false);
         static uint64_t lastTick = 0;
         const uint64_t now = svcGetSystemTick();
         if (lastTick == 0)

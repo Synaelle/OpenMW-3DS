@@ -27,6 +27,9 @@ namespace p3ds::crash
     // the last step passed to kick() and exits to the HOME Menu if kick() isn't called for `seconds`.
     // Turns software hangs into a report instead of a frozen console needing a forced power-off.
     bool startWatchdog(int seconds, int core);
+    // Stops and joins the watchdog (p3ds::shutdown calls it: its heartbeat draws on the bottom screen,
+    // which must not happen after gfxExit).
+    void stopWatchdog();
     void setWatchdogTimeout(int seconds); // 0 disables (e.g. while a dialog legitimately blocks)
     // Call regularly from the main loop / long operations. `step` must point to static storage.
     void kick(const char* step = nullptr);

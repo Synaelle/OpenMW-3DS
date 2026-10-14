@@ -21,6 +21,7 @@
 #include "../mwmechanics/spelllist.hpp"
 
 #ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/crash.hpp>
 #include <platform3ds/memprobe.hpp>
 #endif
 
@@ -403,6 +404,7 @@ namespace MWWorld
             ESM::NAME n = esm.getRecName();
 #ifdef OPENMW_PLATFORM_3DS
             p3ds::memprobe::Scope memScope(n.toInt()); // heap growth per record type (diagnostic)
+            p3ds::crash::kick("loading ESM"); // loader thread progress (the loading screen may not redraw)
 #endif
             esm.getRecHeader();
             if (esm.getRecordFlags() & ESM::FLAG_Ignored)
@@ -580,7 +582,12 @@ namespace MWWorld
         const std::size_t interiorCellCount = cells.getIntSize();
         const std::size_t exteriorCellCount = cells.getExtSize();
         for (std::size_t i = 0; i < cellCount; ++i)
+        {
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::crash::kick("counting refs"); // re-reads every cell's references: minutes on SD
+#endif
             readRefs(*cells.at(i), i, refs, refIDs, keyIDs, readers);
+        }
         const auto lessByRefNum = [](const Ref& l, const Ref& r) { return l.mRefNum < r.mRefNum; };
         std::stable_sort(refs.begin(), refs.end(), lessByRefNum);
         const auto equalByRefNum = [](const Ref& l, const Ref& r) { return l.mRefNum == r.mRefNum; };

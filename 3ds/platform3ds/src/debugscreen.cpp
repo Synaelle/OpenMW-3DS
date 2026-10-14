@@ -190,7 +190,7 @@ namespace p3ds
         row(9, color::cyan, "pos %.0f %.0f %.0f  %.16s", mSnapshot.playerPos[0], mSnapshot.playerPos[1],
             mSnapshot.playerPos[2], mSnapshot.status);
 
-        constexpr int kLogRows = kRows - kLogFirstRow;
+        constexpr int kLogRows = kRows - kLogFirstRow - 1; // last row: watchdog heartbeat (crash.cpp)
         log::Line lines[kLogRows];
         const size_t n = log::copyLastLines(lines, kLogRows);
         for (int i = 0; i < kLogRows; ++i)

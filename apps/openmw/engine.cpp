@@ -935,7 +935,12 @@ void OMW::Engine::prepareEngine()
     {
         using namespace std::chrono_literals;
         while (dataLoading.wait_for(50ms) != std::future_status::ready)
+        {
             asyncListener.update();
+#ifdef OPENMW_PLATFORM_3DS
+            omw3ds::onLoadingTick(); // HOME button, bottom screen (the loading screen may not redraw)
+#endif
+        }
         dataLoading.get();
     }
     OMW3DS_MEMSTAGE("after loadData (main thread)");

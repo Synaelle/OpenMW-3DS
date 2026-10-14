@@ -1,5 +1,12 @@
 #include "worldimp.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp>
+#define OMW3DS_STAGE(label) p3ds::memprobe::stage(label) // timestamped log line (startup profiling)
+#else
+#define OMW3DS_STAGE(label)
+#endif
+
 #include <charconv>
 #include <vector>
 
@@ -218,13 +225,17 @@ namespace MWWorld
         mESMVersions.resize(mContentFiles.size(), -1);
 
         loadContentFiles(fileCollections, contentFiles, encoder, listener);
+        OMW3DS_STAGE("loadData: content files");
         loadGroundcoverFiles(fileCollections, groundcoverFiles, encoder, listener);
         MWBase::Environment::get().getLuaManager()->contentFilesLoaded();
+        OMW3DS_STAGE("loadData: Lua contentFilesLoaded");
 
         fillGlobalVariables();
 
         mStore.setUp();
+        OMW3DS_STAGE("loadData: store setUp");
         mStore.validateRecords(mReaders);
+        OMW3DS_STAGE("loadData: validate + ref count");
         mStore.movePlayerRecord();
 
         mSwimHeightScale = mStore.get<ESM::GameSetting>().find("fSwimHeightScale")->mValue.getFloat();

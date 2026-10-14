@@ -37,6 +37,11 @@ namespace Platform::File
             throw std::system_error(errno, std::generic_category(),
                 std::string("Failed to open '") + Files::pathToUnicodeString(filename) + "' for reading");
         }
+#ifdef OPENMW_PLATFORM_3DS
+        // The only user (Files::ConstrainedFileStreamBuf) buffers itself: without stdio's small buffer each
+        // read is one SD request of the full size (SD throughput: 1.7 MB/s at 4 KB, 9.5 MB/s at 256 KB).
+        setvbuf(handle, nullptr, _IONBF, 0);
+#endif
         return static_cast<Handle>(reinterpret_cast<intptr_t>(handle));
     }
 

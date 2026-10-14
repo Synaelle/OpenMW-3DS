@@ -428,8 +428,17 @@ namespace p3ds::crash
     namespace
     {
         const char* volatile gStep = "startup";
-        volatile u64 gLastKick = 0;
-        volatile u64 gTimeoutTicks = 0;
+        // Milliseconds since boot, 32-bit so reads/writes are atomic across cores: a torn 64-bit tick
+        // read once produced a false hang report.
+        u32 gLastKickMs = 0;
+        inline u32 nowMs() { return u32(svcGetSystemTick() / (SYSCLOCK_ARM11 / 1000)); }
+        inline u32 sinceKickMs()
+        {
+            // The main thread may kick between our two reads (kicks are frequent): negative = 0.
+            const s32 d = s32(nowMs() - __atomic_load_n(&gLastKickMs, __ATOMIC_RELAXED));
+            return d > 0 ? u32(d) : 0;
+        }
+        u32 gTimeoutMs = 0;
         volatile bool gWatchdogRun = false;
         Thread gWatchdog = nullptr;
 
@@ -437,7 +446,7 @@ namespace p3ds::crash
         {
             if (__atomic_fetch_add(&gInCrash, 1, __ATOMIC_SEQ_CST) != 0)
                 svcExitProcess();
-            const u32 stalledSec = u32((svcGetSystemTick() - gLastKick) / SYSCLOCK_ARM11);
+            const u32 stalledSec = sinceKickMs() / 1000;
             beginReport("hang (watchdog)");
             put("Stuck in step: ");
             put(gStep);
@@ -454,6 +463,28 @@ namespace p3ds::crash
             __builtin_unreachable();
         }
 
+        // Bottom row, redrawn every second by the watchdog thread (core 1) whatever the main thread is
+        // doing: if it stops changing, the console really is frozen. Only draws text and flushes the
+        // framebuffer (single-buffered, see textfb), so it never conflicts with the main thread's swaps.
+        void drawHeartbeat(int tick, uint32_t heapUsed)
+        {
+            if (__atomic_load_n(&gInCrash, __ATOMIC_RELAXED) != 0)
+                return; // the crash screen owns the display
+            static const char kSpinner[] = { '|', '/', '-', '\\' };
+            const u32 uptime = u32(svcGetSystemTick() / SYSCLOCK_ARM11);
+            const u32 idle = sinceKickMs() / 1000;
+            char line[textfb::kCols + 1];
+            snprintf(line, sizeof(line), "%c %5lus %-15.15s idle %3lus %5.1fMB", kSpinner[(tick / 2) % 4],
+                (unsigned long)uptime, gStep, (unsigned long)idle, mem::toMB(heapUsed));
+            size_t n = strlen(line);
+            while (n < size_t(textfb::kCols))
+                line[n++] = ' ';
+            line[textfb::kCols] = '\0';
+            const uint16_t fg = idle < 10 ? textfb::color::green : (idle < 30 ? textfb::color::yellow : textfb::color::red);
+            textfb::drawText(0, textfb::kRows - 1, line, fg, textfb::color::header);
+            GSPGPU_FlushDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
+        }
+
         void watchdogMain(void*)
         {
             installForCurrentThread();
@@ -466,7 +497,9 @@ namespace p3ds::crash
                 const mem::Stats s = mem::query();
                 if (s.heapUsed > peakHeap)
                     peakHeap = s.heapUsed;
-                if (++tick % 10 == 0)
+                if (++tick % 2 == 0)
+                    drawHeartbeat(tick, s.heapUsed);
+                if (tick % 10 == 0)
                 {
                     P3DS_LOGI("mem: heap %.1f MB used (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
                         mem::toMB(s.heapUsed), mem::toMB(s.heapArena), mem::toMB(s.heapTotal), mem::toMB(peakHeap),
@@ -485,8 +518,8 @@ namespace p3ds::crash
                 // would otherwise just corrupt silently there.
                 if (!mainStackIntact())
                     fatal("main thread stack overflow");
-                const u64 timeout = gTimeoutTicks;
-                if (timeout != 0 && svcGetSystemTick() - gLastKick > timeout)
+                const u32 timeout = __atomic_load_n(&gTimeoutMs, __ATOMIC_RELAXED);
+                if (timeout != 0 && sinceKickMs() > timeout)
                     reportHang();
             }
         }
@@ -496,13 +529,13 @@ namespace p3ds::crash
     {
         if (step != nullptr)
             gStep = step;
-        gLastKick = svcGetSystemTick();
+        __atomic_store_n(&gLastKickMs, nowMs(), __ATOMIC_RELAXED);
     }
 
     void setWatchdogTimeout(int seconds)
     {
-        gLastKick = svcGetSystemTick();
-        gTimeoutTicks = seconds > 0 ? u64(seconds) * SYSCLOCK_ARM11 : 0;
+        __atomic_store_n(&gLastKickMs, nowMs(), __ATOMIC_RELAXED);
+        __atomic_store_n(&gTimeoutMs, seconds > 0 ? u32(seconds) * 1000u : 0u, __ATOMIC_RELAXED);
     }
 
     bool startWatchdog(int seconds, int core)
@@ -513,11 +546,21 @@ namespace p3ds::crash
         gWatchdogRun = true;
         // Highest application priority: it sleeps almost always, and must preempt a spinning thread
         // when it does wake up (the 3DS scheduler never time-slices equal priorities).
-        gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, core, true);
+        gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, core, false);
         if (gWatchdog == nullptr && core != 0)
-            gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, 0, true);
+            gWatchdog = threadCreate(watchdogMain, nullptr, 8 * 1024, 0x18, 0, false);
         P3DS_LOGI("watchdog: %s (timeout %d s, core %d)", gWatchdog ? "running" : "FAILED to start", seconds, core);
         return gWatchdog != nullptr;
+    }
+
+    void stopWatchdog()
+    {
+        if (gWatchdog == nullptr)
+            return;
+        gWatchdogRun = false;
+        threadJoin(gWatchdog, U64_MAX); // wakes every 0.5 s
+        threadFree(gWatchdog);
+        gWatchdog = nullptr;
     }
 }
 

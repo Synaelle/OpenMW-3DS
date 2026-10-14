@@ -8,6 +8,100 @@ namespace Files
 {
     namespace File = Platform::File;
 
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        constexpr std::size_t kMinChunk = 32 * 1024;
+        constexpr std::size_t kMaxChunk = 256 * 1024;
+    }
+
+    ConstrainedFileStreamBuf::ConstrainedFileStreamBuf(
+        const std::filesystem::path& fname, std::size_t start, std::size_t length)
+        : mOrigin(start)
+    {
+        mFile = File::open(fname);
+        mSize = length != std::numeric_limits<std::size_t>::max() ? length : File::size(mFile) - start;
+        mCapacity = std::max<std::size_t>(1, std::min(mSize, kMaxChunk));
+        mBuffer.reset(new char[mCapacity]); // not value-initialized
+        mChunk = std::min(mCapacity, kMinChunk);
+        File::seek(mFile, start);
+        setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
+    }
+
+    std::streambuf::int_type ConstrainedFileStreamBuf::underflow()
+    {
+        if (gptr() < egptr())
+            return traits_type::to_int_type(*gptr());
+        const std::size_t pos = position();
+        if (pos >= mSize)
+            return traits_type::eof();
+        // Consumed a whole fill without seeking away: sequential reading, read bigger chunks.
+        if (pos == mFilePos && egptr() != eback())
+            mChunk = std::min(mChunk * 2, mCapacity);
+        if (pos != mFilePos)
+            File::seek(mFile, mOrigin + pos);
+        const std::size_t toRead = std::min(mChunk, mSize - pos);
+        const std::size_t got = File::read(mFile, mBuffer.get(), toRead);
+        mFilePos = pos + got;
+        mBufferPos = pos;
+        setg(mBuffer.get(), mBuffer.get(), mBuffer.get() + got);
+        if (got == 0)
+            return traits_type::eof();
+        return traits_type::to_int_type(*gptr());
+    }
+
+    std::streambuf::pos_type ConstrainedFileStreamBuf::seekTo(std::size_t newPos)
+    {
+        if (newPos > mSize)
+            return traits_type::eof();
+        const std::size_t bufferEnd = mBufferPos + (egptr() - eback());
+        if (newPos >= mBufferPos && newPos <= bufferEnd)
+        {
+            // Inside the buffer (including tellg()): no file access.
+            setg(eback(), eback() + (newPos - mBufferPos), egptr());
+            return newPos;
+        }
+        // Outside: drop the buffer, the next underflow() seeks. Short forward skips keep the chunk size
+        // (still a sequential scan, e.g. ESMReader skipping subrecords).
+        if (newPos < mBufferPos || newPos - bufferEnd > kMaxChunk)
+            mChunk = std::min(mCapacity, kMinChunk);
+        mBufferPos = newPos;
+        setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
+        return newPos;
+    }
+
+    std::streambuf::pos_type ConstrainedFileStreamBuf::seekoff(
+        off_type offset, std::ios_base::seekdir whence, std::ios_base::openmode mode)
+    {
+        if ((mode & std::ios_base::out) || !(mode & std::ios_base::in))
+            return traits_type::eof();
+        off_type base;
+        switch (whence)
+        {
+            case std::ios_base::beg:
+                base = 0;
+                break;
+            case std::ios_base::cur:
+                base = static_cast<off_type>(position());
+                break;
+            case std::ios_base::end:
+                base = static_cast<off_type>(mSize);
+                break;
+            default:
+                return traits_type::eof();
+        }
+        if (base + offset < 0)
+            return traits_type::eof();
+        return seekTo(static_cast<std::size_t>(base + offset));
+    }
+
+    std::streambuf::pos_type ConstrainedFileStreamBuf::seekpos(pos_type pos, std::ios_base::openmode mode)
+    {
+        if ((mode & std::ios_base::out) || !(mode & std::ios_base::in))
+            return traits_type::eof();
+        return seekTo(static_cast<std::size_t>(pos));
+    }
+#else
     ConstrainedFileStreamBuf::ConstrainedFileStreamBuf(
         const std::filesystem::path& fname, std::size_t start, std::size_t length)
         : mOrigin(start)
@@ -85,4 +179,5 @@ namespace Files
         setg(nullptr, nullptr, nullptr);
         return pos;
     }
+#endif
 }

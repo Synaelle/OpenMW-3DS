@@ -5,11 +5,12 @@
 // Coarse heap profiler: attributes heap growth to a 32-bit key (e.g. an ESM record type FourCC).
 //   { p3ds::memprobe::Scope s(key); ...allocations... }   // accumulates heap delta under key
 //   p3ds::memprobe::report("label");                       // logs the table, largest first, and resets
-// Cost: two mallinfo() calls per scope, fine for a diagnostic pass over ~100k records.
+// Also accumulates the time spent in each key (report shows ms). Cost: a few counter reads per scope.
 namespace p3ds::memprobe
 {
-    void add(uint32_t key, int64_t bytes);
+    void add(uint32_t key, int64_t bytes, uint64_t elapsedTicks = 0);
     uint32_t heapUsed();
+    uint64_t ticks(); // system ticks (SYSCLOCK_ARM11 Hz)
     void report(const char* label);
 
     // Logs every thread's net operator-new balance (the watchdog calls this every 5 s).
@@ -37,12 +38,14 @@ namespace p3ds::memprobe
         explicit Scope(uint32_t key)
             : mKey(key)
             , mStart(heapUsed())
+            , mStartTick(ticks())
         {
         }
-        ~Scope() { add(mKey, int64_t(heapUsed()) - int64_t(mStart)); }
+        ~Scope() { add(mKey, int64_t(heapUsed()) - int64_t(mStart), ticks() - mStartTick); }
 
     private:
         uint32_t mKey;
         uint32_t mStart;
+        uint64_t mStartTick;
     };
 }

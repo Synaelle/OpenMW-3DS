@@ -11,6 +11,10 @@ namespace omw3ds
     // time is clamped for the simulation).
     void onEngineFrame();
 
+    // While loading (loading screen draws, the data-loading wait loop): services the HOME button and
+    // keeps the bottom screen updating. A close request while loading exits immediately.
+    void onLoadingTick();
+
     void shutdownBottomScreen();
 }
 

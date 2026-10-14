@@ -1,6 +1,7 @@
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 
+#include <3ds.h>
 #include <malloc.h>
 
 #include <algorithm>
@@ -18,6 +19,7 @@ namespace p3ds::memprobe
             uint32_t key = 0;
             int64_t bytes = 0;
             uint32_t count = 0;
+            uint64_t ticks = 0;
         };
         constexpr int kMaxEntries = 96;
         Entry gEntries[kMaxEntries];
@@ -46,17 +48,23 @@ namespace p3ds::memprobe
         return uint32_t(p3ds_thread_net_bytes);
     }
 
-    void add(uint32_t key, int64_t bytes)
+    uint64_t ticks()
+    {
+        return svcGetSystemTick();
+    }
+
+    void add(uint32_t key, int64_t bytes, uint64_t elapsedTicks)
     {
         for (int i = 0; i < gUsed; ++i)
             if (gEntries[i].key == key)
             {
                 gEntries[i].bytes += bytes;
                 ++gEntries[i].count;
+                gEntries[i].ticks += elapsedTicks;
                 return;
             }
         if (gUsed < kMaxEntries)
-            gEntries[gUsed++] = Entry{ key, bytes, 1 };
+            gEntries[gUsed++] = Entry{ key, bytes, 1, elapsedTicks };
     }
 
     namespace
@@ -103,9 +111,10 @@ namespace p3ds::memprobe
         {
             char name[12];
             keyName(gEntries[i].key, name);
-            P3DS_LOGI("  %-10s %8.2f MB  %6lu items  %5.0f B/item", name, double(gEntries[i].bytes) / 1048576.0,
-                (unsigned long)gEntries[i].count,
-                gEntries[i].count ? double(gEntries[i].bytes) / gEntries[i].count : 0.0);
+            P3DS_LOGI("  %-10s %8.2f MB  %6lu items  %5.0f B/item  %7.0f ms", name,
+                double(gEntries[i].bytes) / 1048576.0, (unsigned long)gEntries[i].count,
+                gEntries[i].count ? double(gEntries[i].bytes) / gEntries[i].count : 0.0,
+                double(gEntries[i].ticks) * 1000.0 / SYSCLOCK_ARM11);
         }
         gUsed = 0;
     }
