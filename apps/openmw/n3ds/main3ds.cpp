@@ -91,6 +91,8 @@ int main(int, char**)
     const int ret = Debug::wrapApplication(&runApplication, int(args.size()), argv.data(), "OpenMW");
 
     P3DS_LOGI("OpenMW exited with %d", ret);
+    if (p3ds::info().autorun)
+        p3ds::writeSmallFile(p3ds::kAutorunDonePath, "done\n"); // run-azahar.ps1 waits for it
     omw3ds::shutdownBottomScreen();
     p3ds::shutdown();
     gfxExit();

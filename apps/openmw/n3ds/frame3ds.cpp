@@ -4,6 +4,7 @@
 #include <platform3ds/log.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/statemanager.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
@@ -20,6 +21,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 namespace omw3ds
@@ -96,6 +99,18 @@ namespace omw3ds
 
     void onEngineFrame()
     {
+        // HOME menu / power button: SDL only services APT in its 3DS video driver, which we don't use.
+        // aptMainLoop() blocks while the app is suspended and returns false when it must close.
+        if (!aptMainLoop())
+        {
+            static bool quitRequested = false;
+            if (!quitRequested)
+            {
+                quitRequested = true;
+                P3DS_LOGI("APT: close requested, quitting");
+                MWBase::Environment::get().getStateManager()->requestQuit();
+            }
+        }
         static uint64_t lastTick = 0;
         const uint64_t now = svcGetSystemTick();
         if (lastTick == 0)
@@ -109,6 +124,25 @@ namespace omw3ds
         gTimer.addFrame(ms);
         if (++gStats.frameIndex == 100)
             lazyStringSelfCheck();
+
+        // Automated runs: "quit:N" in sdmc:/openmw/autorun.txt quits after N game frames (tests shutdown).
+        static unsigned quitAtFrame = [] {
+            unsigned frames = 0;
+            if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
+            {
+                char buf[128] = {};
+                std::fread(buf, 1, sizeof(buf) - 1, f);
+                std::fclose(f);
+                if (const char* q = std::strstr(buf, "quit:"))
+                    frames = unsigned(std::strtoul(q + 5, nullptr, 10));
+            }
+            return frames;
+        }();
+        if (quitAtFrame != 0 && gStats.frameIndex == quitAtFrame)
+        {
+            P3DS_LOGI("autorun: quitting after %u frames", quitAtFrame);
+            MWBase::Environment::get().getStateManager()->requestQuit();
+        }
 
         gLogAccum += frameSeconds;
         ++gLogFrames;
