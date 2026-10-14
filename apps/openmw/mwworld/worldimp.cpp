@@ -224,7 +224,17 @@ namespace MWWorld
         mContentFiles = contentFiles;
         mESMVersions.resize(mContentFiles.size(), -1);
 
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::perf::detail::begin(); // how much of the load is SD reads (io.read)
+#endif
         loadContentFiles(fileCollections, contentFiles, encoder, listener);
+#ifdef OPENMW_PLATFORM_3DS
+        {
+            char detail[300];
+            p3ds::perf::detail::end(detail, sizeof(detail));
+            Log(Debug::Info) << "3ds content files (ms/calls):" << detail;
+        }
+#endif
         OMW3DS_STAGE("loadData: content files");
         loadGroundcoverFiles(fileCollections, groundcoverFiles, encoder, listener);
         MWBase::Environment::get().getLuaManager()->contentFilesLoaded();
@@ -234,7 +244,17 @@ namespace MWWorld
 
         mStore.setUp();
         OMW3DS_STAGE("loadData: store setUp");
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::perf::detail::begin();
+#endif
         mStore.validateRecords(mReaders);
+#ifdef OPENMW_PLATFORM_3DS
+        {
+            char detail[300];
+            p3ds::perf::detail::end(detail, sizeof(detail));
+            Log(Debug::Info) << "3ds validate + ref count (ms/calls):" << detail;
+        }
+#endif
         OMW3DS_STAGE("loadData: validate + ref count");
         mStore.movePlayerRecord();
 

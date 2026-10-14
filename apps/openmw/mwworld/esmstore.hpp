@@ -8,6 +8,10 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#ifdef OPENMW_PLATFORM_3DS
+#include <set>
+#include <string>
+#endif
 
 #include <components/esm/luascripts.hpp>
 #include <components/esm/refid.hpp>
@@ -184,6 +188,12 @@ namespace MWWorld
         void validate();
 
         void countAllCellRefsAndMarkKeys(ESM::ReadersCache& readers);
+#ifdef OPENMW_PLATFORM_3DS
+        // countAllCellRefsAndMarkKeys's result kept in a file (esmstore.cpp).
+        std::string refInfoCacheKey() const;
+        bool loadRefInfoCache(const std::string& key);
+        void saveRefInfoCache(const std::string& key, const std::set<ESM::RefId>& keyIDs) const;
+#endif
 
         template <class T>
         void removeMissingObjects(Store<T>& store);

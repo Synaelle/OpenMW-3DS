@@ -64,7 +64,7 @@ namespace p3ds::perf
             const char* label;
             uint64_t ticks;
         };
-        constexpr int kMaxPhases = 24;
+        constexpr int kMaxPhases = 32;
         PhaseSum gPhases[kMaxPhases];
         int gPhaseCount = 0;
         LightLock gPhaseLock;
@@ -91,7 +91,7 @@ namespace p3ds::perf
     {
         if (frames == 0)
             return;
-        char line[400];
+        char line[640];
         int len = snprintf(line, sizeof(line), "perf/more:");
         LightLock_Lock(&gPhaseLock);
         for (int i = 0; i < gPhaseCount; ++i)
@@ -102,7 +102,8 @@ namespace p3ds::perf
             gPhases[i].ticks = 0;
         }
         LightLock_Unlock(&gPhaseLock);
-        P3DS_LOGI("%s", line);
+        // writef stops at 511 characters
+        log::write(log::Level::Info, std::string_view(line, std::min<size_t>(size_t(len), sizeof(line) - 1)));
     }
 }
 

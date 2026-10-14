@@ -21,12 +21,75 @@
 #include "../mwmechanics/spelllist.hpp"
 
 #ifdef OPENMW_PLATFORM_3DS
+#include <cstdio>
+#include <cstring>
+
 #include <platform3ds/crash.hpp>
 #include <platform3ds/memprobe.hpp>
 #endif
 
 namespace
 {
+#ifdef OPENMW_PLATFORM_3DS
+    // Counting the references re-reads every cell's references from the SD card (12 s on hardware, at every start).
+    // The result depends only on the content files: it is kept in this file, keyed by their names and sizes.
+    constexpr char sRefInfoCachePath[] = "sdmc:/openmw/cache/refinfo.bin";
+    constexpr char sRefInfoCacheMagic[4] = { 'O', '3', 'R', 'I' };
+    constexpr int sRefInfoCacheVersion = 1;
+
+    void appendU32(std::string& out, std::uint32_t value)
+    {
+        out.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    }
+
+    void appendString(std::string& out, std::string_view value)
+    {
+        appendU32(out, static_cast<std::uint32_t>(value.size()));
+        out.append(value);
+    }
+
+    struct CacheReader
+    {
+        const char* mPos;
+        const char* mEnd;
+        bool mOk = true;
+
+        std::uint32_t u32()
+        {
+            std::uint32_t value = 0;
+            if (mEnd - mPos < static_cast<std::ptrdiff_t>(sizeof(value)))
+                mOk = false;
+            else
+            {
+                std::memcpy(&value, mPos, sizeof(value));
+                mPos += sizeof(value);
+            }
+            return value;
+        }
+
+        std::string_view string()
+        {
+            const std::uint32_t size = u32();
+            if (!mOk || static_cast<std::uint32_t>(mEnd - mPos) < size)
+            {
+                mOk = false;
+                return {};
+            }
+            const std::string_view value(mPos, size);
+            mPos += size;
+            return value;
+        }
+
+        bool magic()
+        {
+            if (mEnd - mPos < 4 || std::memcmp(mPos, sRefInfoCacheMagic, 4) != 0)
+                return mOk = false;
+            mPos += 4;
+            return mOk;
+        }
+    };
+#endif
+
     struct Ref
     {
         ESM::RefNum mRefNum;
@@ -574,6 +637,11 @@ namespace MWWorld
         // We should consider consolidating or deferring this reading.
         if (!mRefInfo.empty())
             return;
+#ifdef OPENMW_PLATFORM_3DS
+        const std::string cacheKey = refInfoCacheKey();
+        if (loadRefInfoCache(cacheKey))
+            return;
+#endif
         std::vector<Ref> refs;
         std::set<ESM::RefId> keyIDs;
         std::vector<ESM::RefId> refIDs;
@@ -585,6 +653,7 @@ namespace MWWorld
         {
 #ifdef OPENMW_PLATFORM_3DS
             p3ds::crash::kick("counting refs"); // re-reads every cell's references: minutes on SD
+            p3ds::perf::detail::Scope readRefsScope("readRefs");
 #endif
             readRefs(*cells.at(i), i, refs, refIDs, keyIDs, readers);
         }
@@ -620,7 +689,163 @@ namespace MWWorld
             if (it != store.end())
                 it->second.mData.mFlags |= ESM::Miscellaneous::Key;
         }
+#ifdef OPENMW_PLATFORM_3DS
+        saveRefInfoCache(cacheKey, keyIDs);
+#endif
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    std::string ESMStore::refInfoCacheKey() const
+    {
+        const Store<ESM::Cell>& cells = get<ESM::Cell>();
+        std::set<std::filesystem::path> files;
+        for (std::size_t i = 0; i < cells.getSize(); ++i)
+            for (const ESM::ESM_Context& context : cells.at(i)->mContextList)
+                files.insert(context.filename);
+        std::string key = std::to_string(sRefInfoCacheVersion) + '|' + std::to_string(cells.getSize());
+        for (const std::filesystem::path& file : files)
+        {
+            std::error_code ec;
+            const std::uintmax_t size = std::filesystem::file_size(file, ec);
+            key += '|' + file.string() + ':' + std::to_string(ec ? 0 : size);
+        }
+        return key;
+    }
+
+    bool ESMStore::loadRefInfoCache(const std::string& key)
+    {
+        std::string data;
+        if (FILE* file = std::fopen(sRefInfoCachePath, "rb"))
+        {
+            if (std::fseek(file, 0, SEEK_END) == 0)
+            {
+                const long size = std::ftell(file);
+                if (size > 0 && std::fseek(file, 0, SEEK_SET) == 0)
+                {
+                    data.resize(static_cast<std::size_t>(size));
+                    if (std::fread(data.data(), 1, data.size(), file) != data.size())
+                        data.clear();
+                }
+            }
+            std::fclose(file);
+        }
+        if (data.empty())
+            return false;
+
+        const Store<ESM::Cell>& cells = get<ESM::Cell>();
+        CacheReader reader{ data.data(), data.data() + data.size() };
+        std::vector<ESM::RefId> keyIDs;
+        try
+        {
+            if (!reader.magic() || reader.string() != key)
+            {
+                Log(Debug::Info) << "Ref counts: " << sRefInfoCachePath << " is for other content files, counting";
+                return false;
+            }
+            // Cells by id (their order in the store needn't be the same from one run to the next).
+            std::unordered_map<ESM::RefId, const ESM::Cell*> cellsById;
+            cellsById.reserve(cells.getSize());
+            for (std::size_t i = 0; i < cells.getSize(); ++i)
+                cellsById.emplace(cells.at(i)->mId, cells.at(i));
+            std::vector<const ESM::Cell*> cellTable(reader.u32());
+            for (std::size_t i = 0; i < cellTable.size() && reader.mOk; ++i)
+            {
+                const auto found = cellsById.find(ESM::RefId::deserializeText(reader.string()));
+                if (found == cellsById.end())
+                    reader.mOk = false;
+                else
+                    cellTable[i] = found->second;
+            }
+            const std::uint32_t keyCount = reader.u32();
+            for (std::uint32_t i = 0; i < keyCount && reader.mOk; ++i)
+                keyIDs.push_back(ESM::RefId::deserializeText(reader.string()));
+            const std::uint32_t infoCount = reader.u32();
+            mRefInfo.reserve(infoCount);
+            for (std::uint32_t i = 0; i < infoCount && reader.mOk; ++i)
+            {
+                RefInfo& info = mRefInfo[ESM::RefId::deserializeText(reader.string())];
+                info.mCount = static_cast<int>(reader.u32());
+                const std::uint32_t cellCount = reader.u32();
+                for (std::uint32_t c = 0; c < cellCount && reader.mOk; ++c)
+                {
+                    const std::uint32_t index = reader.u32();
+                    if (index >= cellTable.size())
+                        reader.mOk = false;
+                    else
+                        info.mCells.push_back(cellTable[index]);
+                }
+            }
+            reader.magic(); // end marker: a truncated file doesn't load
+        }
+        catch (const std::exception& e)
+        {
+            Log(Debug::Warning) << "Ref counts: " << sRefInfoCachePath << ": " << e.what();
+            reader.mOk = false;
+        }
+        if (!reader.mOk || reader.mPos != reader.mEnd)
+        {
+            Log(Debug::Warning) << "Ref counts: " << sRefInfoCachePath << " is damaged, counting";
+            mRefInfo.clear();
+            return false;
+        }
+
+        auto& store = getWritable<ESM::Miscellaneous>().mStatic;
+        for (const ESM::RefId& id : keyIDs)
+        {
+            auto it = store.find(id);
+            if (it != store.end())
+                it->second.mData.mFlags |= ESM::Miscellaneous::Key;
+        }
+        Log(Debug::Info) << "Ref counts: " << mRefInfo.size() << " objects from " << sRefInfoCachePath;
+        return true;
+    }
+
+    void ESMStore::saveRefInfoCache(const std::string& key, const std::set<ESM::RefId>& keyIDs) const
+    {
+        const Store<ESM::Cell>& cells = get<ESM::Cell>();
+        std::unordered_map<const ESM::Cell*, std::uint32_t> cellIndices;
+        cellIndices.reserve(cells.getSize());
+        for (std::size_t i = 0; i < cells.getSize(); ++i)
+            cellIndices.emplace(cells.at(i), static_cast<std::uint32_t>(i));
+
+        std::string out;
+        out.append(sRefInfoCacheMagic, 4);
+        appendString(out, key);
+        appendU32(out, static_cast<std::uint32_t>(cells.getSize()));
+        for (std::size_t i = 0; i < cells.getSize(); ++i)
+            appendString(out, cells.at(i)->mId.serializeText());
+        appendU32(out, static_cast<std::uint32_t>(keyIDs.size()));
+        for (const ESM::RefId& id : keyIDs)
+            appendString(out, id.serializeText());
+        appendU32(out, static_cast<std::uint32_t>(mRefInfo.size()));
+        for (const auto& [id, info] : mRefInfo)
+        {
+            appendString(out, id.serializeText());
+            appendU32(out, static_cast<std::uint32_t>(info.mCount));
+            appendU32(out, static_cast<std::uint32_t>(info.mCells.size()));
+            for (const ESM::Cell* cell : info.mCells)
+                appendU32(out, cellIndices.at(cell));
+        }
+        out.append(sRefInfoCacheMagic, 4);
+
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::path(sRefInfoCachePath).parent_path(), ec);
+        FILE* file = std::fopen(sRefInfoCachePath, "wb");
+        bool ok = file != nullptr;
+        if (ok)
+        {
+            ok = std::fwrite(out.data(), 1, out.size(), file) == out.size();
+            ok = std::fclose(file) == 0 && ok;
+        }
+        if (ok)
+            Log(Debug::Info) << "Ref counts saved to " << sRefInfoCachePath << " (" << out.size() / 1024 << " KB)";
+        else
+        {
+            Log(Debug::Warning) << "Ref counts: failed to write " << sRefInfoCachePath;
+            std::remove(sRefInfoCachePath);
+        }
+    }
+#endif
 
     int ESMStore::getRefCount(const ESM::RefId& id) const
     {

@@ -9,6 +9,13 @@
 #include "actorconvexcallback.hpp"
 #include "collisiontype.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <3ds.h>
+// Diagnostic (physics worker thread): convex sweeps, reported with the actor costs (mtphysics.cpp).
+uint64_t gSweepTicks = 0;
+unsigned gSweepCount = 0;
+#endif
+
 namespace MWPhysics
 {
 
@@ -33,7 +40,14 @@ namespace MWPhysics
         if (actorFilter)
             traceCallback.m_collisionFilterMask &= ~CollisionType_Actor;
 
+#ifdef OPENMW_PLATFORM_3DS
+        const uint64_t sweepStart = svcGetSystemTick();
+#endif
         world->convexSweepTest(static_cast<const btConvexShape*>(shape), transFrom, transTo, traceCallback);
+#ifdef OPENMW_PLATFORM_3DS
+        gSweepTicks += svcGetSystemTick() - sweepStart;
+        ++gSweepCount;
+#endif
         return traceCallback;
     }
 
@@ -56,7 +70,15 @@ namespace MWPhysics
         // test. (Multiplying by 2 in 'square distance' units gives us about 1.4x the threshold length. In benchmarks
         // this was
         //  slightly better for the performance of normal scenes than 4.0, and just plain better than 1.0.)
-        if (attemptShortTrace && (btend - btstart).length2() > fallbackLength * fallbackLength * 2.0)
+#ifdef OPENMW_PLATFORM_3DS
+        // Physics steps at 30 Hz here (main3ds.cpp), so a walking actor moves ~3.3 units per step, just past the
+        // threshold below: every step paid a short trace and then the full one, two convex sweeps (~0.8 ms each on
+        // the 3DS) where one does. The short trace still serves the long ones (ground probes, falls).
+        const double shortTraceMinLength2 = 16.0 * 16.0;
+#else
+        const double shortTraceMinLength2 = fallbackLength * fallbackLength * 2.0;
+#endif
+        if (attemptShortTrace && (btend - btstart).length2() > shortTraceMinLength2)
         {
             btend = btstart + (btend - btstart).normalized() * fallbackLength;
             doingShortTrace = true;

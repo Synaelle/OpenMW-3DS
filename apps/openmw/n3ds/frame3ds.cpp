@@ -518,6 +518,8 @@ namespace omw3ds
             std::vector<ScriptedInput> mInputs;
             std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
             unsigned mLuaProfileAt = 0; // "luaprof:F": write the Lua profiler table (needs "lua profiler = true")
+            unsigned mPosAt = 0; // "pos:F,X,Y,Z": put the player at X Y Z (same worldspace) at frame F
+            osg::Vec3f mPos;
         };
         static const Autorun autorun = [] {
             Autorun result;
@@ -535,6 +537,13 @@ namespace omw3ds
                 parseScriptedInput(buf, result.mInputs);
                 if (const char* q = std::strstr(buf, "luaprof:"))
                     result.mLuaProfileAt = unsigned(std::strtoul(q + 8, nullptr, 10));
+                if (const char* q = std::strstr(buf, "pos:"))
+                {
+                    char* end = nullptr;
+                    result.mPosAt = unsigned(std::strtoul(q + 4, &end, 10));
+                    for (int i = 0; i < 3 && *end == ','; ++i)
+                        result.mPos[i] = std::strtof(end + 1, &end);
+                }
                 if (const char* q = std::strstr(buf, "door:"))
                 {
                     char* end = const_cast<char*>(q + 5);
@@ -575,6 +584,13 @@ namespace omw3ds
         for (unsigned door : autorun.mDoors)
             if (door == gStats.frameIndex)
                 activateNearestDoor();
+        if (autorun.mPosAt != 0 && gStats.frameIndex == autorun.mPosAt)
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            world->moveObject(world->getPlayerPtr(), autorun.mPos);
+            P3DS_LOGI("autorun: player moved to %.0f %.0f %.0f", double(autorun.mPos.x()), double(autorun.mPos.y()),
+                double(autorun.mPos.z()));
+        }
         for (unsigned shot : autorun.mShots)
             if (shot == gStats.frameIndex)
                 Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp").c_str());

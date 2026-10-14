@@ -90,6 +90,10 @@ int main(int, char**)
     // OSG's incremental compile pass would "upload" every new texture and geometry to the stub GL: CPU work
     // for nothing (the citro3d backend uploads on first draw).
     setenv("OPENMW_DONT_PRECOMPILE", "1", 1);
+    // Physics steps at 60 Hz by default: two steps per frame at the 30 fps cap, 17-26 ms of each 33 ms frame on
+    // core 2 in Seyda Neen (hardware test #21), where the work queue thread loading models also runs. One step
+    // per frame halves it; actor movement uses swept shapes, so the longer step doesn't let actors tunnel.
+    setenv("OPENMW_PHYSICS_FPS", "30", 1);
 
     std::vector<std::string> args = loadArguments();
     std::vector<char*> argv;

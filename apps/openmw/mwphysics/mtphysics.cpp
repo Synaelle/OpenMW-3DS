@@ -36,7 +36,17 @@
 #include "physicssystem.hpp"
 #include "projectile.hpp"
 #ifdef OPENMW_PLATFORM_3DS
+#include <3ds.h>
+#include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+// Diagnostic: convex sweeps counted in trace.cpp.
+extern uint64_t gSweepTicks;
+extern unsigned gSweepCount;
 #endif
 
 namespace MWPhysics
@@ -232,6 +242,44 @@ namespace
             }
         };
 
+#ifdef OPENMW_PLATFORM_3DS
+        // Diagnostic: movement cost per actor (physics worker thread only), the costliest logged every 150 frames.
+        struct ActorCost
+        {
+            std::string mName;
+            uint64_t mTicks = 0;
+            unsigned mSteps = 0;
+        };
+        std::unordered_map<const void*, ActorCost> gActorCosts;
+        unsigned gActorCostFrames = 0;
+
+        void reportActorCosts()
+        {
+            if (++gActorCostFrames < 150)
+                return;
+            std::vector<const ActorCost*> sorted;
+            uint64_t total = 0;
+            for (const auto& [key, cost] : gActorCosts)
+            {
+                sorted.push_back(&cost);
+                total += cost.mTicks;
+            }
+            std::sort(sorted.begin(), sorted.end(), [](const ActorCost* a, const ActorCost* b) { return a->mTicks > b->mTicks; });
+            const double perFrame = 1000.0 / SYSCLOCK_ARM11 / gActorCostFrames;
+            std::string line = "physics: " + std::to_string(gActorCosts.size()) + " actors, move "
+                + std::to_string(total * perFrame).substr(0, 5) + " ms/frame, " + std::to_string(gSweepCount / gActorCostFrames)
+                + " sweeps/frame (" + std::to_string(gSweepTicks * perFrame).substr(0, 5) + " ms); costliest:";
+            gSweepCount = 0;
+            gSweepTicks = 0;
+            for (std::size_t i = 0; i < sorted.size() && i < 4; ++i)
+                line += " " + sorted[i]->mName + " " + std::to_string(sorted[i]->mTicks * perFrame).substr(0, 4) + " ("
+                    + std::to_string(sorted[i]->mSteps / gActorCostFrames) + " steps)";
+            P3DS_LOGI("%s", line.c_str());
+            gActorCosts.clear();
+            gActorCostFrames = 0;
+        }
+#endif
+
         struct Move
         {
             const float mPhysicsDt;
@@ -239,7 +287,17 @@ namespace
             const MWPhysics::WorldFrameData& mWorldFrameData;
             void operator()(const LockedActorSimulation& sim) const
             {
+#ifdef OPENMW_PLATFORM_3DS
+                const uint64_t start = p3ds::memprobe::ticks();
+#endif
                 MWPhysics::MovementSolver::move(sim.second, mPhysicsDt, mCollisionWorld, mWorldFrameData);
+#ifdef OPENMW_PLATFORM_3DS
+                ActorCost& cost = gActorCosts[sim.first.get()];
+                if (cost.mName.empty())
+                    cost.mName = sim.first->getPtr().getCellRef().getRefId().toDebugString();
+                cost.mTicks += p3ds::memprobe::ticks() - start;
+                ++cost.mSteps;
+#endif
             }
             void operator()(const LockedProjectileSimulation& sim) const
             {
@@ -797,17 +855,40 @@ namespace MWPhysics
     {
         while (mRemainingSteps)
         {
-            mPreStepBarrier->wait([this] { afterPreStep(); });
+            mPreStepBarrier->wait([this] {
+#ifdef OPENMW_PLATFORM_3DS
+                p3ds::perf::Phase phase("phys.preStep");
+#endif
+                afterPreStep();
+            });
             int job = 0;
             const Visitors::Move impl{ mPhysicsDt, mCollisionWorld, *mWorldFrameData };
             const Visitors::WithLockedPtr<Visitors::Move, MaybeLock> vis{ impl, mCollisionWorldMutex, mLockingPolicy };
-            while ((job = mNextJob.fetch_add(1, std::memory_order_relaxed)) < mNumJobs)
-                std::visit(vis, (*mSimulations)[job]);
+            {
+#ifdef OPENMW_PLATFORM_3DS
+                p3ds::perf::Phase phase("phys.move");
+#endif
+                while ((job = mNextJob.fetch_add(1, std::memory_order_relaxed)) < mNumJobs)
+                    std::visit(vis, (*mSimulations)[job]);
+            }
 
-            mPostStepBarrier->wait([this] { afterPostStep(); });
+            mPostStepBarrier->wait([this] {
+#ifdef OPENMW_PLATFORM_3DS
+                p3ds::perf::Phase phase("phys.postStep");
+#endif
+                afterPostStep();
+            });
         }
 
-        refreshLOSCache();
+        {
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::perf::Phase phase("phys.los");
+#endif
+            refreshLOSCache();
+        }
+#ifdef OPENMW_PLATFORM_3DS
+        Visitors::reportActorCosts();
+#endif
         mPostSimBarrier->wait([this] { afterPostSim(); });
     }
 
