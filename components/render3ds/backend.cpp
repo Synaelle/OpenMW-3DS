@@ -2023,21 +2023,12 @@ namespace Render3DS
             return true;
         }
 
-        bool drawStageHook(osgUtil::RenderStage* stage, osg::RenderInfo&, osgUtil::RenderLeaf*&)
+        void drawMainStage(osgUtil::RenderStage* stage)
         {
-            if (!gActive)
-                return false;
-            if (gFailure)
-                return true; // nothing is drawn any more (and not through the stub GL either)
-            // Only the main scene camera is drawn for now. Pre-render (RTT) and post-render stages (the
-            // post-processing canvas, MyGUI) are skipped: returning true keeps OSG from drawing them.
-            if (!isMainCamera(stage->getCamera()))
-                return true;
-
             p3ds::perf::Phase phase("drawEmit");
             const uint64_t start = p3ds::memprobe::ticks();
             if (!beginFrame())
-                return true;
+                return;
 
             const u32 clearBits = (stage->getClearMask() & GL_COLOR_BUFFER_BIT ? C3D_CLEAR_COLOR : 0)
                 | (stage->getClearMask() & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT) ? C3D_CLEAR_DEPTH : 0);
@@ -2050,7 +2041,7 @@ namespace Render3DS
             {
                 runGpuSelfTest();
                 if (gFailure)
-                    return true;
+                    return;
             }
             C3D_BindProgram(&gProgram);
             setupAttributes();
@@ -2069,7 +2060,7 @@ namespace Render3DS
                 gSampleEmit = false;
             }
             if (gFailure)
-                return true;
+                return;
             if (gVerifyThisFrame && gStats.mDraws > drawsBefore)
             {
                 --gVerifyFramesLeft;
@@ -2080,6 +2071,23 @@ namespace Render3DS
             gVerifyThisFrame = false;
 
             gStats.mEmitMs += static_cast<float>(p3ds::memprobe::ticks() - start) / CPU_TICKS_PER_MSEC;
+        }
+
+        bool drawStageHook(osgUtil::RenderStage* stage, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf*&)
+        {
+            if (!gActive)
+                return false;
+            // Only the main scene camera is drawn for now. Pre-render (RTT) and post-render stages (the
+            // post-processing canvas, MyGUI) are skipped: returning true keeps OSG from drawing them. After a
+            // GPU failure nothing is drawn any more (and not through the stub GL either).
+            if (!isMainCamera(stage->getCamera()))
+                return true;
+            if (!gFailure)
+                drawMainStage(stage);
+            // OSG runs the camera's final draw callback once the stage is drawn, and something may be waiting
+            // for it: ScreenshotManager (save game thumbnails) blocks until it runs.
+            if (osg::Camera::DrawCallback* callback = stage->getCamera()->getFinalDrawCallback())
+                callback->run(renderInfo);
             return true;
         }
 

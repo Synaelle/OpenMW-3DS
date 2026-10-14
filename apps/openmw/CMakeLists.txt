@@ -122,7 +122,8 @@ if (OPENMW_PLATFORM_3DS)
     # Nintendo 3DS: no OpenAL, FFmpeg or video playback. Replacements live in apps/openmw/n3ds/.
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
-    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp n3ds/frame3ds.cpp)
+    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp n3ds/frame3ds.cpp
+        n3ds/hidinject.cpp)
     # Per-frame hot code at -O2 (the rest stays -Os: image size is memory): animation, physics, AI.
     set(OMW3DS_HOT_FILES ${OPENMW_FILES})
     list(FILTER OMW3DS_HOT_FILES INCLUDE REGEX "/(mwrender|mwphysics|mwmechanics)/[^/]*\\.cpp$")
@@ -175,6 +176,9 @@ if(BUILD_OPENMW)
             PRODUCT_CODE "CTR-P-OMW3"
             UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp
             SYSTEM_MODE_EXT 178MB)
+        # Scripted input for automated emulator runs (n3ds/hidinject.cpp).
+        target_link_options(openmw PRIVATE
+            "LINKER:--wrap=hidKeysDown,--wrap=hidKeysUp,--wrap=hidKeysHeld,--wrap=hidCircleRead,--wrap=irrstCstickRead")
     endif()
 
     # Workaround necessary to ensure osgAnimation::MatrixLinearSampler dynamic casts work under Clang

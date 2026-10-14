@@ -1,4 +1,5 @@
 #include "frame3ds.hpp"
+#include "hidinject.hpp"
 
 #include <platform3ds/debugscreen.hpp>
 #include <platform3ds/log.hpp>
@@ -6,8 +7,13 @@
 #include <platform3ds/platform.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/statemanager.hpp"
+#include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwgui/mode.hpp"
+#include "../mwmechanics/creaturestats.hpp"
+#include "../mwmechanics/drawstate.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
@@ -29,6 +35,7 @@
 #include <3ds.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -47,9 +54,12 @@ namespace omw3ds
         p3ds::FrameStats gStats;
         bool gBottomReady = false;
 
-        // Cell name / position are refreshed a few times a second only (string work).
+        // Cell name / position / player state are refreshed a few times a second only (string work).
         std::string gCellName = "-";
         float gPos[3] = {};
+        char gPlayerLine[48] = "";
+        char gStateLine[48] = "";
+        bool gStateAlert = false;
         unsigned gFramesSinceInfo = 0;
 
         // Frame-time log every 5 s.
@@ -150,9 +160,47 @@ namespace omw3ds
             }
         }
 
+        const char* guiModeName(MWGui::GuiMode mode)
+        {
+            switch (mode)
+            {
+                case MWGui::GM_Inventory:
+                    return "inventory";
+                case MWGui::GM_Container:
+                    return "container";
+                case MWGui::GM_Companion:
+                    return "companion";
+                case MWGui::GM_MainMenu:
+                    return "main menu";
+                case MWGui::GM_Journal:
+                    return "journal";
+                case MWGui::GM_Scroll:
+                case MWGui::GM_Book:
+                    return "book";
+                case MWGui::GM_Dialogue:
+                    return "dialogue";
+                case MWGui::GM_Barter:
+                    return "barter";
+                case MWGui::GM_Rest:
+                    return "rest";
+                case MWGui::GM_Levelup:
+                    return "level up";
+                case MWGui::GM_Loading:
+                case MWGui::GM_LoadingWallpaper:
+                    return "loading";
+                case MWGui::GM_QuickKeysMenu:
+                    return "quick keys";
+                case MWGui::GM_None:
+                    return "message";
+                default:
+                    return "service";
+            }
+        }
+
         void refreshWorldInfo()
         {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWBase::Environment& env = MWBase::Environment::get();
+            MWBase::World* world = env.getWorld();
             if (world == nullptr)
                 return;
             const MWWorld::Ptr player = world->getPlayerPtr();
@@ -162,6 +210,150 @@ namespace omw3ds
             const ESM::Position& pos = player.getRefData().getPosition();
             for (int i = 0; i < 3; ++i)
                 gPos[i] = pos.pos[i];
+
+            // No HUD and no menus are drawn until M8: say what the game is waiting for.
+            const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+            std::snprintf(gPlayerLine, sizeof(gPlayerLine), "HP %.0f/%.0f  MP %.0f/%.0f  FT %.0f/%.0f",
+                double(stats.getHealth().getCurrent()), double(stats.getHealth().getModified()),
+                double(stats.getMagicka().getCurrent()), double(stats.getMagicka().getModified()),
+                double(stats.getFatigue().getCurrent()), double(stats.getFatigue().getModified()));
+            MWBase::WindowManager* windows = env.getWindowManager();
+            if (stats.isDead())
+            {
+                std::snprintf(gStateLine, sizeof(gStateLine), "DEAD (no load menu yet: HOME, close)");
+                gStateAlert = true;
+            }
+            else if (windows->isGuiMode())
+            {
+                std::snprintf(gStateLine, sizeof(gStateLine), "menu: %s - not drawn, B closes",
+                    windows->isConsoleMode() ? "console" : guiModeName(windows->getMode()));
+                gStateAlert = true;
+            }
+            else
+            {
+                const MWMechanics::DrawState draw = stats.getDrawState();
+                std::snprintf(gStateLine, sizeof(gStateLine), "%s%s  %s",
+                    draw == MWMechanics::DrawState::Weapon     ? "weapon ready"
+                        : draw == MWMechanics::DrawState::Spell ? "magic ready"
+                                                                : "hands down",
+                    env.getMechanicsManager()->isSneaking(player) ? "  sneaking" : "",
+                    world->isFirstPerson() ? "1st person" : "3rd person");
+                gStateAlert = false;
+            }
+            static std::string lastState;
+            if (lastState != gStateLine)
+            {
+                lastState = gStateLine;
+                P3DS_LOGI("state: %s", gStateLine);
+            }
+        }
+    }
+
+    namespace
+    {
+        // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3);
+        // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward).
+        struct ScriptedInput
+        {
+            unsigned mStart = 0;
+            unsigned mFrames = 3;
+            u32 mKeys = 0; // btn:
+            int mStick = -1; // move: 0, look: 1
+            float mX = 0, mY = 0;
+            std::string mText;
+        };
+
+        u32 keyFromName(const std::string& name)
+        {
+            static const struct
+            {
+                const char* mName;
+                u32 mKey;
+            } keys[] = { { "a", KEY_A }, { "b", KEY_B }, { "x", KEY_X }, { "y", KEY_Y }, { "l", KEY_L },
+                { "r", KEY_R }, { "zl", KEY_ZL }, { "zr", KEY_ZR }, { "start", KEY_START }, { "select", KEY_SELECT },
+                { "up", KEY_DUP }, { "down", KEY_DDOWN }, { "left", KEY_DLEFT }, { "right", KEY_DRIGHT } };
+            for (const auto& key : keys)
+                if (name == key.mName)
+                    return key.mKey;
+            return 0;
+        }
+
+        void parseScriptedInput(const char* text, std::vector<ScriptedInput>& out)
+        {
+            auto forEach = [&](const char* tag, auto&& parse) {
+                for (const char* q = std::strstr(text, tag); q != nullptr; q = std::strstr(q + 1, tag))
+                {
+                    ScriptedInput input;
+                    const char* end = q;
+                    while (*end != ' ' && !std::isspace(static_cast<unsigned char>(*end)))
+                        ++end;
+                    input.mText.assign(q, end);
+                    if (parse(q + std::strlen(tag), input))
+                        out.push_back(std::move(input));
+                    else
+                        P3DS_LOGW("autorun: can't parse \"%s\"", input.mText.c_str());
+                }
+            };
+            forEach("btn:", [](const char* p, ScriptedInput& input) {
+                char* end = nullptr;
+                input.mStart = unsigned(std::strtoul(p, &end, 10));
+                if (*end != ',')
+                    return false;
+                std::string name;
+                for (++end; std::isalpha(static_cast<unsigned char>(*end)); ++end)
+                    name += char(std::tolower(static_cast<unsigned char>(*end)));
+                if (*end == ',')
+                    input.mFrames = unsigned(std::strtoul(end + 1, nullptr, 10));
+                input.mKeys = keyFromName(name);
+                return input.mKeys != 0;
+            });
+            auto parseStick = [](int stick) {
+                return [stick](const char* p, ScriptedInput& input) {
+                    char* end = nullptr;
+                    input.mStick = stick;
+                    input.mStart = unsigned(std::strtoul(p, &end, 10));
+                    if (*end != ',')
+                        return false;
+                    input.mX = std::strtof(end + 1, &end);
+                    if (*end != ',')
+                        return false;
+                    input.mY = std::strtof(end + 1, &end);
+                    if (*end == ',')
+                        input.mFrames = unsigned(std::strtoul(end + 1, nullptr, 10));
+                    return true;
+                };
+            };
+            forEach("move:", parseStick(0));
+            forEach("look:", parseStick(1));
+        }
+
+        void applyScriptedInput(const std::vector<ScriptedInput>& inputs, unsigned frame)
+        {
+            if (inputs.empty())
+                return;
+            u32 held = 0;
+            hidinject::Stick sticks[2];
+            // SDL takes the first value an axis reports as its rest position and drops it; a scripted stick goes
+            // straight to its target, so its first move would be lost. Report a tiny value once, first.
+            static bool primed = false;
+            if (!primed)
+            {
+                sticks[0] = sticks[1] = hidinject::Stick{ true, 1.f / 160.f, 1.f / 160.f };
+                primed = true;
+            }
+            for (const ScriptedInput& input : inputs)
+            {
+                if (frame < input.mStart || frame >= input.mStart + input.mFrames)
+                    continue;
+                if (frame == input.mStart)
+                    P3DS_LOGI("autorun: %s at pos %.0f %.0f %.0f", input.mText.c_str(), double(gPos[0]),
+                        double(gPos[1]), double(gPos[2]));
+                if (input.mStick < 0)
+                    held |= input.mKeys;
+                else
+                    sticks[input.mStick] = hidinject::Stick{ true, input.mX, input.mY };
+            }
+            hidinject::set(held, sticks[0], sticks[1]);
         }
     }
 
@@ -264,18 +456,20 @@ namespace omw3ds
             unsigned mQuitAt = 0;
             std::vector<unsigned> mShots;
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
+            std::vector<ScriptedInput> mInputs;
         };
         static const Autorun autorun = [] {
             Autorun result;
             if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
             {
-                char buf[256] = {};
+                char buf[4096] = {};
                 std::fread(buf, 1, sizeof(buf) - 1, f);
                 std::fclose(f);
                 if (const char* q = std::strstr(buf, "quit:"))
                     result.mQuitAt = unsigned(std::strtoul(q + 5, nullptr, 10));
                 if (const char* q = std::strstr(buf, "turn:"))
                     result.mTurnDegrees = std::strtof(q + 5, nullptr);
+                parseScriptedInput(buf, result.mInputs);
                 if (const char* q = std::strstr(buf, "shot:"))
                 {
                     char* end = const_cast<char*>(q + 5);
@@ -295,16 +489,17 @@ namespace omw3ds
             if (shot == gStats.frameIndex)
                 Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp").c_str());
         // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
-        // so scan once per frame here. SELECT = top-screen screenshot (temporary, until M4 maps controls).
+        // so scan once per frame here. All buttons are game controls (bindingsmanager.cpp); debug
+        // functions are on the touch screen.
         hidScanInput();
-        // D-pad left/right: turn the player 45 degrees (debug camera until M4 brings real controls).
-        float turn = 0;
-        if (hidKeysDown() & KEY_DLEFT)
-            turn = 45;
-        if (hidKeysDown() & KEY_DRIGHT)
-            turn = -45;
-        if (gStats.frameIndex == 30)
-            turn += autorun.mTurnDegrees;
+        applyScriptedInput(autorun.mInputs, gStats.frameIndex);
+        if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
+        {
+            touchPosition touch;
+            hidTouchRead(&touch);
+            gBottom.onTouch(p3ds::TouchEvent{ touch.px, touch.py, true });
+        }
+        const float turn = gStats.frameIndex == 30 ? autorun.mTurnDegrees : 0.f;
         if (turn != 0)
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();
@@ -314,7 +509,7 @@ namespace omw3ds
             world->rotateObject(player, rot, MWBase::RotationFlag_none);
             P3DS_LOGI("debug: player turned to %.0f degrees", double(osg::RadiansToDegrees(rot.z())));
         }
-        if (hidKeysDown() & KEY_SELECT)
+        if (gBottomReady && gBottom.consumeScreenshotRequest())
         {
             static unsigned count = 0;
             if (count == 0)
@@ -381,6 +576,9 @@ namespace omw3ds
         snap.cellName = gCellName.c_str();
         for (int i = 0; i < 3; ++i)
             snap.playerPos[i] = gPos[i];
+        snap.player = gPlayerLine;
+        snap.state = gStateLine;
+        snap.stateAlert = gStateAlert;
         snap.status = Render3DS::isActive() ? "citro3d"
             : Render3DS::failure()          ? Render3DS::failure()
                                             : "headless (renderer failed to start)";

@@ -14,6 +14,10 @@
 #include "../mwbase/inputmanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/log.hpp>
+#endif
+
 namespace MWGui
 {
 
@@ -100,6 +104,10 @@ namespace MWGui
         box->mCurrentTime = 0;
         auto realMessage = MyGUI::LanguageManager::getInstance().replaceTags({ message.data(), message.size() });
         box->mMaxTime = realMessage.length() * mMessageBoxSpeed;
+#ifdef OPENMW_PLATFORM_3DS
+        // No GUI drawing yet: show game messages in the bottom-screen log.
+        P3DS_LOGI("message: %s", realMessage.asUTF8_c_str());
+#endif
 
         if (stat)
             mStaticMessageBox = box.get();
@@ -136,6 +144,16 @@ namespace MWGui
             mInterMessageBoxe->setVisible(false);
         }
 
+#ifdef OPENMW_PLATFORM_3DS
+        {
+            std::string text = MyGUI::LanguageManager::getInstance()
+                                   .replaceTags({ message.data(), message.size() })
+                                   .asUTF8();
+            for (const std::string& button : buttons)
+                text += " [" + MyGUI::LanguageManager::getInstance().replaceTags(button).asUTF8() + "]";
+            P3DS_LOGW("question: %s", text.c_str());
+        }
+#endif
         mInterMessageBoxe
             = std::make_unique<InteractiveMessageBox>(*this, std::string{ message }, buttons, immediate, defaultFocus);
         mLastButtonPressed = -1;

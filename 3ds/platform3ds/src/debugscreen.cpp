@@ -38,7 +38,10 @@ namespace p3ds
 
     namespace
     {
-        constexpr int kLogFirstRow = 10;
+        constexpr int kLogFirstRow = 12;
+        // Touch button bar above the watchdog heartbeat row (crash.cpp): rows 26-28, 24 px tall.
+        constexpr int kButtonRow = textfb::kRows - 4;
+        constexpr int kButtonRows = 3;
 
         uint16_t levelColor(log::Level level)
         {
@@ -119,8 +122,27 @@ namespace p3ds
         mSnapshot.frame = &mFrameCopy;
         strncpy(mCell, snapshot.cellName ? snapshot.cellName : "-", sizeof(mCell) - 1);
         strncpy(mStatus, snapshot.status ? snapshot.status : "", sizeof(mStatus) - 1);
+        strncpy(mPlayer, snapshot.player ? snapshot.player : "", sizeof(mPlayer) - 1);
+        strncpy(mState, snapshot.state ? snapshot.state : "", sizeof(mState) - 1);
         mSnapshot.cellName = mCell;
         mSnapshot.status = mStatus;
+        mSnapshot.player = mPlayer;
+        mSnapshot.state = mState;
+    }
+
+    void DebugBottomScreen::onTouch(const TouchEvent& event)
+    {
+        if (!mVisible || !event.down)
+            return;
+        if (event.y >= kButtonRow * 8 && event.y < (kButtonRow + kButtonRows) * 8)
+            mScreenshotRequested = true;
+    }
+
+    bool DebugBottomScreen::consumeScreenshotRequest()
+    {
+        const bool requested = mScreenshotRequested;
+        mScreenshotRequested = false;
+        return requested;
     }
 
     void DebugBottomScreen::render()
@@ -166,12 +188,15 @@ namespace p3ds
         const PlatformInfo& pi = info();
 
         char title[kCols + 1];
-        snprintf(title, sizeof(title), " OpenMW3DS debug   %s %s  [SELECT]", pi.isNew3DS ? "N3DS" : "O3DS",
+        snprintf(title, sizeof(title), " OpenMW3DS debug   %s %s", pi.isNew3DS ? "N3DS" : "O3DS",
             pi.speedupEnabled ? "804MHz" : "268MHz");
-        if (gShadow[0][0] == 0) // header is static: draw once per clear
+        if (gShadow[0][0] == 0) // header and buttons are static: draw once per clear
         {
             fillRows(0, 1, color::header);
             drawText(0, 0, title, color::cyan, color::header);
+            fillRows(kButtonRow, kButtonRows, color::header);
+            static const char kButton[] = "[ tap: SCREENSHOT ]";
+            drawText((kCols - int(sizeof(kButton) - 1)) / 2, kButtonRow + 1, kButton, color::white, color::header);
             gShadow[0][0] = 1;
         }
 
@@ -189,8 +214,10 @@ namespace p3ds
         row(8, color::cyan, "cell %.34s", mSnapshot.cellName);
         row(9, color::cyan, "pos %.0f %.0f %.0f  %.16s", mSnapshot.playerPos[0], mSnapshot.playerPos[1],
             mSnapshot.playerPos[2], mSnapshot.status);
+        row(10, color::green, "%s", mPlayer);
+        row(11, mSnapshot.stateAlert ? color::yellow : color::cyan, "%s", mState);
 
-        constexpr int kLogRows = kRows - kLogFirstRow - 1; // last row: watchdog heartbeat (crash.cpp)
+        constexpr int kLogRows = kButtonRow - kLogFirstRow;
         log::Line lines[kLogRows];
         const size_t n = log::copyLastLines(lines, kLogRows);
         for (int i = 0; i < kLogRows; ++i)

@@ -817,7 +817,13 @@ void OMW::Engine::prepareEngine()
     // Create input and UI first to set up a bootstrapping environment for
     // showing a loading screen and keeping the window responsive while doing so
 
+#ifdef OPENMW_PLATFORM_3DS
+    // Its own file: bindings saved by earlier builds hold the upstream controller layout, which the 3DS
+    // controller defaults (bindingsmanager.cpp) would not replace.
+    const auto keybinderUser = mCfgMgr.getUserConfigPath() / "input_3ds_v1.xml";
+#else
     const auto keybinderUser = mCfgMgr.getUserConfigPath() / "input_v3.xml";
+#endif
     bool keybinderUserExists = std::filesystem::exists(keybinderUser);
     if (!keybinderUserExists)
     {

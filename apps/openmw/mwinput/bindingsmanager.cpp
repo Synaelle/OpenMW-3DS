@@ -376,6 +376,15 @@ namespace MWInput
         defaultButtonBindings[A_Inventory] = SDL_CONTROLLER_BUTTON_B;
         defaultButtonBindings[A_GameMenu] = SDL_CONTROLLER_BUTTON_START;
         defaultButtonBindings[A_QuickSave] = SDL_CONTROLLER_BUTTON_GUIDE;
+#ifdef OPENMW_PLATFORM_3DS
+        // New 3DS: no stick clicks and no Guide button. "Shoulder layout" (PORTING_NOTES, M4): L sneak (hold),
+        // R first/third person, D-pad up/down journal/rest, Select quick save. ZL jump, ZR use as upstream.
+        defaultButtonBindings[A_Sneak] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+        defaultButtonBindings[A_TogglePOV] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+        defaultButtonBindings[A_Journal] = SDL_CONTROLLER_BUTTON_DPAD_UP;
+        defaultButtonBindings[A_Rest] = SDL_CONTROLLER_BUTTON_DPAD_DOWN;
+        defaultButtonBindings[A_QuickSave] = SDL_CONTROLLER_BUTTON_BACK;
+#endif
 
         std::map<int, int> defaultAxisBindings;
         defaultAxisBindings[A_MoveForwardBackward] = SDL_CONTROLLER_AXIS_LEFTY;
