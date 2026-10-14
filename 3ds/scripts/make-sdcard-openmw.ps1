@@ -28,7 +28,9 @@ Copy-Item "$app\openmw.cia" "$sd\cias\openmw3ds.cia"
 # The matching .elf (with debug info, ~1.8 GB) stays on the PC for crash symbolization.
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 New-Item -ItemType Directory -Force "$out\elf-archive" | Out-Null
-Copy-Item (Join-Path $RepoRoot 'build\openmw\openmw.elf') "$out\elf-archive\openmw-$stamp.elf"
+$elf = Get-Item (Join-Path $RepoRoot 'build\openmw\openmw.elf')
+$archived = Join-Path "$out\elf-archive" ('openmw-' + $elf.LastWriteTime.ToString('yyyyMMdd-HHmmss') + '.elf')
+if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per build, not per package
 
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
@@ -37,8 +39,9 @@ What this tests: OpenMW itself, headless (NO picture on the top screen yet - the
 next milestone). It loads Morrowind.esm, starts a new game in "$Start" and runs the game loop.
 We want: loading time, memory, and the real frame time without rendering.
 
-1. Copy the CONTENTS of this folder to the ROOT of your SD card (merge folders, overwrite files).
-   Do it every time, not only the CIA: openmw/config/settings.cfg changes between test builds.
+1. First time: copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
+   Later test builds come as a small update folder (sdcard-openmw-update) with only the changed
+   files, listed in its UPDATE.txt: copy that instead, overwriting.
 2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
      Morrowind.esm   (~79 MB)
      Morrowind.bsa   (~310 MB)
@@ -67,3 +70,35 @@ If you have to force the power off anyway, still send openmw3ds.log.
 
 Write-Host "Package: $sd"
 Get-ChildItem $sd -Recurse -File | Measure-Object Length -Sum | ForEach-Object { "{0} files, {1:N1} MB" -f $_.Count, ($_.Sum / 1MB) }
+
+# Incremental update: out\sdcard-openmw-update\ holds only the files that differ from the previous
+# package (copying the ~380 small files of resources/ over FTP is slow), and UPDATE.txt lists them.
+# The manifest of the previous package is out\sdcard-openmw.manifest.json; -Full skips the diff.
+$manifestPath = Join-Path $out 'sdcard-openmw.manifest.json'
+$update = Join-Path $out 'sdcard-openmw-update'
+$manifest = [ordered]@{}
+Get-ChildItem $sd -Recurse -File | Where-Object { $_.Name -ne 'README.txt' } | Sort-Object FullName | ForEach-Object {
+    $rel = $_.FullName.Substring($sd.Length + 1).Replace('\', '/')
+    $manifest[$rel] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+}
+$previous = @{}
+if (Test-Path $manifestPath) {
+    (Get-Content $manifestPath -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $previous[$_.Name] = $_.Value }
+}
+$changed = @($manifest.Keys | Where-Object { $previous[$_] -ne $manifest[$_] })
+$removed = @($previous.Keys | Where-Object { -not $manifest.Contains($_) } | Sort-Object)
+if (Test-Path $update) { Remove-Item -Recurse -Force $update }
+New-Item -ItemType Directory -Force $update | Out-Null
+foreach ($rel in $changed) {
+    $dst = Join-Path $update $rel
+    New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+    Copy-Item (Join-Path $sd $rel) $dst
+}
+$lines = @("OpenMW 3DS - update ${stamp}: copy the CONTENTS of this folder to the SD card root (overwrite).", '',
+    "Changed files ($($changed.Count)):") + ($changed | ForEach-Object { "  sdmc:/$_" })
+if ($removed.Count) { $lines += @('', "Delete these files from the SD card ($($removed.Count)):") + ($removed | ForEach-Object { "  sdmc:/$_" }) }
+if (-not (Test-Path $manifestPath)) { $lines += @('', '(No previous manifest: this is the full package.)') }
+$lines | Set-Content (Join-Path $update 'UPDATE.txt')
+$manifest | ConvertTo-Json | Set-Content $manifestPath
+Write-Host "Update: $update"
+$lines | ForEach-Object { Write-Host $_ }
