@@ -17,6 +17,11 @@
 
 #include "player.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include "../mwbase/windowmanager.hpp"
+#include "../n3ds/frame3ds.hpp"
+#endif
+
 namespace MWWorld
 {
     ActionTeleport::ActionTeleport(ESM::RefId cellId, const ESM::Position& position, bool teleportFollowers)
@@ -29,6 +34,15 @@ namespace MWWorld
 
     void ActionTeleport::executeImp(const Ptr& actor)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // Exteriors don't fit in memory yet (M5): say so instead of running out of memory while loading them.
+        if (!omw3ds::exteriorsEnabled() && actor == MWBase::Environment::get().getWorld()->getPlayerPtr()
+            && MWBase::Environment::get().getWorldModel()->getCell(mCellId).isExterior())
+        {
+            MWBase::Environment::get().getWindowManager()->messageBox("Exteriors are not supported yet (M5).");
+            return;
+        }
+#endif
         if (mTeleportFollowers)
         {
             // Find any NPCs that are following the actor and teleport them with him

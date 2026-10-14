@@ -14,6 +14,7 @@
 #include "../mwgui/mode.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
+#include "../mwbase/luamanager.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
@@ -31,6 +32,7 @@
 #include <osgViewer/Viewer>
 #include <components/esm3/loadbook.hpp>
 #include <components/esm3/loaddial.hpp>
+#include <components/esm3/loaddoor.hpp>
 
 #include <3ds.h>
 
@@ -357,6 +359,51 @@ namespace omw3ds
         }
     }
 
+    bool exteriorsEnabled()
+    {
+        static const bool enabled = [] {
+            struct stat st;
+            const bool exists = stat("sdmc:/openmw/exteriors", &st) == 0;
+            if (exists)
+                P3DS_LOGW("exteriors enabled (sdmc:/openmw/exteriors)");
+            return exists;
+        }();
+        return enabled;
+    }
+
+    namespace
+    {
+        // autorun "door:F": activate the nearest door that leads somewhere, as if the player pressed A on it
+        // (tests cell changes without scripting a walk to the door).
+        void activateNearestDoor()
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
+            MWWorld::Ptr nearest;
+            float best = 0;
+            player.getCell()->forEachType<ESM::Door>([&](const MWWorld::Ptr& door) {
+                if (!door.getCellRef().getTeleport())
+                    return true;
+                const float distance = (door.getRefData().getPosition().asVec3() - playerPos).length2();
+                if (nearest.isEmpty() || distance < best)
+                {
+                    nearest = door;
+                    best = distance;
+                }
+                return true;
+            });
+            if (nearest.isEmpty())
+            {
+                P3DS_LOGW("autorun: no door to activate");
+                return;
+            }
+            P3DS_LOGI("autorun: activating door %s (to %s)", nearest.getCellRef().getRefId().toDebugString().c_str(),
+                nearest.getCellRef().getDestCell().toDebugString().c_str());
+            MWBase::Environment::get().getLuaManager()->objectActivated(nearest, player);
+        }
+    }
+
     void initBottomScreen(const char* status)
     {
         gBottom.init();
@@ -457,6 +504,7 @@ namespace omw3ds
             std::vector<unsigned> mShots;
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
             std::vector<ScriptedInput> mInputs;
+            std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
         };
         static const Autorun autorun = [] {
             Autorun result;
@@ -470,6 +518,13 @@ namespace omw3ds
                 if (const char* q = std::strstr(buf, "turn:"))
                     result.mTurnDegrees = std::strtof(q + 5, nullptr);
                 parseScriptedInput(buf, result.mInputs);
+                if (const char* q = std::strstr(buf, "door:"))
+                {
+                    char* end = const_cast<char*>(q + 5);
+                    do
+                        result.mDoors.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
+                    while (*end == ',');
+                }
                 if (const char* q = std::strstr(buf, "shot:"))
                 {
                     char* end = const_cast<char*>(q + 5);
@@ -485,6 +540,9 @@ namespace omw3ds
             P3DS_LOGI("autorun: quitting after %u frames", autorun.mQuitAt);
             MWBase::Environment::get().getStateManager()->requestQuit();
         }
+        for (unsigned door : autorun.mDoors)
+            if (door == gStats.frameIndex)
+                activateNearestDoor();
         for (unsigned shot : autorun.mShots)
             if (shot == gStats.frameIndex)
                 Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp").c_str());

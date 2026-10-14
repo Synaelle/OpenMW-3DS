@@ -25,6 +25,9 @@ namespace omw3ds
     void onLoadingTick();
 
     void shutdownBottomScreen();
+
+    // Exteriors don't fit in memory yet (M5): doors to them are refused unless sdmc:/openmw/exteriors exists.
+    bool exteriorsEnabled();
 }
 
 #endif
