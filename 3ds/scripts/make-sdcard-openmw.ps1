@@ -40,11 +40,18 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
 If the bottom screen shows another build, the new CIA is not the one installed.
-What this tests: EXTERIORS (milestone M5), with the fix from hardware test #19: the half-missing,
-flashing water (and any other geometry cut off close to the camera). Fires, particles and background
-loading as in the previous build. OpenMW starts a new game in "$Start"; the front door leads OUTSIDE
-into Seyda Neen. People may still cause a short stall when they appear. Still missing: menus/HUD (M8),
-sound (M7).
+What this tests (hardware test #22, several changes at once):
+  a. WATER: rebuilt as a small grid that follows the camera (tests #19-#21: cut along a straight line).
+  b. PEOPLE APPEARING: should no longer pause the game (models now load in the background first).
+  c. LOADING: shorter cell loads; from the SECOND launch on, startup skips the "counting refs" step
+     (~12 s; the first launch writes sdmc:/openmw/cache/refinfo.bin).
+  d. PHYSICS at 30 steps per second instead of 60 (lighter on the CPU): walking, running, jumping,
+     stairs, swimming and NPCs walking around should feel the same as before.
+  e. RENDERING fixes: enchanted items and objects with glow/dark maps no longer translucent; cut-out
+     textures (hair, plants, leaf edges) use their real alpha test.
+  f. Screenshots now save in under a second.
+OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
+menus/HUD (M8), sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
@@ -56,7 +63,8 @@ sound (M7).
    (Nothing else is needed. The files are only read, never modified.)
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
 4. While loading, the top screen is black (dark) and the bottom screen shows the debug display:
-   "(loading)" and log lines, then FPS, draw calls and triangles once the game runs. Loading takes ~1.5 min.
+   "(loading)" and log lines, then FPS, draw calls and triangles once the game runs. Loading takes ~1 min
+   (a little longer the very first time: it writes a cache file).
    ALIVE INDICATOR = the last line of the bottom screen, redrawn every second:
      |   245s counting refs   idle   0s  53.0MB
      ^spinner ^uptime ^current step  ^seconds without progress  ^memory
@@ -78,16 +86,21 @@ sound (M7).
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
    Touch the bar at the bottom of the bottom screen ("tap: SCREENSHOT") to save a screenshot of the top
-   screen to sdmc:/openmw/screenshots/ (takes ~2 s).
+   screen to sdmc:/openmw/screenshots/ (under a second).
    Bottom screen: HP/MP/FT, then a state line: "weapon ready / sneaking / 3rd person", or in yellow
    "menu: inventory - not drawn, B closes" when the game opened a menu you can't see yet, or "DEAD".
    Game messages ("Saving...", "You stole...") appear in the log lines below.
    Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
-   Things to try: go out of the front door (A). Loading outside takes ~10 s. Walk around Seyda Neen:
-   the docks and the sea, the houses, the lighthouse direction. Look at the sky. Go into one or two
-   houses and back out. Walk out of town a bit (each new area loads for a few seconds). Note anything
-   that looks wrong (missing objects, wrong colours, things popping in too close), and the FPS on the
-   bottom screen. Take a few screenshots (tap the bar). Then HOME -> Close.
+   Things to try, in one session:
+   - Inside Arrille's: look at the enchanted dagger on display and the people (hair). Screenshot.
+   - Go out of the front door (A). Walk around Seyda Neen and past the people there: does the game
+     still pause when someone appears? Jump, run, climb some stairs, walk into a wall.
+   - Go to the shore where you swam last time: look at the water from the beach, then wade/swim in and
+     look around, up and down. Is it still cut along a straight line, or flashing? Screenshots.
+   - Go into one or two houses and back out. Walk out of town a bit.
+   - HOME -> Close, then launch again: the second start should be shorter (note both times if you can).
+   Note anything that looks wrong (missing objects, wrong colours, things popping in too close) and
+   the FPS on the bottom screen.
 6. Send back these logs:
      sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
      sdmc:/openmw/config/openmw.log      OpenMW's own log
