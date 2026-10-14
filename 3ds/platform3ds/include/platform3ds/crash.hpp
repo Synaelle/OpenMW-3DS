@@ -4,7 +4,7 @@
 // On a CPU exception, abort(), std::terminate or a final out-of-memory it writes
 // <crash path> with registers, a backtrace (frame-pointer walk + stack scan), memory stats and
 // the last log lines, then shows a short message on the bottom screen.
-// Resolve addresses with scripts/symbolize.ps1 <crash.log> <app.elf>.
+// Resolve addresses with scripts/symbolize.ps1 <openmw3ds-crash.log> <app.elf>.
 namespace p3ds::crash
 {
     // Call once from the main thread, after log::init. Installs the handler for the main thread,

@@ -33,15 +33,15 @@ Copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
   cias/openmw3ds-testapp.cia   -> install with FBI, launch "OpenMW3DS testapp" from the HOME Menu
   openmw/autorun.txt           -> makes the app run its tests by itself and exit (~30 s)
 
-Before testing: delete old files in sdmc:/openmw/ (openmw.log, probe.txt, crash.log), and
+Before testing: delete old files in sdmc:/openmw/ (openmw3ds.log, probe.txt, openmw3ds-crash.log), and
 uninstall the previous "OpenMW3DS testapp" in FBI if you installed one.
 
 1. Launch the CIA. The bottom screen shows progress (PROBE lines, then BENCH lines).
    It exits by itself when done.
 2. If it freezes: note the LAST line on the bottom screen, power off, and send me
-   sdmc:/openmw/openmw.log (every line is now saved immediately, so it survives a freeze)
+   sdmc:/openmw/openmw3ds.log (every line is now saved immediately, so it survives a freeze)
    plus anything in sdmc:/luma/dumps/arm11/.
-3. If it finished: send sdmc:/openmw/openmw.log and probe.txt.
+3. If it finished: send sdmc:/openmw/openmw3ds.log and probe.txt.
    Optional crash-logger test: delete sdmc:/openmw/autorun.txt, launch again, hold L+R, press X.
 "@ | Set-Content "$sd\README.txt"
 

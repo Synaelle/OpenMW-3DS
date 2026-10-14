@@ -3,7 +3,7 @@
 #   scripts\run-azahar.ps1 -Autorun "probes bench"       # automated run, waits for completion
 #   scripts\run-azahar.ps1 -Autorun "crash:data" -NoBuild
 #   scripts\run-azahar.ps1 -App out\testapp.cxi          # .cxi = same exheader as the .cia (178 MB mode)
-# Artefacts (log, crash.log, probe.txt, screenshots as PNG, Azahar log) land in out\runs\<timestamp>\.
+# Artefacts (openmw3ds.log, openmw3ds-crash.log, OpenMW's own openmw.log, probe.txt, screenshots as PNG, Azahar log) land in out\runs\<timestamp>\.
 param(
     [string]$App = 'out\testapp.3dsx',
     [string]$Autorun = '',
@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Force $SdOpenmw | Out-Null
 
 # Clean previous run outputs (keep any game data the user placed there).
 Get-ChildItem $SdOpenmw -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^(openmw\.log|crash\.log|probe\.txt|autorun\.(txt|done)|shot_.*\.bmp|perf.*\.csv)$' } |
+    Where-Object { $_.Name -match '^(openmw3ds\.log|openmw3ds-crash\.log|openmw\.log|crash\.log|probe\.txt|autorun\.(txt|done)|shot_.*\.bmp|perf.*\.csv)$' } |
     Remove-Item -Force
 $memFlag = Join-Path $SdOpenmw 'memprofile'
 if ($MemProfile) { Set-Content -Path $memFlag -Value '' } elseif (Test-Path $memFlag) { Remove-Item $memFlag -Force }
@@ -96,7 +96,7 @@ $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $result = 'timeout'
 while ((Get-Date) -lt $deadline) {
     if (Test-Path (Join-Path $SdOpenmw 'autorun.done')) { $result = 'done'; break }
-    if (Test-Path (Join-Path $SdOpenmw 'crash.log')) { Start-Sleep -Seconds 3; $result = 'crash'; break }
+    if (Test-Path (Join-Path $SdOpenmw 'openmw3ds-crash.log')) { Start-Sleep -Seconds 3; $result = 'crash'; break }
     if ($proc.HasExited) { $result = 'emulator-exited'; break }
     Start-Sleep -Milliseconds 500
 }
@@ -113,6 +113,9 @@ Remove-Item (Join-Path $SdOpenmw 'autorun.txt') -ErrorAction SilentlyContinue
 # Collect.
 Get-ChildItem $SdOpenmw -File | Where-Object { $_.Name -match '\.(log|txt|csv|done)$' } | Copy-Item -Destination $runDir
 if (Test-Path $azLog) { Copy-Item $azLog (Join-Path $runDir 'azahar_log.txt') }
+# OpenMW's own log (Debug::Log), next to its user config.
+$omwLog = Join-Path $SdOpenmw 'config\openmw.log'
+if (Test-Path $omwLog) { Copy-Item $omwLog $runDir }
 
 Get-ChildItem $SdOpenmw -Filter 'shot_*.bmp' | ForEach-Object {
     $img = [System.Drawing.Image]::FromFile($_.FullName)
@@ -124,6 +127,8 @@ Write-Host "Result: $result"
 Write-Host "Artefacts: $runDir"
 Get-ChildItem $runDir | Select-Object Name, Length | Format-Table -AutoSize | Out-Host
 if ($result -eq 'crash') {
+    # The .elf sits next to the app (testapp) or at the root of the build dir (OpenMW).
     $elf = [IO.Path]::ChangeExtension($AppPath.Path, '.elf')
-    if (Test-Path $elf) { & "$PSScriptRoot\symbolize.ps1" -CrashLog (Join-Path $runDir 'crash.log') -Elf $elf }
+    if (-not (Test-Path $elf)) { $elf = Join-Path (Split-Path (Split-Path (Split-Path $AppPath.Path))) 'openmw.elf' }
+    if (Test-Path $elf) { & "$PSScriptRoot\symbolize.ps1" -CrashLog (Join-Path $runDir 'openmw3ds-crash.log') -Elf $elf }
 }

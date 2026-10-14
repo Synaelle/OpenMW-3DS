@@ -8,8 +8,8 @@ namespace p3ds
 {
     // Root of all port files on the SD card.
     constexpr const char* kBaseDir = "sdmc:/openmw";
-    constexpr const char* kLogPath = "sdmc:/openmw/openmw.log";
-    constexpr const char* kCrashPath = "sdmc:/openmw/crash.log";
+    constexpr const char* kLogPath = "sdmc:/openmw/openmw3ds.log"; // port log (OpenMW's own: config/openmw.log)
+    constexpr const char* kCrashPath = "sdmc:/openmw/openmw3ds-crash.log";
     constexpr const char* kAutorunPath = "sdmc:/openmw/autorun.txt";
     constexpr const char* kAutorunDonePath = "sdmc:/openmw/autorun.done";
 

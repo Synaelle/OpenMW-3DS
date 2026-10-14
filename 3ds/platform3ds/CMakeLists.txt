@@ -12,7 +12,7 @@ add_library(platform3ds STATIC
     ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.c
 )
 
-# Unique id per build, printed in the log and in crash reports, so a crash.log can always be
+# Unique id per build, printed in the log and in crash reports, so a crash report can always be
 # matched to the right .elf (scripts/symbolize.ps1 also matches by image range).
 add_custom_target(platform3ds_buildinfo
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/.. -DOUT=${CMAKE_CURRENT_BINARY_DIR}/buildinfo.c

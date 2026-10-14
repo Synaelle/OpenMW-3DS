@@ -1,6 +1,6 @@
-# Resolves the code addresses in a crash.log to function/file:line using the matching .elf.
-#   scripts\symbolize.ps1 -CrashLog out\runs\<run>\crash.log -Elf out\testapp.elf
-#   scripts\symbolize.ps1 -CrashLog crash.log -Elf out\          # auto-picks the matching archived .elf
+# Resolves the code addresses in a crash report (openmw3ds-crash.log) to function/file:line using the matching .elf.
+#   scripts\symbolize.ps1 -CrashLog out\runs\<run>\openmw3ds-crash.log -Elf out\testapp.elf
+#   scripts\symbolize.ps1 -CrashLog openmw3ds-crash.log -Elf out\          # auto-picks the matching archived .elf
 # Keep the .elf of every build you put on hardware: addresses only resolve against the exact build.
 param(
     [Parameter(Mandatory)][string]$CrashLog,

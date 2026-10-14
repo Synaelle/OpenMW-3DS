@@ -48,16 +48,19 @@ We want: loading time, memory, and the real frame time without rendering.
      |   245s counting refs   idle   0s  53.0MB
      ^spinner ^uptime ^current step  ^seconds without progress  ^memory
    - spinner turning + uptime counting = the console is NOT frozen, just working.
-   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes crash.log and
+   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes openmw3ds-crash.log and
      returns to HOME by itself.
    - the spinner/uptime stop moving = real freeze (then force the power off).
    HOME works during loading too now (Close exits immediately).
 5. Once the bottom screen shows the cell name and an FPS value, let it run ~1 minute, then press
    HOME and close the software.
-6. Send back sdmc:/openmw/openmw.log and sdmc:/openmw/config/openmw.log (OpenMW's own log),
-   and sdmc:/openmw/crash.log if there is one.
+6. Send back these logs:
+     sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
+     sdmc:/openmw/config/openmw.log      OpenMW's own log
+     sdmc:/openmw/openmw3ds-crash.log    only if there is one
+   (Older test builds wrote sdmc:/openmw/openmw.log and crash.log: those files can be deleted.)
 
-If you have to force the power off anyway, still send openmw.log.
+If you have to force the power off anyway, still send openmw3ds.log.
 "@ | Set-Content "$sd\README.txt"
 
 Write-Host "Package: $sd"

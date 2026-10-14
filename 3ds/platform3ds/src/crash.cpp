@@ -42,7 +42,7 @@ namespace p3ds::crash
         alignas(8) u8 gHandlerStack[kHandlerStackSize];
         char gReport[kReportSize];
         size_t gReportLen = 0;
-        char gPath[96] = "/openmw/crash.log";
+        char gPath[96] = "/openmw/openmw3ds-crash.log"; // set by install()
         volatile bool gWaitForInput = true;
         int gInCrash = 0; // accessed with __atomic builtins
         const char* const* gContext = nullptr;
@@ -232,7 +232,8 @@ namespace p3ds::crash
             drawText(1, 1, "OpenMW 3DS stopped", color::white, color::darkRed);
             drawText(1, 3, headline, color::yellow, color::darkRed, kCols - 2);
             drawText(1, 5, "Report written to", color::white, color::darkRed);
-            drawText(1, 6, "sdmc:/openmw/crash.log", color::cyan, color::darkRed);
+            drawText(1, 6, "sdmc:", color::cyan, color::darkRed);
+            drawText(6, 6, gPath, color::cyan, color::darkRed, kCols - 7);
             drawText(1, 8, gWaitForInput ? "Press START to exit." : "Exiting...", color::white, color::darkRed);
             present();
 
