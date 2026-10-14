@@ -30,6 +30,13 @@ namespace SceneUtil
         setNumChildrenRequiringUpdateTraversal(1);
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // OSG runs single-threaded on the 3DS (OpenThreads reports one processor): a frame's draw never overlaps the
+    // next frame's update, so one output copy is enough. Saves a vertex and normal copy per animated mesh.
+    constexpr unsigned int sOutputCopies = 1;
+#else
+    constexpr unsigned int sOutputCopies = 2;
+#endif
     void RigGeometry::setSourceGeometry(osg::ref_ptr<osg::Geometry> sourceGeometry)
     {
         for (unsigned int i = 0; i < 2; ++i)
@@ -37,7 +44,7 @@ namespace SceneUtil
 
         mSourceGeometry = sourceGeometry;
 
-        for (unsigned int i = 0; i < 2; ++i)
+        for (unsigned int i = 0; i < sOutputCopies; ++i)
         {
             const osg::Geometry& from = *sourceGeometry;
 
@@ -92,6 +99,8 @@ namespace SceneUtil
             else
                 mSourceTangents = nullptr;
         }
+        if (sOutputCopies == 1)
+            mGeometry[1] = mGeometry[0];
     }
 
     osg::ref_ptr<osg::Geometry> RigGeometry::getSourceGeometry() const

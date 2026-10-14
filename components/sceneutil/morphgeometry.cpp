@@ -24,6 +24,13 @@ namespace SceneUtil
         setSourceGeometry(copy.getSourceGeometry());
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // OSG runs single-threaded on the 3DS (OpenThreads reports one processor): a frame's draw never overlaps the
+    // next frame's update, so one output copy is enough. Saves a vertex and normal copy per animated mesh.
+    constexpr unsigned int sOutputCopies = 1;
+#else
+    constexpr unsigned int sOutputCopies = 2;
+#endif
     void MorphGeometry::setSourceGeometry(osg::ref_ptr<osg::Geometry> sourceGeom)
     {
         for (unsigned int i = 0; i < 2; ++i)
@@ -31,7 +38,7 @@ namespace SceneUtil
 
         mSourceGeometry = sourceGeom;
 
-        for (unsigned int i = 0; i < 2; ++i)
+        for (unsigned int i = 0; i < sOutputCopies; ++i)
         {
             // DO NOT COPY AND PASTE THIS CODE. Cloning osg::Geometry without also cloning its contained Arrays is
             // generally unsafe. In this specific case the operation is safe under the following two assumptions:
@@ -61,6 +68,8 @@ namespace SceneUtil
                 to.setVertexArray(vertexArray);
             }
         }
+        if (sOutputCopies == 1)
+            mGeometry[1] = mGeometry[0];
     }
 
     void MorphGeometry::addMorphTarget(osg::Vec3Array* offsets, float weight)

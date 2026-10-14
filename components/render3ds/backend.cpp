@@ -83,10 +83,16 @@ namespace Render3DS
         const char* gFailure = nullptr;
         bool gInFrame = false;
 
+        // What texture unit 1 holds when no blend map is needed. citro3d's C3D_TexBind dereferences the texture
+        // for units 1 and 2 without a null check (it refuses non-2D types there), so unit 1 is never "unbound":
+        // it gets this 8x8 texture, which the TexEnv stage ignores and whose fetches always hit the texture cache.
+        C3D_Tex gUnusedTex1;
+        bool gUnusedTex1Ready = false;
+
         struct UniformLocations
         {
-            int mProjection, mModelView, mTexMat, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse, mMatAmbient,
-                mMatEmission, mColorSel, mLights;
+            int mProjection, mModelView, mTexMat, mTexMat1, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse,
+                mMatAmbient, mMatEmission, mColorSel, mLights;
         } gLoc;
 
         FrameStats gStats;
@@ -300,6 +306,9 @@ namespace Render3DS
         {
             Slot<osg::Texture> mTexture;
             Slot<osg::TexMat> mTexMat;
+            Slot<osg::Texture> mTexture1; // terrain blend map
+            Slot<osg::Uniform> mTexMat0; // terrain layer tiling (uniform "texMat0"; else mTexMat)
+            Slot<osg::Uniform> mTexMat1; // terrain blend map placement
             Slot<SceneUtil::Material> mMaterial;
             Slot<osg::BlendFunc> mBlendFunc;
             Slot<osg::AlphaFunc> mAlphaFunc;
@@ -394,6 +403,12 @@ namespace Render3DS
                         rs.mTexMat.merge(static_cast<const osg::TexMat*>(pair.first.get()), pair.second);
                 }
             }
+            if (textures.size() > 1)
+            {
+                for (const auto& [key, pair] : textures[1])
+                    if (key.first == osg::StateAttribute::TEXTURE)
+                        rs.mTexture1.merge(static_cast<const osg::Texture*>(pair.first.get()), pair.second);
+            }
 
             for (const auto& [name, pair] : ss.getUniformList())
             {
@@ -430,6 +445,12 @@ namespace Render3DS
                             rs.mAlpha.merge(uniform, flags);
                         else if (name == "actorFade")
                             rs.mActorFade.merge(uniform, flags);
+                        break;
+                    case 't':
+                        if (name == "texMat0")
+                            rs.mTexMat0.merge(uniform, flags);
+                        else if (name == "texMat1")
+                            rs.mTexMat1.merge(uniform, flags);
                         break;
                     default:
                         break;
@@ -1114,30 +1135,45 @@ namespace Render3DS
             const SceneUtil::Material* mMaterial = nullptr;
             float mAlpha = -1;
             const osg::TexMat* mTexMat = nullptr;
+            const osg::Uniform* mTexMatU[2] = {};
+            unsigned mTexMatUModified[2] = {};
             bool mTexMatSet = false;
             C3D_Tex* mTexture = nullptr;
-            int mTexEnv = -1; // 0 = vertex color, 1 = texture x vertex color
+            C3D_Tex* mTexture1 = nullptr;
+            int mTexEnv = -1; // TexEnvMode
             FixedState mFixed;
             bool mFixedValid = false;
         } gBound;
 
-        void setTexEnv(bool textured)
+        enum TexEnvMode
         {
-            const int wanted = textured ? 1 : 0;
-            if (gBound.mTexEnv == wanted)
+            TexEnv_VertexColor = 0, // lit vertex color
+            TexEnv_Textured = 1, // diffuse map x lit vertex color
+            TexEnv_BlendMapped = 2, // terrain layer: diffuse map x lit color; alpha = blend map (unit 1) x lit alpha
+        };
+
+        void setTexEnv(int mode)
+        {
+            if (gBound.mTexEnv == mode)
                 return;
-            gBound.mTexEnv = wanted;
+            gBound.mTexEnv = mode;
             C3D_TexEnv* env = C3D_GetTexEnv(0);
             C3D_TexEnvInit(env);
-            if (textured)
+            switch (mode)
             {
-                C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-                C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
-            }
-            else
-            {
-                C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-                C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+                case TexEnv_Textured:
+                    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+                    C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
+                    break;
+                case TexEnv_BlendMapped:
+                    C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+                    C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE1, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+                    C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
+                    break;
+                default:
+                    C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+                    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+                    break;
             }
         }
 
@@ -1375,21 +1411,49 @@ namespace Render3DS
             C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, d, a, e, alpha);
         }
 
+        void writeTexMat(int location, const osg::Matrixf& m)
+        {
+            C3D_FVec rows[4];
+            setRows(rows, m, 4);
+            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, location, 2);
+            out[0] = rows[0];
+            out[1] = rows[1];
+        }
+
+        // Texture matrices: the diffuse map's (an osg::TexMat for UV animation, or the terrain's "texMat0" uniform
+        // for layer tiling) and the terrain blend map's ("texMat1").
         void uploadTexMat(const ResolvedState& rs)
         {
             const osg::TexMat* texMat = rs.mTexMat.mValue;
-            if (gBound.mTexMatSet && texMat == gBound.mTexMat)
-                return;
-            gBound.mTexMat = texMat;
+            const osg::Uniform* u[2] = { rs.mTexMat0.mValue, rs.mTexMat1.mValue };
+            unsigned modified[2];
+            for (int i = 0; i < 2; ++i)
+                modified[i] = u[i] ? u[i]->getModifiedCount() : 0;
+            const bool all = !gBound.mTexMatSet;
+            if (all || texMat != gBound.mTexMat || u[0] != gBound.mTexMatU[0]
+                || modified[0] != gBound.mTexMatUModified[0])
+            {
+                osg::Matrixf m;
+                if (u[0])
+                    u[0]->get(m);
+                else if (texMat)
+                    m = texMat->getMatrix();
+                writeTexMat(gLoc.mTexMat, m);
+            }
+            if (all || u[1] != gBound.mTexMatU[1] || modified[1] != gBound.mTexMatUModified[1])
+            {
+                osg::Matrixf m;
+                if (u[1])
+                    u[1]->get(m);
+                writeTexMat(gLoc.mTexMat1, m);
+            }
             gBound.mTexMatSet = true;
-            osg::Matrixf m;
-            if (texMat)
-                m = texMat->getMatrix();
-            C3D_FVec rows[4];
-            setRows(rows, m, 4);
-            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mTexMat, 2);
-            out[0] = rows[0];
-            out[1] = rows[1];
+            gBound.mTexMat = texMat;
+            for (int i = 0; i < 2; ++i)
+            {
+                gBound.mTexMatU[i] = u[i];
+                gBound.mTexMatUModified[i] = modified[i];
+            }
         }
 
         // OpenMW's linear depth fog (lib/fog.glsl: mix(color, fog.color, clamp((z - start) / (end - start)))) on the
@@ -1691,7 +1755,7 @@ namespace Render3DS
                     C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "ambient"), 0.3f, 0.3f, 0.3f, 1);
                     C3D_TexBind(0, &rgba);
                     gBound.mTexEnv = -1;
-                    setTexEnv(true);
+                    setTexEnv(TexEnv_Textured);
                     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                     if (!selfTestStep("L0 M0 test app setup"))
                         return false;
@@ -1705,7 +1769,7 @@ namespace Render3DS
                     const shaderInstance_s* vs = gFlatProgram.vertexShader;
                     setTestMatrices(shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "projection"),
                         shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "modelView"));
-                    setTexEnv(false);
+                    setTexEnv(TexEnv_VertexColor);
                     C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                     if (!selfTestStep("L1 scene vertex layout, minimal shader"))
                         return false;
@@ -1716,9 +1780,8 @@ namespace Render3DS
                 setupAttributes();
                 bindVertexBuffer(vbo);
                 setTestMatrices(gLoc.mProjection, gLoc.mModelView);
-                C3D_FVec* texMat = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mTexMat, 2);
-                texMat[0] = FVec4_New(1, 0, 0, 0);
-                texMat[1] = FVec4_New(0, 1, 0, 0);
+                writeTexMat(gLoc.mTexMat, osg::Matrixf());
+                writeTexMat(gLoc.mTexMat1, osg::Matrixf());
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDir, 0, 0, 1, 0);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDiffuse, 0.5f, 0.5f, 0.5f, 1);
                 C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunAmbient, 0.3f, 0.3f, 0.3f, 1);
@@ -1757,7 +1820,7 @@ namespace Render3DS
                     return false;
 
                 C3D_TexBind(0, &rgba);
-                setTexEnv(true);
+                setTexEnv(TexEnv_Textured);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                 if (!selfTestStep("L5 + RGBA8 texture"))
                     return false;
@@ -1893,7 +1956,14 @@ namespace Render3DS
                 if (texture)
                     C3D_TexBind(0, texture);
             }
-            setTexEnv(texture != nullptr);
+            C3D_Tex* blendMap = texture && rs.mTexture1.mValue ? textureFor(*rs.mTexture1.mValue) : nullptr;
+            C3D_Tex* unit1 = blendMap ? blendMap : &gUnusedTex1;
+            if (unit1 != gBound.mTexture1)
+            {
+                gBound.mTexture1 = unit1;
+                C3D_TexBind(1, unit1);
+            }
+            setTexEnv(blendMap ? TexEnv_BlendMapped : texture ? TexEnv_Textured : TexEnv_VertexColor);
             lap(gEmitProfile.mTexture);
 
             if (leaf->_projection.get() != gBound.mProjection)
@@ -2020,6 +2090,11 @@ namespace Render3DS
             gSceneBuffer = nullptr;
             processPendingDeletes();
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
+            if (gSelfTestDone) // the self-test's first steps keep the exact M0 setup: unit 1 never bound
+            {
+                C3D_TexBind(1, &gUnusedTex1); // never nullptr (see gUnusedTex1)
+                gBound.mTexture1 = &gUnusedTex1;
+            }
             return true;
         }
 
@@ -2127,6 +2202,16 @@ namespace Render3DS
             return false;
         }
         C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, kDisplayTransferFlags);
+        if (!C3D_TexInit(&gUnusedTex1, 8, 8, GPU_A8))
+        {
+            P3DS_LOGE("render3ds: no memory for the unit 1 placeholder texture");
+            C3D_RenderTargetDelete(gTarget);
+            C3D_Fini();
+            return false;
+        }
+        std::memset(gUnusedTex1.data, 0, gUnusedTex1.size);
+        GSPGPU_FlushDataCache(gUnusedTex1.data, gUnusedTex1.size);
+        gUnusedTex1Ready = true;
 
         gDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(scene_shbin)), scene_shbin_size);
         shaderProgramInit(&gProgram);
@@ -2145,6 +2230,7 @@ namespace Render3DS
         gLoc.mProjection = loc("projection");
         gLoc.mModelView = loc("modelView");
         gLoc.mTexMat = loc("texMat");
+        gLoc.mTexMat1 = loc("texMat1");
         gLoc.mSunDir = loc("sunDir");
         gLoc.mSunDiffuse = loc("sunDiffuse");
         gLoc.mSunAmbient = loc("sunAmbient");
@@ -2199,6 +2285,8 @@ namespace Render3DS
         shaderProgramFree(&gFlatProgram);
         DVLB_Free(gDvlb);
         C3D_RenderTargetDelete(gTarget);
+        if (gUnusedTex1Ready)
+            C3D_TexDelete(&gUnusedTex1);
         C3D_Fini();
     }
 

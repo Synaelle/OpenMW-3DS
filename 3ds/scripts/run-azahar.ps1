@@ -126,9 +126,24 @@ Get-ChildItem $SdOpenmw -Filter 'shot_*.bmp' | ForEach-Object {
 Write-Host "Result: $result"
 Write-Host "Artefacts: $runDir"
 Get-ChildItem $runDir | Select-Object Name, Length | Format-Table -AutoSize | Out-Host
+# The .elf sits next to the app (testapp) or at the root of the build dir (OpenMW).
+$elf = [IO.Path]::ChangeExtension($AppPath.Path, '.elf')
+if (-not (Test-Path $elf)) { $elf = Join-Path (Split-Path (Split-Path (Split-Path $AppPath.Path))) 'openmw.elf' }
 if ($result -eq 'crash') {
-    # The .elf sits next to the app (testapp) or at the root of the build dir (OpenMW).
-    $elf = [IO.Path]::ChangeExtension($AppPath.Path, '.elf')
-    if (-not (Test-Path $elf)) { $elf = Join-Path (Split-Path (Split-Path (Split-Path $AppPath.Path))) 'openmw.elf' }
     if (Test-Path $elf) { & "$PSScriptRoot\symbolize.ps1" -CrashLog (Join-Path $runDir 'openmw3ds-crash.log') -Elf $elf }
+}
+# Azahar logs and ignores bad memory accesses; on hardware each one is a data abort. Report them loudly.
+$azCopy = Join-Path $runDir 'azahar_log.txt'
+if (Test-Path $azCopy) {
+    $bad = @(Select-String -Path $azCopy -Pattern 'unmapped (Read|Write)\d+ @ (0x[0-9A-Fa-f]+) at PC (0x[0-9A-Fa-f]+)')
+    if ($bad.Count -gt 0) {
+        Write-Host "WARNING: $($bad.Count) unmapped memory accesses (a crash on hardware):" -ForegroundColor Red
+        $groups = $bad | Group-Object { $_.Matches[0].Groups[3].Value } | Sort-Object Count -Descending | Select-Object -First 5
+        $addr2line = 'C:\msys64\opt\devkitpro\devkitARM\bin\arm-none-eabi-addr2line.exe'
+        foreach ($g in $groups) {
+            $m = $g.Group[0].Matches[0]
+            $where = if ((Test-Path $elf) -and (Test-Path $addr2line)) { (& $addr2line -f -C -e $elf $m.Groups[3].Value) -join ' ' } else { '' }
+            Write-Host ("  {0,5}x {1} @ {2} at PC {3}  {4}" -f $g.Count, $m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value, $where) -ForegroundColor Red
+        }
+    }
 }

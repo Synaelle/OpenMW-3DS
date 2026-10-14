@@ -54,6 +54,7 @@
 #include "worldimp.hpp"
 
 #ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/hydration.hpp"
 #include <platform3ds/memprobe.hpp>
 // Diagnostic: attributes main-thread heap growth while loading a cell to the object's record type
 // (rendering) and to subsystems ("+PHY" physics, "+MEC" mechanics, "+LUA" Lua).
@@ -385,6 +386,9 @@ namespace MWWorld
 
         mPreloader->updateCache(mRendering.getReferenceTime());
         preloadCells(duration);
+#ifdef OPENMW_PLATFORM_3DS
+        omw3ds::hydration::update(*this);
+#endif
     }
 
     void Scene::unloadCell(CellStore* cell, const DetourNavigator::UpdateGuard* navigatorUpdateGuard)
@@ -526,6 +530,7 @@ namespace MWWorld
 
 #ifdef OPENMW_PLATFORM_3DS
         p3ds::memprobe::callerProfileStart(); // main thread
+        omw3ds::hydration::setLoadCenter(position);
 #endif
         insertCell(cell, loadingListener, navigatorUpdateGuard);
         OMW3DS_MEMSTAGE("loadCell: insertCell");
@@ -1073,6 +1078,10 @@ namespace MWWorld
         const bool isInterior = !cell.isExterior();
         InsertVisitor insertVisitor(cell, loadingListener);
         cell.forEach(insertVisitor);
+#ifdef OPENMW_PLATFORM_3DS
+        if (!isInterior)
+            omw3ds::hydration::filterInsert(insertVisitor.mToInsert);
+#endif
         insertVisitor.insert(
             [&](const MWWorld::Ptr& ptr) { addObject(ptr, mWorld, mPagedRefs, *mPhysics, mRendering); });
         insertVisitor.insert([&](const MWWorld::Ptr& ptr) {
