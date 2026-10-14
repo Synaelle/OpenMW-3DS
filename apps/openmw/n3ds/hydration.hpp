@@ -21,6 +21,9 @@ namespace omw3ds::hydration
     // player): the viewing distance (2560) plus a margin for the size of objects, and some hysteresis.
     constexpr float kInsertRadius = 3072.f;
     constexpr float kRemoveRadius = 3584.f;
+    // Actors come in closer (still inside the thick fog): the floor under them (a dock, a bridge) must already be
+    // there, or they fall through to the ground below (hardware test #17: a guard under the Seyda Neen docks).
+    constexpr float kActorInsertRadius = 2304.f;
 
     // Scene::loadCell: the position the cell is loaded around (the player's).
     void setLoadCenter(const osg::Vec3f& position);
@@ -29,7 +32,8 @@ namespace omw3ds::hydration
     void filterInsert(std::vector<MWWorld::Ptr>& toInsert);
 
     // Scene::update, every frame: checks one active exterior cell per frame, inserting the objects that came
-    // within kInsertRadius (a few per frame) and removing those beyond kRemoveRadius.
+    // within range (scenery before actors, nearest first, within a time budget per frame) and removing those
+    // beyond kRemoveRadius.
     void update(MWWorld::Scene& scene);
 }
 

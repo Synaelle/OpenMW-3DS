@@ -1129,6 +1129,18 @@ namespace Render3DS
                 fs.mBlendDst = toPicaBlend(bf.getDestination());
                 fs.mBlendSrcAlpha = toPicaBlend(bf.getSourceAlpha());
                 fs.mBlendDstAlpha = toPicaBlend(bf.getDestinationAlpha());
+                // Terrain layers (a blend map on unit 1): OpenMW writes the first layer times its weight (src alpha,
+                // zero) and adds the others (src alpha, one); the weights sum to 1 only if every pixel is drawn
+                // once per layer. The PICA draws some pixels on chunk borders twice, which added the weights twice:
+                // white specks where the fog is thick (hardware test #17). Here the first layer is opaque and the
+                // others are blended over it, which a second draw of a pixel can't brighten.
+                if (rs.mTexture1.mValue && bf.getSource() == osg::BlendFunc::SRC_ALPHA)
+                {
+                    if (bf.getDestination() == osg::BlendFunc::ZERO)
+                        fs.mBlend = 0;
+                    else if (bf.getDestination() == osg::BlendFunc::ONE)
+                        fs.mBlendDst = fs.mBlendDstAlpha = GPU_ONE_MINUS_SRC_ALPHA;
+                }
             }
             if (rs.mAlphaFunc.mValue && rs.mAlphaFunc.mValue->getFunction() != osg::AlphaFunc::ALWAYS)
             {
@@ -1467,7 +1479,8 @@ namespace Render3DS
         }
 
         // Sky passes as unlit draws (lighting = 0, color = E): the colors of files/shaders/compatibility/sky.frag.
-        // The cloud fade to the fog color at the horizon and the moon's shadow mask are left out.
+        // The moon's shadow mask is left out. The clouds' fade to the fog color at the horizon is applied to the
+        // vertex color (lighting.y), before the texture, not after.
         MaterialValues skyMaterial(const ResolvedState& rs, int pass)
         {
             const osg::Vec4f diffuseColor = uniformVec4(rs.mDiffuseColor, osg::Vec4f(1, 1, 1, 1));
@@ -1486,9 +1499,16 @@ namespace Render3DS
                     v.mColorSel = osg::Vec4f(1, 0, 0, opacity);
                     break;
                 case Sky_Clouds:
+                {
                     v.mEmission = diffuseColor;
                     v.mColorSel = osg::Vec4f(1, 0, 0, opacity);
+                    osg::Vec4f fog(0, 0, 0, 1);
+                    if (rs.mFogColor.mValue)
+                        rs.mFogColor.mValue->get(fog);
+                    v.mAmbient = fog; // where the clouds fade to near the horizon (white wisps without it)
+                    v.mLighting = osg::Vec4f(0, 1, 0, 0);
                     break;
+                }
                 case Sky_Moon:
                     v.mEmission = uniformVec4(rs.mMoonBlend, osg::Vec4f(1, 1, 1, 1));
                     v.mColorSel = osg::Vec4f(0, 0, 0, uniformVec4(rs.mAtmosphereFade, osg::Vec4f(1, 1, 1, 1)).a());
@@ -1618,12 +1638,23 @@ namespace Render3DS
         } gFog;
         C3D_FogLut gFogLut;
 
+        // OpenMW's ADDITIVE_BLENDING (shadervisitor.cpp): blending (source alpha, one) adds the object to what is
+        // behind it, so fog must fade it to nothing (black), not to the fog color: the fog color added on top of a
+        // fogged background saturates to white (hardware test #17: white lantern glows in the distance).
+        bool isAdditive(const ResolvedState& rs)
+        {
+            const osg::BlendFunc* bf = rs.mBlendFunc.mValue;
+            return rs.mBlend.mOn && bf != nullptr && bf->getSource() == osg::BlendFunc::SRC_ALPHA
+                && bf->getDestination() == osg::BlendFunc::ONE
+                && rs.mTexture1.mValue == nullptr; // terrain layers are blended over, not added (computeFixedState)
+        }
+
         void uploadFog(const ResolvedState& rs, int sky)
         {
             const float start = uniformFloat(rs.mFogStart, 0.f);
             const float end = uniformFloat(rs.mFogEnd, 0.f);
             osg::Vec4f color(0, 0, 0, 1);
-            if (rs.mFogColor.mValue)
+            if (rs.mFogColor.mValue && !isAdditive(rs))
                 rs.mFogColor.mValue->get(color);
             auto channel = [](float v) { return static_cast<u32>(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); };
             const u32 packed = channel(color.r()) | channel(color.g()) << 8 | channel(color.b()) << 16;

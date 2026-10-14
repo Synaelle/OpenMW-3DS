@@ -25,7 +25,7 @@
 .fvec sunDir, sunDiffuse, sunAmbient
 .fvec matDiffuse, matAmbient, matEmission
 .fvec colorSel      ; x/y/z: diffuse/ambient/emission come from the vertex color (0 or 1); w: alpha multiplier
-.fvec lighting      ; x: 1 = lit, 0 = unlit (only E)
+.fvec lighting      ; x: 1 = lit, 0 = unlit (only E); y: 1 = E fades to matAmbient as the vertex alpha drops (clouds)
 .fvec lights[32]    ; 8 point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
 
 .constf consts(0.0, 1.0, 0.00392156863, 3.0)
@@ -318,6 +318,15 @@
 	add r8, -matEmission, r5
 	mov r9, matEmission
 	mad r9, r8, colorSel.zzzz, r9
+
+	; sky clouds (lighting.y = 1): E = mix(matAmbient, E, vertex alpha), sky.frag's fade to the fog color at the
+	; horizon (matAmbient holds the fog color then). t = 1 + (alpha - 1) * lighting.y
+	add r11.x, -ones, r5.w
+	mul r11.x, lighting.yyyy, r11.x
+	add r11.x, ones, r11.x
+	add r8, -matAmbient, r9
+	mul r8, r8, r11.xxxx
+	add r9, matAmbient, r8
 
 	; lighting = D * diffuseLight + A * ambientLight + E, clamped
 	mul r10.xyz, r3, r6

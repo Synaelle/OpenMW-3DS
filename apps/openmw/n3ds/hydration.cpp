@@ -1,6 +1,7 @@
 #include "hydration.hpp"
 
 #include "../mwbase/environment.hpp"
+#include "../mwworld/class.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
@@ -12,6 +13,8 @@
 #include <components/esm/position.hpp>
 
 #include <platform3ds/log.hpp>
+
+#include <3ds.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -27,9 +30,15 @@ namespace omw3ds::hydration
         std::vector<MWWorld::CellStore*> gCells; // active cells as of the last pass
         std::size_t gCursor = 0;
 
-        // A few insertions per frame: a new model loads from the BSA (tens of ms). Walking speed leaves ~2 s
-        // between kInsertRadius and the viewing distance.
-        constexpr int kMaxInsertsPerFrame = 4;
+        // Insertions stop for the frame once this much time went into them (a model not loaded yet comes from
+        // the BSA on the SD card: tens of ms). At least one per frame. Walking speed leaves ~2 s between
+        // kInsertRadius and the viewing distance.
+        constexpr double kInsertBudgetMs = 4.0;
+
+        float insertRadius(const MWWorld::Ptr& ptr)
+        {
+            return ptr.getClass().isActor() ? kActorInsertRadius : kInsertRadius;
+        }
 
         float distance2(const MWWorld::Ptr& ptr, const osg::Vec3f& center)
         {
@@ -54,11 +63,16 @@ namespace omw3ds::hydration
     void filterInsert(std::vector<MWWorld::Ptr>& toInsert)
     {
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
-        const float limit = kInsertRadius * kInsertRadius;
         const std::size_t before = toInsert.size();
         toInsert.erase(std::remove_if(toInsert.begin(), toInsert.end(),
-                           [&](const MWWorld::Ptr& ptr) { return ptr != player && distance2(ptr, gLoadCenter) > limit; }),
+                           [&](const MWWorld::Ptr& ptr) {
+                               const float radius = insertRadius(ptr);
+                               return ptr != player && distance2(ptr, gLoadCenter) > radius * radius;
+                           }),
             toInsert.end());
+        // Scenery before actors, so actors land on their floor (the visitor inserts in this order).
+        std::stable_partition(
+            toInsert.begin(), toInsert.end(), [](const MWWorld::Ptr& ptr) { return !ptr.getClass().isActor(); });
         P3DS_LOGV("hydration: %zu of %zu objects inserted", toInsert.size(), before);
     }
 
@@ -81,7 +95,6 @@ namespace omw3ds::hydration
             return;
 
         const osg::Vec3f center = player.getRefData().getPosition().asVec3();
-        const float insertLimit = kInsertRadius * kInsertRadius;
         const float removeLimit = kRemoveRadius * kRemoveRadius;
         std::vector<MWWorld::Ptr> toInsert;
         std::vector<MWWorld::Ptr> toRemove;
@@ -91,7 +104,8 @@ namespace omw3ds::hydration
                 return true;
             const bool inScene = ptr.getRefData().getBaseNode() != nullptr;
             const float d2 = distance2(ptr, center);
-            if (!inScene && d2 < insertLimit && !gFailed.contains(ptr.mRef))
+            const float radius = insertRadius(ptr);
+            if (!inScene && d2 < radius * radius && !gFailed.contains(ptr.mRef))
                 toInsert.push_back(ptr);
             else if (inScene && d2 > removeLimit)
                 toRemove.push_back(ptr);
@@ -101,18 +115,22 @@ namespace omw3ds::hydration
         for (const MWWorld::Ptr& ptr : toRemove)
             scene.removeObjectFromScene(ptr);
 
-        // Nearest first.
+        // Scenery before actors, then nearest first.
         std::sort(toInsert.begin(), toInsert.end(), [&](const MWWorld::Ptr& a, const MWWorld::Ptr& b) {
+            const bool actorA = a.getClass().isActor(), actorB = b.getClass().isActor();
+            if (actorA != actorB)
+                return actorB;
             return distance2(a, center) < distance2(b, center);
         });
-        int inserted = 0;
+        const uint64_t start = svcGetSystemTick();
+        const uint64_t budget = uint64_t(kInsertBudgetMs * SYSCLOCK_ARM11 / 1000.0);
         for (const MWWorld::Ptr& ptr : toInsert)
         {
-            if (inserted++ == kMaxInsertsPerFrame)
-                break;
             scene.addObjectToScene(ptr);
             if (ptr.getRefData().getBaseNode() == nullptr)
                 gFailed.insert(ptr.mRef);
+            if (svcGetSystemTick() - start > budget)
+                break;
         }
     }
 }
