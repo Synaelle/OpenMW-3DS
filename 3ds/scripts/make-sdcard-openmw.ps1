@@ -35,12 +35,11 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-What this tests: EXTERIORS (milestone M5), with the fixes from hardware test #17: no more white specks
-in the fog (it was the terrain), clouds fade properly at the horizon, NPCs no longer fall under the docks,
-fewer stutters while walking (objects load in smaller steps), small far-away clutter is not drawn.
-OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Objects only exist
-within ~3000 units of you (people within ~2300), inside the fog. Still missing: flames/particles,
-menus/HUD (M8), sound (M7).
+What this tests: EXTERIORS (milestone M5), with the fixes from hardware test #18: FIRE and other particle
+effects are drawn now (fire pits, candles, torches, spell effects), no more sparkling pixels on the water,
+and models are loaded in the background before you reach them (fewer stalls while walking; people may
+still cause a short stall when they appear). OpenMW starts a new game in "$Start"; the front door leads
+OUTSIDE into Seyda Neen. Still missing: menus/HUD (M8), sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
