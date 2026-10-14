@@ -35,11 +35,12 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-What this tests: controls and movement (milestone M4), with the fixes from hardware test #15: no more
-short freeze every 5 seconds, and closing from the HOME Menu exits right away (no crash screen).
-OpenMW starts a new game in "$Start". Your "shoulder layout" is the default, game messages and the
-player's state show on the bottom screen, quick save works, and doors to other interiors work.
-Still no HUD/menus on the top screen (M8), no flames/particles, no exteriors (M5), no sound (M7).
+What this tests: the first EXTERIORS (milestone M5). OpenMW starts a new game in "$Start"; the front
+door now leads OUTSIDE into Seyda Neen: terrain, sky with clouds, fog, the sea, NPCs. To save memory,
+objects only exist within ~3000 units of you (about where the fog gets thick), so things far away appear
+as you approach. We want: does Seyda Neen look right, how fast does it run (the "perf:" lines), does it
+stay stable while you walk around and go in and out of houses. Still missing: flames/particles, menus/HUD
+(M8), sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
@@ -78,13 +79,11 @@ Still no HUD/menus on the top screen (M8), no flames/particles, no exteriors (M5
    "menu: inventory - not drawn, B closes" when the game opened a menu you can't see yet, or "DEAD".
    Game messages ("Saving...", "You stole...") appear in the log lines below.
    Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
-   Things to try: walk and run around (does it still freeze briefly every few seconds?), go through a
-   few doors and back, quick save (SELECT: "Saving..." in the log), then HOME -> Close: the app should
-   exit within a few seconds, without the crash message.
-   To start in Arrille's shop in Seyda Neen instead, put these 3 lines in sdmc:/openmw/args.txt:
-     --skip-menu
-     --start
-     Seyda Neen, Arrille's Tradehouse
+   Things to try: go out of the front door (A). Loading outside takes ~10 s. Walk around Seyda Neen:
+   the docks and the sea, the houses, the lighthouse direction. Look at the sky. Go into one or two
+   houses and back out. Walk out of town a bit (each new area loads for a few seconds). Note anything
+   that looks wrong (missing objects, wrong colours, things popping in too close), and the FPS on the
+   bottom screen. Take a few screenshots (tap the bar). Then HOME -> Close.
 6. Send back these logs:
      sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
      sdmc:/openmw/config/openmw.log      OpenMW's own log
