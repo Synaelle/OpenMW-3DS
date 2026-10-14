@@ -40,9 +40,10 @@ What this tests: the first 3DS renderer (milestone M3). OpenMW loads Morrowind.e
 no flames/particles, no movement controls yet. We want: does it look right, and the real frame time
 with rendering (the "gpu:" lines in the log).
 
-1. First time: copy the CONTENTS of this folder to the ROOT of your SD card (merge folders).
-   Later test builds come as a small update folder (sdcard-openmw-update) with only the changed
-   files, listed in its UPDATE.txt: copy that instead, overwriting.
+1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
+   overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
+   sdmc:/openmw/data/ are not in the package, so they stay. openmw/cooked/textures.o3tp (~70 MB) is the
+   biggest file. (out\sdcard-openmw-update still lists only the changed files, if ever needed.)
 2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
      Morrowind.esm   (~79 MB)
      Morrowind.bsa   (~310 MB)
@@ -58,6 +59,8 @@ with rendering (the "gpu:" lines in the log).
      returns to HOME by itself.
    - the spinner/uptime stop moving = real freeze (then force the power off).
    HOME works during loading too (Close exits immediately).
+   The first two game frames are drawn slowly on purpose: the renderer submits each object separately
+   and waits for the GPU, so that a GPU problem is written to the log instead of freezing the console.
 5. In the game (temporary debug controls, real controls come in the next milestone):
      D-pad LEFT / RIGHT  turn the player 45 degrees (you start facing the door: press 4 times to face the shop)
      SELECT              save a screenshot of the top screen to sdmc:/openmw/screenshots/ (takes ~2 s)

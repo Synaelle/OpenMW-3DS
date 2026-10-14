@@ -35,6 +35,7 @@ namespace Render3DS
         uint32_t mSkipped = 0; // leaves not drawn (unsupported drawable or primitive)
         uint32_t mUploadedBytes = 0; // geometry/texture data written to linear memory this frame
         uint32_t mGeometries = 0; // cached GPU geometries
+        uint32_t mVerified = 0; // geometries drawn for the first time, each draw checked on the GPU
         uint32_t mLinearFreeKb = 0;
         float mEmitMs = 0; // CPU time walking the render graph and emitting commands
         float mGpuMs = 0; // PICA time of the previous frame

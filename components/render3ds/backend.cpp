@@ -22,6 +22,7 @@
 #include <osgUtil/RenderStage>
 #include <osgUtil/StateGraph>
 
+#include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/screenshot.hpp>
@@ -41,6 +42,12 @@
 namespace SDLUtil
 {
     extern void (*gSwapBuffersHook3DS)(); // components/sdlutil/sdlgraphicswindow_3ds.cpp
+}
+
+extern "C"
+{
+    extern u32 __ctru_linear_heap; // platform3ds/src/platform.cpp (__system_allocateHeaps)
+    extern u32 __ctru_linear_heap_size;
 }
 
 namespace Render3DS
@@ -79,6 +86,18 @@ namespace Render3DS
         FrameStats gLastStats;
         uint32_t gFrame = 0; // backend frame counter (resolved-state cache stamp)
         float gNear = 1, gFar = 1000; // current perspective projection (fog LUT)
+
+        // Vertex and index buffers are addressed by the PICA as 28-bit offsets from a base address. citro3d's
+        // default base is 0x18000000, which reaches physical 0x27FFFFFF only. In the 178 MB mode the kernel puts
+        // the linear heap after the image and the 95 MB heap, i.e. mostly above 0x28000000: offsets wrapped and
+        // the GPU hung on real hardware (test #9; Azahar doesn't care). The base is the linear heap's start.
+        u32 gLinearBasePa = 0;
+
+        // Draw-by-draw verification of the first frames that draw anything: each draw is submitted alone and
+        // waited for, so a draw that hangs the GPU is named in the log instead of freezing the console.
+        int gVerifyFramesLeft = 2;
+        bool gVerifyThisFrame = false;
+        uint32_t gVerifiedDraws = 0;
 
         bool gWarnedPrimitive = false;
         bool gWarnedArray = false;
@@ -182,6 +201,7 @@ namespace Render3DS
             unsigned mModified[Attr_Count] = {};
             unsigned mPrimitiveSignature = 0;
             bool mValid = false;
+            bool mVerified = false; // its draws completed on the GPU once (draw-by-draw check on first use)
 
             void release() override
             {
@@ -597,6 +617,32 @@ namespace Render3DS
             return signature;
         }
 
+        // The PICA hangs on some malformed draws that the emulator ignores. Keep only sane ones: at least one whole
+        // primitive, triangle lists in whole triangles, every vertex in range.
+        uint32_t saneCount(GLenum mode, uint32_t count)
+        {
+            if (mode == GL_TRIANGLES)
+                count -= count % 3;
+            return count >= 3 ? count : 0;
+        }
+
+        bool gWarnedRange = false;
+
+        template <class Index>
+        bool indicesInRange(const Index* indices, size_t count, uint32_t vertexCount)
+        {
+            for (size_t i = 0; i < count; ++i)
+                if (indices[i] >= vertexCount)
+                {
+                    if (!gWarnedRange)
+                        Log(Debug::Warning) << "render3ds: skipping primitives with vertex index " << unsigned(indices[i])
+                                            << " >= " << vertexCount << " vertices";
+                    gWarnedRange = true;
+                    return false;
+                }
+            return true;
+        }
+
         bool buildPrimitives(GpuGeometry& gpu, const osg::Geometry& geometry)
         {
             gpu.mPrimitives.clear();
@@ -641,9 +687,11 @@ namespace Render3DS
                     case osg::PrimitiveSet::DrawArraysPrimitiveType:
                     {
                         auto* arrays = static_cast<const osg::DrawArrays*>(set.get());
-                        gpu.mPrimitives.push_back({ mode, static_cast<uint32_t>(arrays->getCount()),
-                            static_cast<uint32_t>(arrays->getFirst()), -1,
-                            triangleCount(set->getMode(), arrays->getCount()) });
+                        const uint32_t count = saneCount(set->getMode(), arrays->getCount());
+                        if (count > 0 && arrays->getFirst() >= 0
+                            && static_cast<uint32_t>(arrays->getFirst()) + count <= gpu.mVertexCount)
+                            gpu.mPrimitives.push_back({ mode, count, static_cast<uint32_t>(arrays->getFirst()), -1,
+                                triangleCount(set->getMode(), count) });
                         break;
                     }
                     case osg::PrimitiveSet::DrawArrayLengthsPrimitiveType:
@@ -652,8 +700,10 @@ namespace Render3DS
                         uint32_t first = lengths->getFirst();
                         for (GLint length : *lengths)
                         {
-                            gpu.mPrimitives.push_back({ mode, static_cast<uint32_t>(length), first, -1,
-                                triangleCount(set->getMode(), length) });
+                            const uint32_t count = saneCount(set->getMode(), length);
+                            if (count > 0 && first + count <= gpu.mVertexCount)
+                                gpu.mPrimitives.push_back(
+                                    { mode, count, first, -1, triangleCount(set->getMode(), count) });
                             first += length;
                         }
                         break;
@@ -661,36 +711,39 @@ namespace Render3DS
                     case osg::PrimitiveSet::DrawElementsUBytePrimitiveType:
                     {
                         auto* elements = static_cast<const osg::DrawElementsUByte*>(set.get());
-                        std::memcpy(indexOut, elements->getDataPointer(), elements->size());
-                        gpu.mPrimitives.push_back({ mode, static_cast<uint32_t>(elements->size()), offset,
-                            C3D_UNSIGNED_BYTE, triangleCount(set->getMode(), elements->size()) });
-                        offset += (elements->size() + 3) & ~3u;
+                        const uint32_t count = saneCount(set->getMode(), elements->size());
+                        if (count == 0 || !indicesInRange(&elements->front(), count, gpu.mVertexCount))
+                            break;
+                        std::memcpy(indexOut, elements->getDataPointer(), count);
+                        gpu.mPrimitives.push_back(
+                            { mode, count, offset, C3D_UNSIGNED_BYTE, triangleCount(set->getMode(), count) });
+                        offset += (count + 3) & ~3u;
                         break;
                     }
                     case osg::PrimitiveSet::DrawElementsUShortPrimitiveType:
                     {
                         auto* elements = static_cast<const osg::DrawElementsUShort*>(set.get());
-                        std::memcpy(indexOut, elements->getDataPointer(), elements->size() * 2);
-                        gpu.mPrimitives.push_back({ mode, static_cast<uint32_t>(elements->size()), offset,
-                            C3D_UNSIGNED_SHORT, triangleCount(set->getMode(), elements->size()) });
-                        offset += (elements->size() * 2 + 3) & ~3u;
+                        const uint32_t count = saneCount(set->getMode(), elements->size());
+                        if (count == 0 || !indicesInRange(&elements->front(), count, gpu.mVertexCount))
+                            break;
+                        std::memcpy(indexOut, elements->getDataPointer(), count * 2);
+                        gpu.mPrimitives.push_back(
+                            { mode, count, offset, C3D_UNSIGNED_SHORT, triangleCount(set->getMode(), count) });
+                        offset += (count * 2 + 3) & ~3u;
                         break;
                     }
                     case osg::PrimitiveSet::DrawElementsUIntPrimitiveType:
                     {
                         auto* elements = static_cast<const osg::DrawElementsUInt*>(set.get());
+                        const uint32_t count = saneCount(set->getMode(), elements->size());
+                        if (count == 0 || !indicesInRange(&elements->front(), count, gpu.mVertexCount))
+                            break;
                         auto* out16 = reinterpret_cast<uint16_t*>(indexOut);
-                        bool fits = true;
-                        for (size_t i = 0; i < elements->size(); ++i)
-                        {
-                            const unsigned index = (*elements)[i];
-                            fits &= index < 65536;
-                            out16[i] = static_cast<uint16_t>(index);
-                        }
-                        if (fits)
-                            gpu.mPrimitives.push_back({ mode, static_cast<uint32_t>(elements->size()), offset,
-                                C3D_UNSIGNED_SHORT, triangleCount(set->getMode(), elements->size()) });
-                        offset += (elements->size() * 2 + 3) & ~3u;
+                        for (size_t i = 0; i < count; ++i)
+                            out16[i] = static_cast<uint16_t>((*elements)[i]);
+                        gpu.mPrimitives.push_back(
+                            { mode, count, offset, C3D_UNSIGNED_SHORT, triangleCount(set->getMode(), count) });
+                        offset += (count * 2 + 3) & ~3u;
                         break;
                     }
                     default:
@@ -721,9 +774,11 @@ namespace Render3DS
                     || geometry.getTexCoordArray(0) != gpu->mArrays[Attr_TexCoord];
                 for (int a = 0; a < Attr_Count && !verticesChanged; ++a)
                     verticesChanged = gpu->mArrays[a] && gpu->mArrays[a]->getModifiedCount() != gpu->mModified[a];
+                const uint32_t oldVertexCount = gpu->mVertexCount;
                 if (verticesChanged)
                     gpu->mValid = buildVertices(*gpu, geometry);
-                if (gpu->mValid && primitiveSignature(geometry) != gpu->mPrimitiveSignature)
+                if (gpu->mValid
+                    && (primitiveSignature(geometry) != gpu->mPrimitiveSignature || gpu->mVertexCount != oldVertexCount))
                     gpu->mValid = buildPrimitives(*gpu, geometry);
                 return gpu->mValid ? gpu : nullptr;
             }
@@ -1139,6 +1194,7 @@ namespace Render3DS
 
             C3D_BufInfo* buf = C3D_GetBufInfo();
             BufInfo_Init(buf);
+            buf->base_paddr = gLinearBasePa;
             BufInfo_Add(buf, gpu.mVbo, gpu.mStride, gpu.mAttribCount, gpu.mPermutation);
         }
 
@@ -1332,6 +1388,59 @@ namespace Render3DS
             C3D_FogLutBind(&gFogLut);
         }
 
+        // ------------------------------------------------------------------ GPU hang diagnostics
+
+        u32 physical(const void* ptr)
+        {
+            return ptr ? osConvertVirtToPhys(ptr) : 0;
+        }
+
+        void logDraw(bool error, const char* what, const GpuGeometry& gpu, const GpuPrimitive& prim,
+            const osg::Geometry& geometry)
+        {
+            const C3D_Tex* tex = gBound.mTexture;
+            const osg::Node* parent = geometry.getNumParents() > 0 ? geometry.getParent(0) : nullptr;
+            p3ds::log::writef(error ? p3ds::log::Level::Error : p3ds::log::Level::Info, "render3ds: %s: draw #%lu mode %d count %lu first/offset %lu index type %d | vbo pa %08lx size %lu "
+                      "stride %u layout %x attribs %u perm %lx verts %lu | ibo pa %08lx size %lu | tex pa %08lx fmt %d "
+                      "%ux%u levels %u param %08lx | base %08lx | '%s' in '%s'",
+                what, (unsigned long)gVerifiedDraws, int(prim.mMode), (unsigned long)prim.mCount,
+                (unsigned long)prim.mFirst, prim.mIndexType, (unsigned long)physical(gpu.mVbo),
+                (unsigned long)gpu.mVboSize, unsigned(gpu.mStride), unsigned(gpu.mLayout), unsigned(gpu.mAttribCount),
+                (unsigned long)gpu.mPermutation, (unsigned long)gpu.mVertexCount, (unsigned long)physical(gpu.mIbo),
+                (unsigned long)gpu.mIboSize, (unsigned long)(tex ? physical(tex->data) : 0), tex ? int(tex->fmt) : -1,
+                tex ? unsigned(tex->width) : 0u, tex ? unsigned(tex->height) : 0u, tex ? unsigned(tex->maxLevel) + 1 : 0u,
+                (unsigned long)(tex ? tex->param : 0), (unsigned long)gLinearBasePa, geometry.getName().c_str(),
+                parent ? parent->getName().c_str() : "");
+        }
+
+        // Waits for the GPU to go idle (C3D_FrameBegin succeeds) for up to timeoutMs. On success a new citro3d
+        // frame has begun.
+        bool waitGpuAndBegin(unsigned timeoutMs)
+        {
+            const u64 start = svcGetSystemTick();
+            while (!C3D_FrameBegin(C3D_FRAME_NONBLOCK))
+            {
+                if (svcGetSystemTick() - start > u64(timeoutMs) * CPU_TICKS_PER_MSEC)
+                    return false;
+                svcSleepThread(1000000); // 1 ms
+            }
+            return true;
+        }
+
+        // Verification mode: submit what was just recorded (one draw) and wait for the GPU to finish it.
+        void verifyDraw(const GpuGeometry& gpu, const GpuPrimitive& prim, const osg::Geometry& geometry)
+        {
+            C3D_FrameEnd(GX_CMDLIST_FLUSH);
+            if (!waitGpuAndBegin(2000))
+            {
+                logDraw(true, "GPU HANG on this draw", gpu, prim, geometry);
+                p3ds::crash::fatal("GPU hang on a draw (render3ds draw-by-draw check, see openmw3ds.log)");
+            }
+            C3D_FrameDrawOn(gTarget);
+            ++gVerifiedDraws;
+            p3ds::crash::kick("render3ds draw check");
+        }
+
         // ------------------------------------------------------------------ leaves, bins, stages
 
         void drawLeaf(osgUtil::RenderLeaf* leaf)
@@ -1388,8 +1497,11 @@ namespace Render3DS
             uploadFog(rs);
 
             setAttributeLayout(*gpu);
+            const bool verify = gVerifyThisFrame || !gpu->mVerified;
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
+                if (gVerifyThisFrame && gVerifiedDraws < 3)
+                    logDraw(false, "draw check", *gpu, prim, *geometry); // a few samples of what a draw looks like
                 if (prim.mIndexType < 0)
                     C3D_DrawArrays(prim.mMode, static_cast<int>(prim.mFirst), static_cast<int>(prim.mCount));
                 else
@@ -1397,6 +1509,13 @@ namespace Render3DS
                         static_cast<uint8_t*>(gpu->mIbo) + prim.mFirst);
                 ++gStats.mDraws;
                 gStats.mTriangles += prim.mTriangles;
+                if (verify)
+                    verifyDraw(*gpu, prim, *geometry);
+            }
+            if (verify && !gpu->mVerified)
+            {
+                gpu->mVerified = true;
+                ++gStats.mVerified;
             }
         }
 
@@ -1454,9 +1573,14 @@ namespace Render3DS
         {
             if (gInFrame)
                 return true;
-            // Waits for the GPU to finish the previous frame (not for vblank: C3D_FRAME_SYNCDRAW would).
-            if (!C3D_FrameBegin(0))
-                return false;
+            // Waits for the GPU to finish the previous frame (not for vblank: C3D_FRAME_SYNCDRAW would). A GPU that
+            // doesn't finish within 3 s is hung: report it instead of waiting forever.
+            if (!waitGpuAndBegin(3000))
+            {
+                P3DS_LOGE("render3ds: GPU HANG: frame %lu (%lu draws, %lu triangles) never finished",
+                    (unsigned long)gFrame, (unsigned long)gLastStats.mDraws, (unsigned long)gLastStats.mTriangles);
+                p3ds::crash::fatal("GPU hang: the previous frame never finished (render3ds)");
+            }
             gInFrame = true;
             if (!gCapturePath.empty())
             {
@@ -1468,6 +1592,7 @@ namespace Render3DS
             gStats = FrameStats{};
             gBound = Bound{};
             processPendingDeletes();
+            C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             return true;
         }
 
@@ -1493,7 +1618,17 @@ namespace Render3DS
             C3D_FrameDrawOn(gTarget);
 
             C3D_BindProgram(&gProgram);
+            gVerifyThisFrame = gVerifyFramesLeft > 0;
+            const uint32_t drawsBefore = gStats.mDraws;
             drawBin(stage);
+            if (gVerifyThisFrame && gStats.mDraws > drawsBefore)
+            {
+                --gVerifyFramesLeft;
+                P3DS_LOGI("render3ds: draw-by-draw check passed: %lu draws, each completed by the GPU",
+                    (unsigned long)(gStats.mDraws - drawsBefore));
+                gVerifiedDraws = 0;
+            }
+            gVerifyThisFrame = false;
 
             gStats.mEmitMs += static_cast<float>(p3ds::memprobe::ticks() - start) / CPU_TICKS_PER_MSEC;
             return true;
@@ -1559,6 +1694,13 @@ namespace Render3DS
         gLoc.mLights = loc("lights");
         gLoc.mLightLoop = loc("lightLoop");
         gLoc.mHasLights = loc("hasLights");
+
+        gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
+        P3DS_LOGI("render3ds: linear heap va %08lx pa %08lx-%08lx (%lu KB); vertex/index base %08lx (citro3d's default "
+                  "0x18000000 reaches only below 0x28000000)",
+            (unsigned long)__ctru_linear_heap, (unsigned long)gLinearBasePa,
+            (unsigned long)(gLinearBasePa + __ctru_linear_heap_size), (unsigned long)(__ctru_linear_heap_size / 1024),
+            (unsigned long)gLinearBasePa);
 
         gResolved.resize(256);
         osgUtil::gRenderStageDrawHook3DS = &drawStageHook;
