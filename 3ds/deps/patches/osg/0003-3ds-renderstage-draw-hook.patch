@@ -1,0 +1,48 @@
+diff --git a/include/osgUtil/RenderStage b/include/osgUtil/RenderStage
+index 3025ac3..26f8b13 100644
+--- a/include/osgUtil/RenderStage
++++ b/include/osgUtil/RenderStage
+@@ -25,6 +25,13 @@
+ 
+ namespace osgUtil {
+ 
++#ifdef __3DS__
++class RenderStage;
++/** OpenMW 3DS port: the citro3d backend draws render stages itself. When set, RenderStage::draw() calls it
++  * first; returning true means the hook handled the stage, and OSG's GL draw path is skipped for it. */
++extern OSGUTIL_EXPORT bool (*gRenderStageDrawHook3DS)(RenderStage* stage, osg::RenderInfo& renderInfo, RenderLeaf*& previous);
++#endif
++
+ /**
+  * RenderStage base class. Used for encapsulate a complete stage in
+  * rendering - setting up of viewport, the projection and model
+diff --git a/src/osgUtil/RenderStage.cpp b/src/osgUtil/RenderStage.cpp
+index f0d2315..431e99d 100644
+--- a/src/osgUtil/RenderStage.cpp
++++ b/src/osgUtil/RenderStage.cpp
+@@ -30,6 +30,10 @@
+ using namespace osg;
+ using namespace osgUtil;
+ 
++#ifdef __3DS__
++bool (*osgUtil::gRenderStageDrawHook3DS)(RenderStage*, osg::RenderInfo&, RenderLeaf*&) = 0;
++#endif
++
+ // register a RenderStage prototype with the RenderBin prototype list.
+ //RegisterRenderBinProxy<RenderStage> s_registerRenderStageProxy;
+ 
+@@ -1142,6 +1146,14 @@ void RenderStage::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
+ {
+     if (_stageDrawnThisFrame) return;
+ 
++#ifdef __3DS__
++    if (gRenderStageDrawHook3DS && gRenderStageDrawHook3DS(this, renderInfo, previous))
++    {
++        _stageDrawnThisFrame = true;
++        return;
++    }
++#endif
++
+     if(_initialViewMatrix.valid()) renderInfo.getState()->setInitialViewMatrix(_initialViewMatrix.get());
+ 
+     // push the stages camera so that drawing code can query it

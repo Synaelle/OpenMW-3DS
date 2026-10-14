@@ -18,6 +18,7 @@
 #include "../profile.hpp"
 
 #include <components/esm/position.hpp>
+#include <components/render3ds/render3ds.hpp>
 #include <components/settings/values.hpp>
 
 #include <osg/Stats>
@@ -27,6 +28,7 @@
 
 #include <3ds.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -52,6 +54,13 @@ namespace omw3ds
         double gLogAccum = 0;
         unsigned gLogFrames = 0;
         float gLogWorst = 0;
+
+        // Renderer counters summed between perf lines.
+        struct RenderSums
+        {
+            double mDraws = 0, mTriangles = 0, mLeaves = 0, mSkipped = 0, mUploadKb = 0, mEmitMs = 0, mGpuMs = 0;
+            float mGpuWorst = 0;
+        } gRender;
 
         // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
         struct Timing
@@ -243,24 +252,84 @@ namespace omw3ds
         if (++gStats.frameIndex == 100)
             lazyStringSelfCheck();
 
-        // Automated runs: "quit:N" in sdmc:/openmw/autorun.txt quits after N game frames (tests shutdown).
-        static unsigned quitAtFrame = [] {
-            unsigned frames = 0;
+        // Automated runs, sdmc:/openmw/autorun.txt: "quit:N" quits after N game frames (tests shutdown),
+        // "shot:N,M,..." saves the top screen at those frames (sdmc:/openmw/shot_top_N.bmp).
+        struct Autorun
+        {
+            unsigned mQuitAt = 0;
+            std::vector<unsigned> mShots;
+            float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
+        };
+        static const Autorun autorun = [] {
+            Autorun result;
             if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
             {
-                char buf[128] = {};
+                char buf[256] = {};
                 std::fread(buf, 1, sizeof(buf) - 1, f);
                 std::fclose(f);
                 if (const char* q = std::strstr(buf, "quit:"))
-                    frames = unsigned(std::strtoul(q + 5, nullptr, 10));
+                    result.mQuitAt = unsigned(std::strtoul(q + 5, nullptr, 10));
+                if (const char* q = std::strstr(buf, "turn:"))
+                    result.mTurnDegrees = std::strtof(q + 5, nullptr);
+                if (const char* q = std::strstr(buf, "shot:"))
+                {
+                    char* end = const_cast<char*>(q + 5);
+                    do
+                        result.mShots.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
+                    while (*end == ',');
+                }
             }
-            return frames;
+            return result;
         }();
-        if (quitAtFrame != 0 && gStats.frameIndex == quitAtFrame)
+        if (autorun.mQuitAt != 0 && gStats.frameIndex == autorun.mQuitAt)
         {
-            P3DS_LOGI("autorun: quitting after %u frames", quitAtFrame);
+            P3DS_LOGI("autorun: quitting after %u frames", autorun.mQuitAt);
             MWBase::Environment::get().getStateManager()->requestQuit();
         }
+        for (unsigned shot : autorun.mShots)
+            if (shot == gStats.frameIndex)
+                Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp").c_str());
+        // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
+        // so scan once per frame here. SELECT = top-screen screenshot (temporary, until M4 maps controls).
+        hidScanInput();
+        // D-pad left/right: turn the player 45 degrees (debug camera until M4 brings real controls).
+        float turn = 0;
+        if (hidKeysDown() & KEY_DLEFT)
+            turn = 45;
+        if (hidKeysDown() & KEY_DRIGHT)
+            turn = -45;
+        if (gStats.frameIndex == 30)
+            turn += autorun.mTurnDegrees;
+        if (turn != 0)
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            osg::Vec3f rot = player.getRefData().getPosition().asRotationVec3();
+            rot.z() += osg::DegreesToRadians(turn);
+            world->rotateObject(player, rot, MWBase::RotationFlag_none);
+            P3DS_LOGI("debug: player turned to %.0f degrees", double(osg::RadiansToDegrees(rot.z())));
+        }
+        if (hidKeysDown() & KEY_SELECT)
+        {
+            static unsigned count = 0;
+            char path[64];
+            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count++);
+            Render3DS::requestCapture(path);
+        }
+
+        const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
+        gStats.drawCalls = render.mDraws;
+        gStats.triangles = render.mTriangles;
+        gStats.cpuMs = render.mEmitMs;
+        gStats.gpuMs = render.mGpuMs;
+        gRender.mDraws += render.mDraws;
+        gRender.mTriangles += render.mTriangles;
+        gRender.mLeaves += render.mLeaves;
+        gRender.mSkipped += render.mSkipped;
+        gRender.mUploadKb += render.mUploadedBytes / 1024.0;
+        gRender.mEmitMs += render.mEmitMs;
+        gRender.mGpuMs += render.mGpuMs;
+        gRender.mGpuWorst = std::max(gRender.mGpuWorst, render.mGpuMs);
 
         gLogAccum += frameSeconds;
         ++gLogFrames;
@@ -272,6 +341,16 @@ namespace omw3ds
                 gLogFrames, gLogAccum, gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst,
                 gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]));
             logTimings();
+            if (Render3DS::isActive())
+            {
+                const double n = gLogFrames;
+                P3DS_LOGI("gpu: per frame %.0f draws, %.0f tris, %.0f leaves (%.0f skipped), emit %.1f ms, "
+                          "PICA %.1f ms (worst %.1f), uploads %.0f KB/frame, %lu geometries, linear free %lu KB",
+                    gRender.mDraws / n, gRender.mTriangles / n, gRender.mLeaves / n, gRender.mSkipped / n,
+                    gRender.mEmitMs / n, gRender.mGpuMs / n, double(gRender.mGpuWorst), gRender.mUploadKb / n,
+                    (unsigned long)render.mGeometries, (unsigned long)render.mLinearFreeKb);
+            }
+            gRender = RenderSums{};
             gLogAccum = 0;
             gLogFrames = 0;
             gLogWorst = 0;
@@ -290,7 +369,7 @@ namespace omw3ds
         snap.cellName = gCellName.c_str();
         for (int i = 0; i < 3; ++i)
             snap.playerPos[i] = gPos[i];
-        snap.status = "headless (no renderer yet)";
+        snap.status = Render3DS::isActive() ? "citro3d" : "headless (renderer failed)";
         gBottom.update(snap);
         p3ds::perf::Phase phase("bottomScreen");
         gBottom.render(); // rate-limited internally

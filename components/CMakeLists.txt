@@ -589,16 +589,20 @@ if (OPENMW_PLATFORM_3DS)
     list(APPEND COMPONENT_FILES sdlutil/sdlgraphicswindow_3ds.cpp)
     # Dialogue/book text read from the content files on demand (esm3/lazystring.hpp).
     list(APPEND COMPONENT_FILES esm3/lazystring.cpp)
+    # citro3d draw backend and the PC-cooked texture pack (render3ds/render3ds.hpp).
+    list(APPEND COMPONENT_FILES render3ds/backend.cpp render3ds/texturepack.cpp)
     # Per-frame hot code at -O2; everything else stays -Os (image size is memory). Scene graph callbacks,
-    # light manager, CPU skinning (sceneutil), keyframe controllers (nifosg), MyGUI rendering.
+    # light manager, CPU skinning (sceneutil), keyframe controllers (nifosg), MyGUI rendering, draw backend.
     set(OMW3DS_HOT_COMPONENTS ${COMPONENT_FILES})
-    list(FILTER OMW3DS_HOT_COMPONENTS INCLUDE REGEX "/(sceneutil|nifosg|myguiplatform)/[^/]*\\.cpp$")
+    list(FILTER OMW3DS_HOT_COMPONENTS INCLUDE REGEX "/(sceneutil|nifosg|myguiplatform|render3ds)/[^/]*\\.cpp$")
     set_source_files_properties(${OMW3DS_HOT_COMPONENTS} PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 
 add_library(components STATIC ${COMPONENT_FILES})
 if (OPENMW_PLATFORM_3DS)
-    target_link_libraries(components platform3ds)
+    ctr_add_shader_library(render3ds_shaders OUTPUT scene.shbin render3ds/scene.v.pica)
+    dkp_add_embedded_binary_library(render3ds_shaders_bin render3ds_shaders)
+    target_link_libraries(components platform3ds render3ds_shaders_bin citro3d)
 endif()
 
 if (ANDROID)

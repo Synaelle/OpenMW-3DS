@@ -5,6 +5,8 @@
 #   <SdRoot>/openmw/{cache,saves,data}  pre-created (directory creation costs ~1.5 s on real SD)
 #   <SdRoot>/openmw/data                -> -DataMode junction: a junction to the Morrowind "Data Files"
 #                                          (emulator only; Morrowind data is never copied or modified)
+#   <SdRoot>/openmw/cooked/textures.o3tp   textures converted for the 3DS GPU (out\cooked, cooked on
+#                                          first use by tools\cook_textures.py; a junction in the emulator)
 #
 #   scripts\stage-sd.ps1                                   # Azahar's virtual SD, data junction
 #   scripts\stage-sd.ps1 -SdRoot out\sdcard -DataMode none # hardware package (data added separately)
@@ -60,6 +62,23 @@ if ($DataMode -eq 'junction') {
     if (-not $item) { New-Item -ItemType Junction -Path $data -Target $DataFiles | Out-Null }
 } else {
     New-Item -ItemType Directory -Force $data | Out-Null
+}
+
+# Textures cooked for the PICA (tools/cook_textures.py), cooked once from the Morrowind data (read only).
+$cookedSrc = Join-Path $RepoRoot 'out\cooked'
+$pack = Join-Path $cookedSrc 'textures.o3tp'
+if (-not (Test-Path $pack)) {
+    & python (Join-Path $RepoRoot 'tools\cook_textures.py') --data $DataFiles --out $pack
+    if ($LASTEXITCODE -ne 0) { throw 'texture cooking failed' }
+}
+$cooked = Join-Path $Dst 'cooked'
+if ($DataMode -eq 'junction') {
+    $item = Get-Item $cooked -ErrorAction SilentlyContinue
+    if ($item -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { Remove-Item -Recurse -Force $cooked; $item = $null }
+    if (-not $item) { New-Item -ItemType Junction -Path $cooked -Target $cookedSrc | Out-Null }
+} else {
+    New-Item -ItemType Directory -Force $cooked | Out-Null
+    Copy-Item $pack $cooked -Force
 }
 
 Write-Host "Staged $Dst (data: $DataMode)"

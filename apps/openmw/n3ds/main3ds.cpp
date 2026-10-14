@@ -14,6 +14,7 @@
 #include <platform3ds/platform.hpp>
 
 #include <components/debug/debugging.hpp>
+#include <components/render3ds/render3ds.hpp>
 
 #include <3ds.h>
 
@@ -71,6 +72,12 @@ int main(int, char**)
 
     omw3ds::initBottomScreen("(starting OpenMW)");
 
+    // Top screen: citro3d draws what OSG culls (components/render3ds). Textures come from the pack cooked
+    // on the PC by tools/cook_textures.py.
+    if (!Render3DS::init())
+        P3DS_LOGE("citro3d renderer failed to start: running headless");
+    Render3DS::openTexturePack("sdmc:/openmw/cooked/textures.o3tp");
+
     // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)
     // does not consider "sdmc:/..." absolute, and OpenMW resolves relative paths against config dirs.
     chdir("sdmc:/");
@@ -80,6 +87,9 @@ int main(int, char**)
     // SDL is only used for events, joystick, touch and timers. Its n3ds video driver would take over
     // the screens (gfxInit) and has no OpenGL, so use the dummy driver.
     setenv("SDL_VIDEODRIVER", "dummy", 1);
+    // OSG's incremental compile pass would "upload" every new texture and geometry to the stub GL: CPU work
+    // for nothing (the citro3d backend uploads on first draw).
+    setenv("OPENMW_DONT_PRECOMPILE", "1", 1);
 
     std::vector<std::string> args = loadArguments();
     std::vector<char*> argv;
@@ -94,6 +104,7 @@ int main(int, char**)
     if (p3ds::info().autorun)
         p3ds::writeSmallFile(p3ds::kAutorunDonePath, "done\n"); // run-azahar.ps1 waits for it
     omw3ds::shutdownBottomScreen();
+    Render3DS::shutdown();
     p3ds::shutdown();
     gfxExit();
     return ret;
