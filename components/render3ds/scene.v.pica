@@ -9,6 +9,10 @@
 ; vertex color mode says so (colorSel). The TEV stage then multiplies by the diffuse texture.
 ;
 ; Inputs: v0 position, v1 normal, v2 color (unsigned bytes, 0..255), v3 texcoord0.
+;
+; Real hardware is stricter than the emulators (hardware test #10 hung the GPU on the first draw): no nested
+; flow control (the light loop is not inside an IF), every output component written exactly once, no inf/NaN
+; reaching the color (attenuation is capped).
 
 .fvec projection[4]
 .fvec modelView[4]
@@ -17,10 +21,10 @@
 .fvec matDiffuse, matAmbient, matEmission
 .fvec colorSel      ; x/y/z: diffuse/ambient/emission come from the vertex color (0 or 1); w: alpha multiplier
 .fvec lights[32]    ; 8 point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
-.ivec lightLoop     ; (light count - 1, 0, 4, 0)
-.bool hasLights
+.ivec lightLoop     ; (light count - 1, 0, 4, 0); with no lights, one iteration over a black light
 
 .constf consts(0.0, 1.0, 0.00392156863, 3.0)
+.constf limits(1000000.0, 0.0, 0.0, 0.0)
 
 .out outpos position
 .out outclr color
@@ -80,42 +84,41 @@
 	mul r6.xyz, sunDiffuse, r8.xxxx
 	mov r7.xyz, sunAmbient
 
-	ifu hasLights
-		for lightLoop
-			; r8 = direction to the light, r9.x = distance^2, r9.y = 1/distance, r9.z = distance
-			add r8.xyz, lights[aL], -r0
-			dp3 r9.x, r8, r8
-			rsq r9.y, r9.x
-			mul r8.xyz, r8, r9.yyyy
-			mul r9.z, r9.x, r9.y
+	for lightLoop
+		; r8 = direction to the light, r9.x = distance^2, r9.y = 1/distance, r9.z = distance
+		add r8.xyz, lights[aL], -r0
+		dp3 r9.x, r8, r8
+		rsq r9.y, r9.x
+		mul r8.xyz, r8, r9.yyyy
+		mul r9.z, r9.x, r9.y
 
-			; r10.x = lambert
-			dp3 r10.x, r8, r2
-			max r10.x, zeros, r10.x
+		; r10.x = lambert
+		dp3 r10.x, r8, r2
+		max r10.x, zeros, r10.x
 
-			; r11.x = 1 / (constant + linear * d + quadratic * d^2)
-			mov r11.x, ones
-			mov r11.y, r9.z
-			mov r11.z, r9.x
-			dp3 r11.x, lights[aL+3], r11
-			rcp r11.x, r11.x
+		; r11.x = 1 / (constant + linear * d + quadratic * d^2)
+		mov r11.x, ones
+		mov r11.y, r9.z
+		mov r11.z, r9.x
+		dp3 r11.x, lights[aL+3], r11
+		rcp r11.x, r11.x
+		min r11.x, limits.xxxx, r11.x
 
-			; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
-			mul r12.x, lights[aL].wwww, r9.z
-			add r12.x, -consts.wwww, r12.x
-			max r12.x, zeros, r12.x
-			min r12.x, ones, r12.x
-			mul r12.x, r12.x, r12.x
-			add r12.x, ones, -r12.x
-			mul r12.x, r12.x, r12.x
-			mul r11.x, r11.x, r12.x
+		; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
+		mul r12.x, lights[aL].wwww, r9.z
+		add r12.x, -consts.wwww, r12.x
+		max r12.x, zeros, r12.x
+		min r12.x, ones, r12.x
+		mul r12.x, r12.x, r12.x
+		add r12.x, ones, -r12.x
+		mul r12.x, r12.x, r12.x
+		mul r11.x, r11.x, r12.x
 
-			mul r10.x, r10.x, r11.x
-			mov r13.xyz, lights[aL+1]
-			mad r6.xyz, r13, r10.xxxx, r6
-			mov r13.xyz, lights[aL+2]
-			mad r7.xyz, r13, r11.xxxx, r7
-		.end
+		mul r10.x, r10.x, r11.x
+		mov r13.xyz, lights[aL+1]
+		mad r6.xyz, r13, r10.xxxx, r6
+		mov r13.xyz, lights[aL+2]
+		mad r7.xyz, r13, r11.xxxx, r7
 	.end
 
 	; E: material emission, or the vertex color

@@ -74,12 +74,13 @@ namespace Render3DS
         C3D_RenderTarget* gTarget = nullptr;
         DVLB_s* gDvlb = nullptr;
         shaderProgram_s gProgram;
+        shaderProgram_s gProbeProgram; // the M0 test app's shader (self-test baseline)
         bool gInFrame = false;
 
         struct UniformLocations
         {
             int mProjection, mModelView, mTexMat, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse, mMatAmbient,
-                mMatEmission, mColorSel, mLights, mLightLoop, mHasLights;
+                mMatEmission, mColorSel, mLights, mLightLoop;
         } gLoc;
 
         FrameStats gStats;
@@ -187,11 +188,6 @@ namespace Render3DS
             void* mVbo = nullptr;
             uint32_t mVboSize = 0;
             uint32_t mVertexCount = 0;
-            uint8_t mStride = 0;
-            uint8_t mLayout = 0; // bit per Attribute present in the VBO
-            u32 mPermutation = 0;
-            uint8_t mAttribCount = 0;
-            osg::Vec4f mOverallColor{ 1, 1, 1, 1 }; // fixed color (0..255) when no per-vertex colors
             void* mIbo = nullptr;
             uint32_t mIboSize = 0;
             std::vector<GpuPrimitive> mPrimitives;
@@ -500,6 +496,22 @@ namespace Render3DS
             return array;
         }
 
+        // Every geometry gets the same layout, with defaults for missing arrays: no fixed attributes and one
+        // attribute setup per frame (fixed attributes were one of the suspects of the hardware GPU hang).
+        struct Vertex
+        {
+            float mPosition[3];
+            float mNormal[3];
+            uint8_t mColor[4]; // 0..255, the shader scales by 1/255
+            float mTexCoord[2];
+        };
+        static_assert(sizeof(Vertex) == 36);
+
+        uint8_t toByte(float v)
+        {
+            return static_cast<uint8_t>(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f);
+        }
+
         bool buildVertices(GpuGeometry& gpu, const osg::Geometry& geometry)
         {
             const auto* positions = dynamic_cast<const osg::Vec3Array*>(geometry.getVertexArray());
@@ -517,36 +529,19 @@ namespace Render3DS
             const auto* colors4ub = dynamic_cast<const osg::Vec4ubArray*>(colors);
             const auto* texcoords = dynamic_cast<const osg::Vec2Array*>(perVertex(geometry.getTexCoordArray(0), count));
 
-            uint8_t layout = 1 << Attr_Position;
-            uint8_t stride = 12;
-            if (normals)
+            // BIND_OVERALL colors (or none: white) for every vertex.
+            uint8_t overall[4] = { 255, 255, 255, 255 };
+            if (const osg::Array* c = geometry.getColorArray();
+                c && c->getBinding() == osg::Array::BIND_OVERALL && c->getNumElements() > 0)
             {
-                layout |= 1 << Attr_Normal;
-                stride += 12;
-            }
-            if (colors4f || colors4ub)
-            {
-                layout |= 1 << Attr_Color;
-                stride += 4;
-            }
-            if (texcoords)
-            {
-                layout |= 1 << Attr_TexCoord;
-                stride += 8;
+                if (auto* c4f = dynamic_cast<const osg::Vec4Array*>(c))
+                    for (int k = 0; k < 4; ++k)
+                        overall[k] = toByte((*c4f)[0][k]);
+                else if (auto* c4ub = dynamic_cast<const osg::Vec4ubArray*>(c))
+                    std::memcpy(overall, &(*c4ub)[0], 4);
             }
 
-            // Constant color for BIND_OVERALL (or missing) colors, in the shader's 0..255 scale.
-            gpu.mOverallColor = osg::Vec4f(255, 255, 255, 255);
-            if (const osg::Array* overall = geometry.getColorArray();
-                overall && overall->getBinding() == osg::Array::BIND_OVERALL && overall->getNumElements() > 0)
-            {
-                if (auto* c = dynamic_cast<const osg::Vec4Array*>(overall))
-                    gpu.mOverallColor = (*c)[0] * 255.f;
-                else if (auto* cub = dynamic_cast<const osg::Vec4ubArray*>(overall))
-                    gpu.mOverallColor = osg::Vec4f((*cub)[0].r(), (*cub)[0].g(), (*cub)[0].b(), (*cub)[0].a());
-            }
-
-            const uint32_t size = count * stride;
+            const uint32_t size = count * sizeof(Vertex);
             if (gpu.mVbo == nullptr || gpu.mVboSize < size || gpu.mVboSize > size * 2)
             {
                 gpuFree(gpu.mVbo);
@@ -559,47 +554,32 @@ namespace Render3DS
                 }
             }
 
-            uint8_t* out = static_cast<uint8_t*>(gpu.mVbo);
-            for (unsigned i = 0; i < count; ++i)
+            auto* out = static_cast<Vertex*>(gpu.mVbo);
+            for (unsigned i = 0; i < count; ++i, ++out)
             {
-                std::memcpy(out, &(*positions)[i], 12);
-                out += 12;
+                std::memcpy(out->mPosition, &(*positions)[i], 12);
                 if (normals)
+                    std::memcpy(out->mNormal, &(*normals)[i], 12);
+                else
                 {
-                    std::memcpy(out, &(*normals)[i], 12);
-                    out += 12;
+                    out->mNormal[0] = out->mNormal[1] = 0.f;
+                    out->mNormal[2] = 1.f;
                 }
                 if (colors4f)
-                {
-                    const osg::Vec4f& c = (*colors4f)[i];
-                    out[0] = static_cast<uint8_t>(std::clamp(c.r(), 0.f, 1.f) * 255.f + 0.5f);
-                    out[1] = static_cast<uint8_t>(std::clamp(c.g(), 0.f, 1.f) * 255.f + 0.5f);
-                    out[2] = static_cast<uint8_t>(std::clamp(c.b(), 0.f, 1.f) * 255.f + 0.5f);
-                    out[3] = static_cast<uint8_t>(std::clamp(c.a(), 0.f, 1.f) * 255.f + 0.5f);
-                    out += 4;
-                }
+                    for (int k = 0; k < 4; ++k)
+                        out->mColor[k] = toByte((*colors4f)[i][k]);
                 else if (colors4ub)
-                {
-                    std::memcpy(out, &(*colors4ub)[i], 4);
-                    out += 4;
-                }
+                    std::memcpy(out->mColor, &(*colors4ub)[i], 4);
+                else
+                    std::memcpy(out->mColor, overall, 4);
                 if (texcoords)
-                {
-                    std::memcpy(out, &(*texcoords)[i], 8);
-                    out += 8;
-                }
+                    std::memcpy(out->mTexCoord, &(*texcoords)[i], 8);
+                else
+                    out->mTexCoord[0] = out->mTexCoord[1] = 0.f;
             }
             flushToGpu(gpu.mVbo, size);
 
             gpu.mVertexCount = count;
-            gpu.mStride = stride;
-            gpu.mLayout = layout;
-            gpu.mAttribCount = 0;
-            gpu.mPermutation = 0;
-            for (int a = 0; a < Attr_Count; ++a)
-                if (layout & (1 << a))
-                    gpu.mPermutation |= static_cast<u32>(a) << (4 * gpu.mAttribCount++);
-
             gpu.mArrays[Attr_Position] = positions;
             gpu.mArrays[Attr_Normal] = geometry.getNormalArray();
             gpu.mArrays[Attr_Color] = geometry.getColorArray();
@@ -1128,7 +1108,6 @@ namespace Render3DS
             bool mTexMatSet = false;
             C3D_Tex* mTexture = nullptr;
             int mTexEnv = -1; // 0 = vertex color, 1 = texture x vertex color
-            uint8_t mLayout = 0xFF;
             FixedState mFixed;
             bool mFixedValid = false;
         } gBound;
@@ -1153,49 +1132,23 @@ namespace Render3DS
             }
         }
 
-        void setAttributeLayout(const GpuGeometry& gpu)
+        // Vertex = position, normal, color (4 unsigned bytes), texcoord: input registers v0..v3, one buffer.
+        void setupAttributes()
         {
-            if (gBound.mLayout != gpu.mLayout)
-            {
-                gBound.mLayout = gpu.mLayout;
-                C3D_AttrInfo* attr = C3D_GetAttrInfo();
-                AttrInfo_Init(attr);
-                // Attribute index == input register, so fixed attribute ids are registers too.
-                for (int a = 0; a < Attr_Count; ++a)
-                {
-                    if (!(gpu.mLayout & (1 << a)))
-                    {
-                        AttrInfo_AddFixed(attr, a);
-                        continue;
-                    }
-                    switch (a)
-                    {
-                        case Attr_Position:
-                        case Attr_Normal:
-                            AttrInfo_AddLoader(attr, a, GPU_FLOAT, 3);
-                            break;
-                        case Attr_Color:
-                            AttrInfo_AddLoader(attr, a, GPU_UNSIGNED_BYTE, 4);
-                            break;
-                        case Attr_TexCoord:
-                            AttrInfo_AddLoader(attr, a, GPU_FLOAT, 2);
-                            break;
-                    }
-                }
-            }
-            // Fixed values for the missing attributes (per geometry: the overall color varies).
-            if (!(gpu.mLayout & (1 << Attr_Normal)))
-                C3D_FixedAttribSet(Attr_Normal, 0.f, 0.f, 1.f, 0.f);
-            if (!(gpu.mLayout & (1 << Attr_Color)))
-                C3D_FixedAttribSet(Attr_Color, gpu.mOverallColor.r(), gpu.mOverallColor.g(), gpu.mOverallColor.b(),
-                    gpu.mOverallColor.a());
-            if (!(gpu.mLayout & (1 << Attr_TexCoord)))
-                C3D_FixedAttribSet(Attr_TexCoord, 0.f, 0.f, 0.f, 0.f);
+            C3D_AttrInfo* attr = C3D_GetAttrInfo();
+            AttrInfo_Init(attr);
+            AttrInfo_AddLoader(attr, Attr_Position, GPU_FLOAT, 3);
+            AttrInfo_AddLoader(attr, Attr_Normal, GPU_FLOAT, 3);
+            AttrInfo_AddLoader(attr, Attr_Color, GPU_UNSIGNED_BYTE, 4);
+            AttrInfo_AddLoader(attr, Attr_TexCoord, GPU_FLOAT, 2);
+        }
 
+        void bindVertexBuffer(const void* vbo)
+        {
             C3D_BufInfo* buf = C3D_GetBufInfo();
             BufInfo_Init(buf);
             buf->base_paddr = gLinearBasePa;
-            BufInfo_Add(buf, gpu.mVbo, gpu.mStride, gpu.mAttribCount, gpu.mPermutation);
+            BufInfo_Add(buf, vbo, sizeof(Vertex), 4, 0x3210);
         }
 
         float uniformFloat(const Slot<osg::Uniform>& slot, float fallback)
@@ -1259,12 +1212,21 @@ namespace Render3DS
             gBound.mLightBufferModified = modified;
             gBound.mLightCount = count;
 
-            C3D_BoolUnifSet(GPU_VERTEX_SHADER, gLoc.mHasLights, count > 0);
+            if (count > 0)
+                count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
             if (count == 0)
+            {
+                // The loop always runs at least once (no IF around it, see scene.v.pica): a black light.
+                C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, 0, 0, 4, 0);
+                C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, 4);
+                out[0] = FVec4_New(0, 0, 0, 0);
+                out[1] = FVec4_New(0, 0, 0, 0);
+                out[2] = FVec4_New(0, 0, 0, 0);
+                out[3] = FVec4_New(1, 0, 0, 0);
                 return;
+            }
             C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, count - 1, 0, 4, 0);
             const osg::FloatArray& data = *buffer->getFloatArray();
-            count = std::min<int>(count, static_cast<int>(data.size() / 16));
             C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, count * 4);
             for (int i = 0; i < count; ++i)
             {
@@ -1401,15 +1363,15 @@ namespace Render3DS
             const C3D_Tex* tex = gBound.mTexture;
             const osg::Node* parent = geometry.getNumParents() > 0 ? geometry.getParent(0) : nullptr;
             p3ds::log::writef(error ? p3ds::log::Level::Error : p3ds::log::Level::Info, "render3ds: %s: draw #%lu mode %d count %lu first/offset %lu index type %d | vbo pa %08lx size %lu "
-                      "stride %u layout %x attribs %u perm %lx verts %lu | ibo pa %08lx size %lu | tex pa %08lx fmt %d "
-                      "%ux%u levels %u param %08lx | base %08lx | '%s' in '%s'",
+                      "verts %lu | ibo pa %08lx size %lu | tex pa %08lx fmt %d "
+                      "%ux%u levels %u param %08lx | base %08lx | lights %d | '%s' in '%s'",
                 what, (unsigned long)gVerifiedDraws, int(prim.mMode), (unsigned long)prim.mCount,
                 (unsigned long)prim.mFirst, prim.mIndexType, (unsigned long)physical(gpu.mVbo),
-                (unsigned long)gpu.mVboSize, unsigned(gpu.mStride), unsigned(gpu.mLayout), unsigned(gpu.mAttribCount),
-                (unsigned long)gpu.mPermutation, (unsigned long)gpu.mVertexCount, (unsigned long)physical(gpu.mIbo),
+                (unsigned long)gpu.mVboSize, (unsigned long)gpu.mVertexCount, (unsigned long)physical(gpu.mIbo),
                 (unsigned long)gpu.mIboSize, (unsigned long)(tex ? physical(tex->data) : 0), tex ? int(tex->fmt) : -1,
                 tex ? unsigned(tex->width) : 0u, tex ? unsigned(tex->height) : 0u, tex ? unsigned(tex->maxLevel) + 1 : 0u,
-                (unsigned long)(tex ? tex->param : 0), (unsigned long)gLinearBasePa, geometry.getName().c_str(),
+                (unsigned long)(tex ? tex->param : 0), (unsigned long)gLinearBasePa, gBound.mLightCount,
+                geometry.getName().c_str(),
                 parent ? parent->getName().c_str() : "");
         }
 
@@ -1439,6 +1401,275 @@ namespace Render3DS
             C3D_FrameDrawOn(gTarget);
             ++gVerifiedDraws;
             p3ds::crash::kick("render3ds draw check");
+        }
+
+        // ------------------------------------------------------------------ GPU self-test
+
+        // Hardware tests #9 and #10 hung the GPU on the first real draw while every emulator run was fine. Before
+        // the first frame, this draws one small quad per step, each submitted alone and waited for, starting from
+        // the setup the M0 test app ran on hardware and adding one feature per step. A hang names the step
+        // (synced log) before the crash report; on success every feature the renderer uses has run once.
+        bool gSelfTestDone = false;
+
+        struct ProbeVertex
+        {
+            float mPosition[3];
+            float mTexCoord[2];
+            float mNormal[3];
+        };
+
+        void selfTestStep(const char* name)
+        {
+            const u64 start = svcGetSystemTick();
+            C3D_FrameEnd(GX_CMDLIST_FLUSH);
+            if (!waitGpuAndBegin(2000))
+            {
+                P3DS_LOGE("render3ds: GPU self-test: HANG at step %s", name);
+                p3ds::crash::fatal("GPU hang in the render3ds self-test (see openmw3ds.log for the step)");
+            }
+            C3D_FrameDrawOn(gTarget);
+            P3DS_LOGI("render3ds: GPU self-test %s: ok (%.1f ms)", name,
+                double(svcGetSystemTick() - start) / CPU_TICKS_PER_MSEC);
+        }
+
+        void setTestMatrices(int projectionLoc, int modelViewLoc)
+        {
+            // Quad positions are already in clip space; z = -0.5 is inside the PICA's [-1, 0] for both depth modes.
+            C3D_FVec* p = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, projectionLoc, 4);
+            p[0] = FVec4_New(1, 0, 0, 0);
+            p[1] = FVec4_New(0, 1, 0, 0);
+            p[2] = FVec4_New(0, 0, 0, -0.5f);
+            p[3] = FVec4_New(0, 0, 0, 1);
+            C3D_FVec* mv = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, modelViewLoc, 4);
+            mv[0] = FVec4_New(1, 0, 0, 0);
+            mv[1] = FVec4_New(0, 1, 0, 0);
+            mv[2] = FVec4_New(0, 0, 1, 0);
+            mv[3] = FVec4_New(0, 0, 0, 1);
+        }
+
+        void setTestLights(int count)
+        {
+            C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, std::max(count, 1) - 1, 0, 4, 0);
+            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, std::max(count, 1) * 4);
+            for (int i = 0; i < std::max(count, 1); ++i)
+            {
+                const float on = count > 0 ? 1.f : 0.f;
+                out[i * 4 + 0] = FVec4_New(0.1f * i, 0, 1, 4.f / 100.f);
+                out[i * 4 + 1] = FVec4_New(on, on, on, 0);
+                out[i * 4 + 2] = FVec4_New(0.2f * on, 0.2f * on, 0.2f * on, 0);
+                out[i * 4 + 3] = FVec4_New(1, 0, 0.01f, 0);
+            }
+        }
+
+        void setupTestTexture(C3D_Tex& tex, const CookedImage& image)
+        {
+            tex = C3D_Tex{};
+            tex.data = image.gpuData();
+            tex.fmt = image.gpuFormat();
+            tex.size = image.getImageSizeInBytes();
+            tex.width = static_cast<u16>(image.s());
+            tex.height = static_cast<u16>(image.t());
+            tex.param = GPU_TEXTURE_MODE(GPU_TEX_2D) | (image.gpuFormat() == GPU_ETC1 ? GPU_TEXTURE_ETC1_PARAM : 0);
+            C3D_TexSetFilter(&tex, GPU_LINEAR, GPU_LINEAR);
+            C3D_TexSetFilterMipmap(&tex, GPU_LINEAR);
+            C3D_TexSetWrap(&tex, GPU_REPEAT, GPU_REPEAT);
+            tex.maxLevel = static_cast<u8>(image.levels() - 1);
+        }
+
+        void runGpuSelfTest()
+        {
+            gSelfTestDone = true;
+            P3DS_LOGI("render3ds: GPU self-test: one quad per step, each waited for");
+
+            // Geometry: one quad (scene layout and M0 layout), 16- and 8-bit indices, strip order.
+            const Vertex quad[4] = {
+                { { -0.5f, -0.5f, 0 }, { 0, 0, 1 }, { 255, 160, 64, 255 }, { 0, 0 } },
+                { { 0.5f, -0.5f, 0 }, { 0, 0, 1 }, { 255, 160, 64, 255 }, { 1, 0 } },
+                { { 0.5f, 0.5f, 0 }, { 0, 0, 1 }, { 255, 160, 64, 160 }, { 1, 1 } },
+                { { -0.5f, 0.5f, 0 }, { 0, 0, 1 }, { 255, 160, 64, 160 }, { 0, 1 } },
+            };
+            const ProbeVertex probeQuad[4] = {
+                { { -0.5f, -0.5f, 0 }, { 0, 0 }, { 0, 0, 1 } },
+                { { 0.5f, -0.5f, 0 }, { 1, 0 }, { 0, 0, 1 } },
+                { { 0.5f, 0.5f, 0 }, { 1, 1 }, { 0, 0, 1 } },
+                { { -0.5f, 0.5f, 0 }, { 0, 1 }, { 0, 0, 1 } },
+            };
+            const uint16_t indices16[6] = { 0, 1, 2, 0, 2, 3 };
+            const uint8_t indices8[8] = { 0, 1, 2, 0, 2, 3, 0, 0 };
+            const uint16_t strip16[4] = { 0, 1, 3, 2 };
+            auto* vbo = static_cast<Vertex*>(gpuAlloc(sizeof(quad)));
+            auto* probeVbo = static_cast<ProbeVertex*>(gpuAlloc(sizeof(probeQuad)));
+            auto* ibo16 = static_cast<uint16_t*>(gpuAlloc(sizeof(indices16)));
+            auto* ibo8 = static_cast<uint8_t*>(gpuAlloc(sizeof(indices8)));
+            auto* strip = static_cast<uint16_t*>(gpuAlloc(sizeof(strip16)));
+            auto* white = static_cast<u32*>(gpuAlloc(8 * 8 * 4));
+            if (!vbo || !probeVbo || !ibo16 || !ibo8 || !strip || !white)
+            {
+                P3DS_LOGE("render3ds: GPU self-test: no linear memory, skipped");
+                return;
+            }
+            std::memcpy(vbo, quad, sizeof(quad));
+            std::memcpy(probeVbo, probeQuad, sizeof(probeQuad));
+            std::memcpy(ibo16, indices16, sizeof(indices16));
+            std::memcpy(ibo8, indices8, sizeof(indices8));
+            std::memcpy(strip, strip16, sizeof(strip16));
+            for (int i = 0; i < 64; ++i)
+                white[i] = 0xFFFFFFFF;
+            for (const void* p : { (const void*)vbo, (const void*)probeVbo, (const void*)ibo16, (const void*)ibo8,
+                     (const void*)strip, (const void*)white })
+                GSPGPU_FlushDataCache(p, 256);
+
+            C3D_Tex rgba{};
+            rgba.data = white;
+            rgba.fmt = GPU_RGBA8;
+            rgba.size = 8 * 8 * 4;
+            rgba.width = rgba.height = 8;
+            rgba.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
+            C3D_TexSetFilter(&rgba, GPU_LINEAR, GPU_NEAREST);
+            osg::ref_ptr<osg::Image> etc1Image = loadCookedImageWithFormat(GPU_ETC1);
+            osg::ref_ptr<osg::Image> etc1a4Image = loadCookedImageWithFormat(GPU_ETC1A4);
+            C3D_Tex etc1{}, etc1a4{};
+            if (etc1Image)
+                setupTestTexture(etc1, static_cast<CookedImage&>(*etc1Image));
+            if (etc1a4Image)
+                setupTestTexture(etc1a4, static_cast<CookedImage&>(*etc1a4Image));
+
+            // Common fixed-function state: no depth test effect, no blending, no alpha test, no fog, no culling.
+            C3D_DepthTest(true, GPU_ALWAYS, GPU_WRITE_ALL);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+            C3D_CullFace(GPU_CULL_NONE);
+            C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+            C3D_DepthMap(true, -1.f, 0.f);
+
+            // L0: the M0 test app, as it ran on hardware: its shader, citro3d's default buffer base, z-buffer,
+            // RGBA8 texture x vertex color.
+            {
+                C3D_BindProgram(&gProbeProgram);
+                C3D_AttrInfo* attr = C3D_GetAttrInfo();
+                AttrInfo_Init(attr);
+                AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3);
+                AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 2);
+                AttrInfo_AddLoader(attr, 2, GPU_FLOAT, 3);
+                C3D_BufInfo* buf = C3D_GetBufInfo();
+                BufInfo_Init(buf);
+                BufInfo_Add(buf, probeVbo, sizeof(ProbeVertex), 3, 0x210);
+                const int projection = shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "projection");
+                const int modelView = shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "modelView");
+                setTestMatrices(projection, modelView);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "lightDir"), 0, 0, -1, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "lightColor"), 1, 1, 1, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "ambient"), 0.3f, 0.3f, 0.3f, 1);
+                C3D_TexBind(0, &rgba);
+                gBound.mTexEnv = -1;
+                setTexEnv(true);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                selfTestStep("L0 M0 test app setup");
+            }
+
+            // L1..: the scene shader and layout, one feature at a time.
+            C3D_BindProgram(&gProgram);
+            setupAttributes();
+            bindVertexBuffer(vbo);
+            setTestMatrices(gLoc.mProjection, gLoc.mModelView);
+            C3D_FVec* texMat = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mTexMat, 2);
+            texMat[0] = FVec4_New(1, 0, 0, 0);
+            texMat[1] = FVec4_New(0, 1, 0, 0);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDir, 0, 0, 1, 0);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDiffuse, 0.5f, 0.5f, 0.5f, 1);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunAmbient, 0.3f, 0.3f, 0.3f, 1);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatDiffuse, 1, 1, 1, 1);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatAmbient, 1, 1, 1, 1);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatEmission, 0, 0, 0, 1);
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 1, 0, 1);
+            setTestLights(0);
+            gBound.mTexEnv = -1;
+            setTexEnv(false);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L1 scene shader + vertex layout + linear-heap buffer base, untextured, z-buffer");
+
+            C3D_DepthMap(false, -1.f, 0.f);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L2 + W-buffer depth");
+
+            {
+                float data[256];
+                for (int i = 0; i <= 128; ++i)
+                {
+                    const float visibility = 1.f - i / 128.f;
+                    if (i < 128)
+                        data[i] = visibility;
+                    if (i > 0)
+                        data[i + 127] = visibility - data[i - 1];
+                }
+                FogLut_FromArray(&gFogLut, data);
+                C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+                C3D_FogColor(0x406080);
+                C3D_FogLutBind(&gFogLut);
+            }
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L3 + fog LUT");
+
+            C3D_TexBind(0, &rgba);
+            setTexEnv(true);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L4 + RGBA8 texture");
+
+            if (etc1Image)
+            {
+                C3D_TexBind(0, &etc1);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                selfTestStep("L5 + ETC1 mipmapped texture (cooked)");
+            }
+            if (etc1a4Image)
+            {
+                C3D_TexBind(0, &etc1a4);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                selfTestStep("L6 + ETC1A4 mipmapped texture (cooked)");
+            }
+
+            setTestLights(1);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L7 + 1 point light");
+
+            setTestLights(kMaxLights);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L8 + 8 point lights");
+
+            C3D_AlphaTest(true, GPU_GREATER, 128);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
+                GPU_ONE_MINUS_SRC_ALPHA);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L9 + alpha test and blending");
+
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_BYTE, ibo8);
+            selfTestStep("L10 + 8-bit indices");
+
+            C3D_DrawElements(GPU_TRIANGLE_STRIP, 4, C3D_UNSIGNED_SHORT, strip);
+            selfTestStep("L11 + triangle strip (indexed)");
+
+            C3D_DrawArrays(GPU_TRIANGLE_FAN, 0, 4);
+            selfTestStep("L12 + triangle fan (arrays)");
+
+            C3D_DepthTest(true, GPU_LESS, GPU_WRITE_ALL);
+            C3D_CullFace(GPU_CULL_BACK_CCW);
+            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+            selfTestStep("L13 + depth test and back-face culling");
+
+            P3DS_LOGI("render3ds: GPU self-test passed");
+
+            // Leave nothing behind: the scene re-applies all of its state.
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+            C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+            C3D_TexBind(0, nullptr);
+            gFog = FogState{};
+            gBound = Bound{};
+            gpuFree(vbo);
+            gpuFree(probeVbo);
+            gpuFree(ibo16);
+            gpuFree(ibo8);
+            gpuFree(strip);
+            gpuFree(white); // the GPU is idle: selfTestStep waited for it
         }
 
         // ------------------------------------------------------------------ leaves, bins, stages
@@ -1496,7 +1727,7 @@ namespace Render3DS
             uploadTexMat(rs);
             uploadFog(rs);
 
-            setAttributeLayout(*gpu);
+            bindVertexBuffer(gpu->mVbo);
             const bool verify = gVerifyThisFrame || !gpu->mVerified;
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
@@ -1617,7 +1848,10 @@ namespace Render3DS
                     gTarget, static_cast<C3D_ClearBits>(clearBits), toRgba8(stage->getClearColor()), 0xFFFFFF);
             C3D_FrameDrawOn(gTarget);
 
+            if (!gSelfTestDone)
+                runGpuSelfTest();
             C3D_BindProgram(&gProgram);
+            setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
             drawBin(stage);
@@ -1674,6 +1908,8 @@ namespace Render3DS
         gDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(scene_shbin)), scene_shbin_size);
         shaderProgramInit(&gProgram);
         shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
+        shaderProgramInit(&gProbeProgram);
+        shaderProgramSetVsh(&gProbeProgram, &gDvlb->DVLE[1]);
         C3D_BindProgram(&gProgram);
         auto loc = [](const char* name) {
             const int location = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
@@ -1693,7 +1929,6 @@ namespace Render3DS
         gLoc.mColorSel = loc("colorSel");
         gLoc.mLights = loc("lights");
         gLoc.mLightLoop = loc("lightLoop");
-        gLoc.mHasLights = loc("hasLights");
 
         gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
         P3DS_LOGI("render3ds: linear heap va %08lx pa %08lx-%08lx (%lu KB); vertex/index base %08lx (citro3d's default "
@@ -1724,6 +1959,7 @@ namespace Render3DS
         }
         // GPU objects of still-alive OSG objects stay allocated: the process is about to exit.
         shaderProgramFree(&gProgram);
+        shaderProgramFree(&gProbeProgram);
         DVLB_Free(gDvlb);
         C3D_RenderTargetDelete(gTarget);
         C3D_Fini();

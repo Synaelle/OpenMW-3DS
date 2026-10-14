@@ -17,6 +17,9 @@ namespace Render3DS
     void* gpuAlloc(size_t size);
     void gpuFree(void* ptr);
 
+    // The first mipmapped texture of that format in the cooked pack (GPU self-test).
+    osg::ref_ptr<osg::Image> loadCookedImageWithFormat(GPU_TEXCOLOR format);
+
     // An image from the cooked pack. Its data (all mip levels, PICA tiled layout) lives in linear memory
     // and is what the GPU samples, so it is freed with the image.
     //

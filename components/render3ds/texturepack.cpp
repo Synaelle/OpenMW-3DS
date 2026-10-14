@@ -202,6 +202,40 @@ namespace Render3DS
         return true;
     }
 
+    namespace
+    {
+        osg::ref_ptr<osg::Image> loadEntry(const PackEntry& entry, std::string_view name)
+        {
+            void* data = gpuAlloc(entry.mSize);
+            if (data == nullptr)
+            {
+                Log(Debug::Error) << "render3ds: out of linear memory for texture " << name << " (" << entry.mSize
+                                  << " bytes, " << linearSpaceFree() / 1024 << " KB free)";
+                return nullptr;
+            }
+            // No dirty cache lines may be written back over what the file system writes.
+            GSPGPU_FlushDataCache(data, entry.mSize);
+            bool ok;
+            {
+                std::lock_guard<std::mutex> lock(gPackMutex);
+                ok = std::fseek(gPack, static_cast<long>(entry.mOffset), SEEK_SET) == 0
+                    && std::fread(data, 1, entry.mSize, gPack) == entry.mSize;
+            }
+            if (!ok)
+            {
+                Log(Debug::Error) << "render3ds: failed to read " << name << " from the texture pack";
+                gpuFree(data);
+                return nullptr;
+            }
+            GSPGPU_FlushDataCache(data, entry.mSize);
+
+            osg::ref_ptr<osg::Image> image = new CookedImage(data, entry.mSize, entry.mWidth, entry.mHeight,
+                static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels, entry.mFlags);
+            image->setFileName(std::string(name));
+            return image;
+        }
+    }
+
     osg::ref_ptr<osg::Image> loadCookedImage(std::string_view normalizedPath)
     {
         if (gPack == nullptr)
@@ -211,34 +245,14 @@ namespace Render3DS
             [](const PackEntry& entry, uint64_t value) { return entry.mHash < value; });
         if (it == gIndex.end() || it->mHash != hash)
             return nullptr;
-        const PackEntry entry = *it;
+        return loadEntry(*it, normalizedPath);
+    }
 
-        void* data = gpuAlloc(entry.mSize);
-        if (data == nullptr)
-        {
-            Log(Debug::Error) << "render3ds: out of linear memory for texture " << normalizedPath << " (" << entry.mSize
-                              << " bytes, " << linearSpaceFree() / 1024 << " KB free)";
-            return nullptr;
-        }
-        // No dirty cache lines may be written back over what the file system writes.
-        GSPGPU_FlushDataCache(data, entry.mSize);
-        bool ok;
-        {
-            std::lock_guard<std::mutex> lock(gPackMutex);
-            ok = std::fseek(gPack, static_cast<long>(entry.mOffset), SEEK_SET) == 0
-                && std::fread(data, 1, entry.mSize, gPack) == entry.mSize;
-        }
-        if (!ok)
-        {
-            Log(Debug::Error) << "render3ds: failed to read " << normalizedPath << " from the texture pack";
-            gpuFree(data);
-            return nullptr;
-        }
-        GSPGPU_FlushDataCache(data, entry.mSize);
-
-        osg::ref_ptr<osg::Image> image = new CookedImage(data, entry.mSize, entry.mWidth, entry.mHeight,
-            static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels, entry.mFlags);
-        image->setFileName(std::string(normalizedPath));
-        return image;
+    osg::ref_ptr<osg::Image> loadCookedImageWithFormat(GPU_TEXCOLOR format)
+    {
+        for (const PackEntry& entry : gIndex)
+            if (entry.mFormat == format && entry.mLevels > 1)
+                return loadEntry(entry, "(self-test texture)");
+        return nullptr;
     }
 }
