@@ -26,6 +26,8 @@ namespace Render3DS
     bool init();
     void shutdown();
     bool isActive();
+    // Why rendering stopped (a GPU hang: the GPU core was reset and the game runs on headless), or nullptr.
+    const char* failure();
 
     struct FrameStats
     {

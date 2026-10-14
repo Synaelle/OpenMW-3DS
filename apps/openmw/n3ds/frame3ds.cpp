@@ -379,7 +379,9 @@ namespace omw3ds
         snap.cellName = gCellName.c_str();
         for (int i = 0; i < 3; ++i)
             snap.playerPos[i] = gPos[i];
-        snap.status = Render3DS::isActive() ? "citro3d" : "headless (renderer failed)";
+        snap.status = Render3DS::isActive() ? "citro3d"
+            : Render3DS::failure()          ? Render3DS::failure()
+                                            : "headless (renderer failed to start)";
         gBottom.update(snap);
         p3ds::perf::Phase phase("bottomScreen");
         gBottom.render(); // rate-limited internally

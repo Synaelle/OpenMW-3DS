@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -75,12 +76,17 @@ namespace Render3DS
         DVLB_s* gDvlb = nullptr;
         shaderProgram_s gProgram;
         shaderProgram_s gProbeProgram; // the M0 test app's shader (self-test baseline)
+        shaderProgram_s gFlatProgram; // minimal shader on the scene vertex layout (self-test)
+
+        // Set when the GPU hung: the GPU core was reset and nothing is drawn for the rest of the run, so the game
+        // keeps running (headless) and HOME closes it normally instead of a frozen console.
+        const char* gFailure = nullptr;
         bool gInFrame = false;
 
         struct UniformLocations
         {
             int mProjection, mModelView, mTexMat, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse, mMatAmbient,
-                mMatEmission, mColorSel, mLights, mLightLoop;
+                mMatEmission, mColorSel, mLights;
         } gLoc;
 
         FrameStats gStats;
@@ -89,10 +95,11 @@ namespace Render3DS
         float gNear = 1, gFar = 1000; // current perspective projection (fog LUT)
 
         // Vertex and index buffers are addressed by the PICA as 28-bit offsets from a base address. citro3d's
-        // default base is 0x18000000, which reaches physical 0x27FFFFFF only. In the 178 MB mode the kernel puts
-        // the linear heap after the image and the 95 MB heap, i.e. mostly above 0x28000000: offsets wrapped and
-        // the GPU hung on real hardware (test #9; Azahar doesn't care). The base is the linear heap's start.
+        // default base 0x18000000 reaches physical 0x27FFFFFF. The linear heap is at 0x20000000 on hardware too
+        // (test #10), so the default is kept (exactly what the M0 test app used); the base only moves if the heap
+        // ever ends beyond reach.
         u32 gLinearBasePa = 0;
+        u32 gBufferBase = 0x18000000;
 
         // Draw-by-draw verification of the first frames that draw anything: each draw is submitted alone and
         // waited for, so a draw that hangs the GPU is named in the log instead of freezing the console.
@@ -1100,6 +1107,7 @@ namespace Render3DS
             const osg::Uniform* mLightBuffer = nullptr;
             unsigned mLightBufferModified = 0;
             int mLightCount = -1;
+            int mLightSlotsLit = kMaxLights; // slots that may hold a real light (all, until written once)
             const osg::Uniform* mSun[3] = {};
             unsigned mSunModified[3] = {};
             const SceneUtil::Material* mMaterial = nullptr;
@@ -1147,7 +1155,7 @@ namespace Render3DS
         {
             C3D_BufInfo* buf = C3D_GetBufInfo();
             BufInfo_Init(buf);
-            buf->base_paddr = gLinearBasePa;
+            buf->base_paddr = gBufferBase;
             BufInfo_Add(buf, vbo, sizeof(Vertex), 4, 0x3210);
         }
 
@@ -1162,6 +1170,38 @@ namespace Render3DS
         void setVec4(int location, const osg::Vec4f& v)
         {
             C3D_FVUnifSet(GPU_VERTEX_SHADER, location, v.x(), v.y(), v.z(), v.w());
+        }
+
+        // The shader's lights are unrolled (scene.v.pica): every slot is evaluated. Slots past `count` get an "off"
+        // light (black, far away so no 1/0) - only those that held a real light before, to keep uploads small.
+        // data: OpenMW's LightBuffer floats, 16 per light (lightmanager.cpp configure*(): row 0 position +
+        // constant, row 1 ambient + linear, row 2 diffuse + quadratic, row 3 specular + radius).
+        void writeLights(const float* data, int count)
+        {
+            const int slots = std::max(count, gBound.mLightSlotsLit);
+            if (slots == 0)
+                return;
+            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, slots * 4);
+            for (int i = 0; i < slots; ++i)
+            {
+                if (i < count)
+                {
+                    const float* m = data + i * 16;
+                    const float radius = std::max(m[15], 1.f);
+                    out[i * 4 + 0] = FVec4_New(m[0], m[1], m[2], 4.f / radius);
+                    out[i * 4 + 1] = FVec4_New(m[8], m[9], m[10], 0.f);
+                    out[i * 4 + 2] = FVec4_New(m[4], m[5], m[6], 0.f);
+                    out[i * 4 + 3] = FVec4_New(m[3], m[7], m[11], 0.f);
+                }
+                else
+                {
+                    out[i * 4 + 0] = FVec4_New(0.f, 0.f, 10000.f, 0.f);
+                    out[i * 4 + 1] = FVec4_New(0.f, 0.f, 0.f, 0.f);
+                    out[i * 4 + 2] = FVec4_New(0.f, 0.f, 0.f, 0.f);
+                    out[i * 4 + 3] = FVec4_New(1.f, 0.f, 0.f, 0.f);
+                }
+            }
+            gBound.mLightSlotsLit = count;
         }
 
         void uploadLighting(const ResolvedState& rs)
@@ -1214,31 +1254,7 @@ namespace Render3DS
 
             if (count > 0)
                 count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
-            if (count == 0)
-            {
-                // The loop always runs at least once (no IF around it, see scene.v.pica): a black light.
-                C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, 0, 0, 4, 0);
-                C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, 4);
-                out[0] = FVec4_New(0, 0, 0, 0);
-                out[1] = FVec4_New(0, 0, 0, 0);
-                out[2] = FVec4_New(0, 0, 0, 0);
-                out[3] = FVec4_New(1, 0, 0, 0);
-                return;
-            }
-            C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, count - 1, 0, 4, 0);
-            const osg::FloatArray& data = *buffer->getFloatArray();
-            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, count * 4);
-            for (int i = 0; i < count; ++i)
-            {
-                // components/sceneutil/lightmanager.cpp configure*(): row 0 position + constant, row 1 ambient +
-                // linear, row 2 diffuse + quadratic, row 3 specular + radius.
-                const float* m = &data[i * 16];
-                const float radius = std::max(m[15], 1.f);
-                out[i * 4 + 0] = FVec4_New(m[0], m[1], m[2], 4.f / radius);
-                out[i * 4 + 1] = FVec4_New(m[8], m[9], m[10], 0.f);
-                out[i * 4 + 2] = FVec4_New(m[4], m[5], m[6], 0.f);
-                out[i * 4 + 3] = FVec4_New(m[3], m[7], m[11], 0.f);
-            }
+            writeLights(count > 0 ? &(*buffer->getFloatArray())[0] : nullptr, count);
         }
 
         void uploadMaterial(const ResolvedState& rs)
@@ -1370,9 +1386,22 @@ namespace Render3DS
                 (unsigned long)gpu.mVboSize, (unsigned long)gpu.mVertexCount, (unsigned long)physical(gpu.mIbo),
                 (unsigned long)gpu.mIboSize, (unsigned long)(tex ? physical(tex->data) : 0), tex ? int(tex->fmt) : -1,
                 tex ? unsigned(tex->width) : 0u, tex ? unsigned(tex->height) : 0u, tex ? unsigned(tex->maxLevel) + 1 : 0u,
-                (unsigned long)(tex ? tex->param : 0), (unsigned long)gLinearBasePa, gBound.mLightCount,
+                (unsigned long)(tex ? tex->param : 0), (unsigned long)gBufferBase, gBound.mLightCount,
                 geometry.getName().c_str(),
                 parent ? parent->getName().c_str() : "");
+        }
+
+        // A hung GPU: log, reset the GPU core (GSP), stop rendering. Before this, a hang froze the console until a
+        // forced power-off (a hung GPU also blocks the process exit).
+        void gpuHang(const char* what)
+        {
+            P3DS_LOGE("render3ds: GPU HANG: %s", what);
+            const Result reset = GSPGPU_ResetGpuCore();
+            P3DS_LOGE("render3ds: GPU core reset (result %08lx); rendering is off for this run, the game keeps running "
+                      "headless - HOME closes it",
+                (unsigned long)reset);
+            gFailure = "GPU hang - rendering off (see log)";
+            gInFrame = false;
         }
 
         // Waits for the GPU to go idle (C3D_FrameBegin succeeds) for up to timeoutMs. On success a new citro3d
@@ -1396,7 +1425,8 @@ namespace Render3DS
             if (!waitGpuAndBegin(2000))
             {
                 logDraw(true, "GPU HANG on this draw", gpu, prim, geometry);
-                p3ds::crash::fatal("GPU hang on a draw (render3ds draw-by-draw check, see openmw3ds.log)");
+                gpuHang("a scene draw never finished (draw-by-draw check)");
+                return;
             }
             C3D_FrameDrawOn(gTarget);
             ++gVerifiedDraws;
@@ -1418,18 +1448,24 @@ namespace Render3DS
             float mNormal[3];
         };
 
-        void selfTestStep(const char* name)
+        // Submits what was recorded and waits for it. false = the GPU hung (it was reset, rendering is off).
+        bool gSimulateHang = false; // autorun "fakehang": exercise the recovery path in the emulator
+
+        bool selfTestStep(const char* name)
         {
             const u64 start = svcGetSystemTick();
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
-            if (!waitGpuAndBegin(2000))
+            const bool fake = gSimulateHang && std::strncmp(name, "L2 ", 3) == 0;
+            if (fake || !waitGpuAndBegin(2000))
             {
                 P3DS_LOGE("render3ds: GPU self-test: HANG at step %s", name);
-                p3ds::crash::fatal("GPU hang in the render3ds self-test (see openmw3ds.log for the step)");
+                gpuHang("GPU self-test");
+                return false;
             }
             C3D_FrameDrawOn(gTarget);
             P3DS_LOGI("render3ds: GPU self-test %s: ok (%.1f ms)", name,
                 double(svcGetSystemTick() - start) / CPU_TICKS_PER_MSEC);
+            return true;
         }
 
         void setTestMatrices(int projectionLoc, int modelViewLoc)
@@ -1449,16 +1485,20 @@ namespace Render3DS
 
         void setTestLights(int count)
         {
-            C3D_IVUnifSet(GPU_VERTEX_SHADER, gLoc.mLightLoop, std::max(count, 1) - 1, 0, 4, 0);
-            C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mLights, std::max(count, 1) * 4);
-            for (int i = 0; i < std::max(count, 1); ++i)
+            float data[kMaxLights * 16];
+            for (int i = 0; i < kMaxLights; ++i)
             {
-                const float on = count > 0 ? 1.f : 0.f;
-                out[i * 4 + 0] = FVec4_New(0.1f * i, 0, 1, 4.f / 100.f);
-                out[i * 4 + 1] = FVec4_New(on, on, on, 0);
-                out[i * 4 + 2] = FVec4_New(0.2f * on, 0.2f * on, 0.2f * on, 0);
-                out[i * 4 + 3] = FVec4_New(1, 0, 0.01f, 0);
+                float* m = data + i * 16;
+                std::fill(m, m + 16, 0.f);
+                m[0] = 0.1f * i; // position
+                m[2] = 1.f;
+                m[3] = 1.f; // constant attenuation
+                m[4] = m[5] = m[6] = 0.2f; // ambient
+                m[11] = 0.01f; // quadratic attenuation
+                m[8] = m[9] = m[10] = 1.f; // diffuse
+                m[15] = 100.f; // radius
             }
+            writeLights(data, count);
         }
 
         void setupTestTexture(C3D_Tex& tex, const CookedImage& image)
@@ -1542,119 +1582,150 @@ namespace Render3DS
             C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
             C3D_DepthMap(true, -1.f, 0.f);
 
-            // L0: the M0 test app, as it ran on hardware: its shader, citro3d's default buffer base, z-buffer,
-            // RGBA8 texture x vertex color.
-            {
-                C3D_BindProgram(&gProbeProgram);
-                C3D_AttrInfo* attr = C3D_GetAttrInfo();
-                AttrInfo_Init(attr);
-                AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3);
-                AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 2);
-                AttrInfo_AddLoader(attr, 2, GPU_FLOAT, 3);
-                C3D_BufInfo* buf = C3D_GetBufInfo();
-                BufInfo_Init(buf);
-                BufInfo_Add(buf, probeVbo, sizeof(ProbeVertex), 3, 0x210);
-                const int projection = shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "projection");
-                const int modelView = shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "modelView");
-                setTestMatrices(projection, modelView);
-                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "lightDir"), 0, 0, -1, 0);
-                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "lightColor"), 1, 1, 1, 1);
-                C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(gProbeProgram.vertexShader, "ambient"), 0.3f, 0.3f, 0.3f, 1);
+            // Each step returns false if the GPU hung (it was reset and rendering is off): stop there.
+            auto run = [&]() -> bool {
+                // L0: the M0 test app, as it ran on hardware: its shader, citro3d's default buffer base, z-buffer,
+                // RGBA8 texture x vertex color.
+                {
+                    C3D_BindProgram(&gProbeProgram);
+                    C3D_AttrInfo* attr = C3D_GetAttrInfo();
+                    AttrInfo_Init(attr);
+                    AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3);
+                    AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 2);
+                    AttrInfo_AddLoader(attr, 2, GPU_FLOAT, 3);
+                    C3D_BufInfo* buf = C3D_GetBufInfo();
+                    BufInfo_Init(buf);
+                    BufInfo_Add(buf, probeVbo, sizeof(ProbeVertex), 3, 0x210);
+                    const shaderInstance_s* vs = gProbeProgram.vertexShader;
+                    setTestMatrices(shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "projection"),
+                        shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "modelView"));
+                    C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "lightDir"), 0, 0, -1, 0);
+                    C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "lightColor"), 1, 1, 1, 1);
+                    C3D_FVUnifSet(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "ambient"), 0.3f, 0.3f, 0.3f, 1);
+                    C3D_TexBind(0, &rgba);
+                    gBound.mTexEnv = -1;
+                    setTexEnv(true);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L0 M0 test app setup"))
+                        return false;
+                }
+
+                // L1: the scene vertex layout (4 attributes, color as unsigned bytes) through a minimal shader.
+                {
+                    C3D_BindProgram(&gFlatProgram);
+                    setupAttributes();
+                    bindVertexBuffer(vbo);
+                    const shaderInstance_s* vs = gFlatProgram.vertexShader;
+                    setTestMatrices(shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "projection"),
+                        shaderInstanceGetUniformLocation(const_cast<shaderInstance_s*>(vs), "modelView"));
+                    setTexEnv(false);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L1 scene vertex layout, minimal shader"))
+                        return false;
+                }
+
+                // L2..: the scene shader (straight-line, lights unrolled), one feature at a time.
+                C3D_BindProgram(&gProgram);
+                setupAttributes();
+                bindVertexBuffer(vbo);
+                setTestMatrices(gLoc.mProjection, gLoc.mModelView);
+                C3D_FVec* texMat = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mTexMat, 2);
+                texMat[0] = FVec4_New(1, 0, 0, 0);
+                texMat[1] = FVec4_New(0, 1, 0, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDir, 0, 0, 1, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDiffuse, 0.5f, 0.5f, 0.5f, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunAmbient, 0.3f, 0.3f, 0.3f, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatDiffuse, 1, 1, 1, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatAmbient, 1, 1, 1, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatEmission, 0, 0, 0, 1);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 1, 0, 1);
+                gBound.mLightSlotsLit = kMaxLights;
+                setTestLights(0);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L2 scene shader (lights unrolled, all off), untextured, z-buffer"))
+                    return false;
+
+                C3D_DepthMap(false, -1.f, 0.f);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L3 + W-buffer depth"))
+                    return false;
+
+                {
+                    float data[256];
+                    for (int i = 0; i <= 128; ++i)
+                    {
+                        const float visibility = 1.f - i / 128.f;
+                        if (i < 128)
+                            data[i] = visibility;
+                        if (i > 0)
+                            data[i + 127] = visibility - data[i - 1];
+                    }
+                    FogLut_FromArray(&gFogLut, data);
+                    C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+                    C3D_FogColor(0x406080);
+                    C3D_FogLutBind(&gFogLut);
+                }
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L4 + fog LUT"))
+                    return false;
+
                 C3D_TexBind(0, &rgba);
-                gBound.mTexEnv = -1;
                 setTexEnv(true);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-                selfTestStep("L0 M0 test app setup");
-            }
+                if (!selfTestStep("L5 + RGBA8 texture"))
+                    return false;
 
-            // L1..: the scene shader and layout, one feature at a time.
-            C3D_BindProgram(&gProgram);
-            setupAttributes();
-            bindVertexBuffer(vbo);
-            setTestMatrices(gLoc.mProjection, gLoc.mModelView);
-            C3D_FVec* texMat = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mTexMat, 2);
-            texMat[0] = FVec4_New(1, 0, 0, 0);
-            texMat[1] = FVec4_New(0, 1, 0, 0);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDir, 0, 0, 1, 0);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunDiffuse, 0.5f, 0.5f, 0.5f, 1);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mSunAmbient, 0.3f, 0.3f, 0.3f, 1);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatDiffuse, 1, 1, 1, 1);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatAmbient, 1, 1, 1, 1);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mMatEmission, 0, 0, 0, 1);
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 1, 0, 1);
-            setTestLights(0);
-            gBound.mTexEnv = -1;
-            setTexEnv(false);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L1 scene shader + vertex layout + linear-heap buffer base, untextured, z-buffer");
-
-            C3D_DepthMap(false, -1.f, 0.f);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L2 + W-buffer depth");
-
-            {
-                float data[256];
-                for (int i = 0; i <= 128; ++i)
+                if (etc1Image)
                 {
-                    const float visibility = 1.f - i / 128.f;
-                    if (i < 128)
-                        data[i] = visibility;
-                    if (i > 0)
-                        data[i + 127] = visibility - data[i - 1];
+                    C3D_TexBind(0, &etc1);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L6 + ETC1 mipmapped texture (cooked)"))
+                        return false;
                 }
-                FogLut_FromArray(&gFogLut, data);
-                C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
-                C3D_FogColor(0x406080);
-                C3D_FogLutBind(&gFogLut);
-            }
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L3 + fog LUT");
+                if (etc1a4Image)
+                {
+                    C3D_TexBind(0, &etc1a4);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L7 + ETC1A4 mipmapped texture (cooked)"))
+                        return false;
+                }
 
-            C3D_TexBind(0, &rgba);
-            setTexEnv(true);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L4 + RGBA8 texture");
-
-            if (etc1Image)
-            {
-                C3D_TexBind(0, &etc1);
+                setTestLights(1);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-                selfTestStep("L5 + ETC1 mipmapped texture (cooked)");
-            }
-            if (etc1a4Image)
-            {
-                C3D_TexBind(0, &etc1a4);
+                if (!selfTestStep("L8 + 1 point light"))
+                    return false;
+
+                setTestLights(kMaxLights);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-                selfTestStep("L6 + ETC1A4 mipmapped texture (cooked)");
-            }
+                if (!selfTestStep("L9 + 8 point lights"))
+                    return false;
 
-            setTestLights(1);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L7 + 1 point light");
+                C3D_AlphaTest(true, GPU_GREATER, 128);
+                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
+                    GPU_ONE_MINUS_SRC_ALPHA);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L10 + alpha test and blending"))
+                    return false;
 
-            setTestLights(kMaxLights);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L8 + 8 point lights");
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_BYTE, ibo8);
+                if (!selfTestStep("L11 + 8-bit indices"))
+                    return false;
 
-            C3D_AlphaTest(true, GPU_GREATER, 128);
-            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
-                GPU_ONE_MINUS_SRC_ALPHA);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L9 + alpha test and blending");
+                C3D_DrawElements(GPU_TRIANGLE_STRIP, 4, C3D_UNSIGNED_SHORT, strip);
+                if (!selfTestStep("L12 + triangle strip (indexed)"))
+                    return false;
 
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_BYTE, ibo8);
-            selfTestStep("L10 + 8-bit indices");
+                C3D_DrawArrays(GPU_TRIANGLE_FAN, 0, 4);
+                if (!selfTestStep("L13 + triangle fan (arrays)"))
+                    return false;
 
-            C3D_DrawElements(GPU_TRIANGLE_STRIP, 4, C3D_UNSIGNED_SHORT, strip);
-            selfTestStep("L11 + triangle strip (indexed)");
-
-            C3D_DrawArrays(GPU_TRIANGLE_FAN, 0, 4);
-            selfTestStep("L12 + triangle fan (arrays)");
-
-            C3D_DepthTest(true, GPU_LESS, GPU_WRITE_ALL);
-            C3D_CullFace(GPU_CULL_BACK_CCW);
-            C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-            selfTestStep("L13 + depth test and back-face culling");
+                C3D_DepthTest(true, GPU_LESS, GPU_WRITE_ALL);
+                C3D_CullFace(GPU_CULL_BACK_CCW);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                return selfTestStep("L14 + depth test and back-face culling");
+            };
+            if (!run())
+                return; // GPU reset, rendering off: leave the buffers (the GPU state is unknown)
 
             P3DS_LOGI("render3ds: GPU self-test passed");
 
@@ -1676,6 +1747,8 @@ namespace Render3DS
 
         void drawLeaf(osgUtil::RenderLeaf* leaf)
         {
+            if (gFailure)
+                return;
             ++gStats.mLeaves;
             const osg::Geometry* geometry = leaf->_drawable ? leaf->_drawable->asGeometry() : nullptr;
             if (geometry == nullptr || leaf->_modelview == nullptr || leaf->_projection == nullptr
@@ -1741,7 +1814,11 @@ namespace Render3DS
                 ++gStats.mDraws;
                 gStats.mTriangles += prim.mTriangles;
                 if (verify)
+                {
                     verifyDraw(*gpu, prim, *geometry);
+                    if (gFailure)
+                        return;
+                }
             }
             if (verify && !gpu->mVerified)
             {
@@ -1808,9 +1885,10 @@ namespace Render3DS
             // doesn't finish within 3 s is hung: report it instead of waiting forever.
             if (!waitGpuAndBegin(3000))
             {
-                P3DS_LOGE("render3ds: GPU HANG: frame %lu (%lu draws, %lu triangles) never finished",
-                    (unsigned long)gFrame, (unsigned long)gLastStats.mDraws, (unsigned long)gLastStats.mTriangles);
-                p3ds::crash::fatal("GPU hang: the previous frame never finished (render3ds)");
+                P3DS_LOGE("render3ds: frame %lu (%lu draws, %lu triangles) never finished", (unsigned long)gFrame,
+                    (unsigned long)gLastStats.mDraws, (unsigned long)gLastStats.mTriangles);
+                gpuHang("the previous frame never finished");
+                return false;
             }
             gInFrame = true;
             if (!gCapturePath.empty())
@@ -1831,6 +1909,8 @@ namespace Render3DS
         {
             if (!gActive)
                 return false;
+            if (gFailure)
+                return true; // nothing is drawn any more (and not through the stub GL either)
             // Only the main scene camera is drawn for now. Pre-render (RTT) and post-render stages (the
             // post-processing canvas, MyGUI) are skipped: returning true keeps OSG from drawing them.
             if (!isMainCamera(stage->getCamera()))
@@ -1849,12 +1929,18 @@ namespace Render3DS
             C3D_FrameDrawOn(gTarget);
 
             if (!gSelfTestDone)
+            {
                 runGpuSelfTest();
+                if (gFailure)
+                    return true;
+            }
             C3D_BindProgram(&gProgram);
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
             drawBin(stage);
+            if (gFailure)
+                return true;
             if (gVerifyThisFrame && gStats.mDraws > drawsBefore)
             {
                 --gVerifyFramesLeft;
@@ -1870,7 +1956,7 @@ namespace Render3DS
 
         void swapHook()
         {
-            if (!gInFrame)
+            if (!gInFrame || gFailure)
                 return;
             p3ds::perf::Phase phase("frameEnd");
             gStats.mCmdBufUsage = C3D_GetCmdBufUsage();
@@ -1910,6 +1996,8 @@ namespace Render3DS
         shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
         shaderProgramInit(&gProbeProgram);
         shaderProgramSetVsh(&gProbeProgram, &gDvlb->DVLE[1]);
+        shaderProgramInit(&gFlatProgram);
+        shaderProgramSetVsh(&gFlatProgram, &gDvlb->DVLE[2]);
         C3D_BindProgram(&gProgram);
         auto loc = [](const char* name) {
             const int location = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
@@ -1928,14 +2016,22 @@ namespace Render3DS
         gLoc.mMatEmission = loc("matEmission");
         gLoc.mColorSel = loc("colorSel");
         gLoc.mLights = loc("lights");
-        gLoc.mLightLoop = loc("lightLoop");
 
         gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
-        P3DS_LOGI("render3ds: linear heap va %08lx pa %08lx-%08lx (%lu KB); vertex/index base %08lx (citro3d's default "
-                  "0x18000000 reaches only below 0x28000000)",
+        if (gLinearBasePa + __ctru_linear_heap_size > 0x28000000)
+            gBufferBase = gLinearBasePa; // the default base wouldn't reach the end of the heap
+        P3DS_LOGI("render3ds: linear heap va %08lx pa %08lx-%08lx (%lu KB); vertex/index base %08lx",
             (unsigned long)__ctru_linear_heap, (unsigned long)gLinearBasePa,
             (unsigned long)(gLinearBasePa + __ctru_linear_heap_size), (unsigned long)(__ctru_linear_heap_size / 1024),
-            (unsigned long)gLinearBasePa);
+            (unsigned long)gBufferBase);
+
+        if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
+        {
+            char buf[256] = {};
+            std::fread(buf, 1, sizeof(buf) - 1, f);
+            std::fclose(f);
+            gSimulateHang = std::strstr(buf, "fakehang") != nullptr;
+        }
 
         gResolved.resize(256);
         osgUtil::gRenderStageDrawHook3DS = &drawStageHook;
@@ -1952,6 +2048,8 @@ namespace Render3DS
         osgUtil::gRenderStageDrawHook3DS = nullptr;
         SDLUtil::gSwapBuffersHook3DS = nullptr;
         gActive = false;
+        if (gFailure)
+            return; // citro3d's command queue never completes after a GPU hang: C3D_Fini would wait forever
         if (gInFrame)
         {
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
@@ -1960,6 +2058,7 @@ namespace Render3DS
         // GPU objects of still-alive OSG objects stay allocated: the process is about to exit.
         shaderProgramFree(&gProgram);
         shaderProgramFree(&gProbeProgram);
+        shaderProgramFree(&gFlatProgram);
         DVLB_Free(gDvlb);
         C3D_RenderTargetDelete(gTarget);
         C3D_Fini();
@@ -1967,7 +2066,12 @@ namespace Render3DS
 
     bool isActive()
     {
-        return gActive;
+        return gActive && gFailure == nullptr;
+    }
+
+    const char* failure()
+    {
+        return gFailure;
     }
 
     void requestCapture(const char* path)
