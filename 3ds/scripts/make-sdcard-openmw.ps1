@@ -35,10 +35,10 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-What this tests: the first 3DS renderer (milestone M3). OpenMW loads Morrowind.esm, starts a new game in
-"$Start" and now DRAWS it on the top screen with the 3DS GPU: textured, lit, fogged. No HUD/menus yet,
-no flames/particles, no movement controls yet. We want: does it look right, and the real frame time
-with rendering (the "gpu:" lines in the log).
+What this tests: controls and movement (milestone M4). OpenMW starts a new game in "$Start".
+Your "shoulder layout" is now the default, game messages and the player's state show on the bottom
+screen, quick save works, and doors to other interiors work. Still no HUD/menus on the top screen (M8),
+no flames/particles, no exteriors (M5), no sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
@@ -61,14 +61,30 @@ with rendering (the "gpu:" lines in the log).
    HOME works during loading too (Close exits immediately).
    The first two game frames are drawn slowly on purpose: the renderer submits each object separately
    and waits for the GPU, so that a GPU problem is written to the log instead of freezing the console.
-5. In the game (temporary debug controls, real controls come in the next milestone):
-     D-pad LEFT / RIGHT  turn the player 45 degrees (you start facing the door: press 4 times to face the shop)
-     SELECT              save a screenshot of the top screen to sdmc:/openmw/screenshots/ (takes ~2 s)
-   OpenMW's own controller defaults are also live now (untuned): circle pad = walk, C-stick = look.
-   Avoid A/B/X/Y/L/R/START: they open menus that are not drawn yet (the picture freezes = a hidden menu
-   is open; press START or B again to close it).
-   Look around for ~1 minute (stay a few seconds on each view), take a screenshot or two, then press
-   HOME and close the software.
+5. Controls (all buttons are game controls now; the old D-pad turn and SELECT screenshot are gone):
+     circle pad   walk (push past halfway to run)      C-stick   look
+     ZR           attack / cast                         ZL        jump
+     L (hold)     sneak                                 R         1st / 3rd person
+     A            activate (talk, pick up, open doors)  B         inventory, and closes any menu
+     X            ready weapon (fists if none)          Y         ready magic (needs a selected spell:
+                                                                  none yet, so it does nothing for now)
+     D-pad up     journal                               D-pad down  rest / wait
+     SELECT       quick save                            START     game menu
+     hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
+   Touch the bar at the bottom of the bottom screen ("tap: SCREENSHOT") to save a screenshot of the top
+   screen to sdmc:/openmw/screenshots/ (takes ~2 s).
+   Bottom screen: HP/MP/FT, then a state line: "weapon ready / sneaking / 3rd person", or in yellow
+   "menu: inventory - not drawn, B closes" when the game opened a menu you can't see yet, or "DEAD".
+   Game messages ("Saving...", "You stole...") appear in the log lines below.
+   Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
+   Things to try: walk and run around the shop, look around, jump, sneak, ready your fists and punch
+   (ZR) the air, 3rd person (R), open/close the inventory (B, B) and the journal (D-pad up, then B),
+   quick save (SELECT: "Saving..." in the log), press A on the front door: it should say "Exteriors are
+   not supported yet (M5)" instead of crashing. Then HOME, close.
+   Optional door test: copy openmw/args.txt from the extra "args-ald-ruhn" folder (sent separately) to
+   sdmc:/openmw/args.txt: you start in Ald-ruhn's Manor District (the giant crab shell). Walk to any
+   manor or shop door and press A, then come back out. Memory is tight there (a crash is useful
+   information for the next milestone). Copy the package's args.txt back afterwards to return to the shop.
 6. Send back these logs:
      sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
      sdmc:/openmw/config/openmw.log      OpenMW's own log
