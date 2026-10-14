@@ -708,6 +708,11 @@ namespace MWInput
             newFileName = Files::pathToUnicodeString(mUserFile) + ".new";
             if (mInputBinder->save(newFileName))
             {
+#ifdef OPENMW_PLATFORM_3DS
+                // The 3DS SD card (FAT) can't rename onto an existing file ("No such file or directory").
+                std::error_code ignored;
+                std::filesystem::remove(mUserFile, ignored);
+#endif
                 std::filesystem::rename(Files::pathFromUnicodeString(newFileName), mUserFile);
                 Log(Debug::Info) << "Saved input bindings: " << mUserFile;
             }
