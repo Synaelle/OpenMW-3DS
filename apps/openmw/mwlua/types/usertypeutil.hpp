@@ -7,6 +7,9 @@
 #include "apps/openmw/mwbase/environment.hpp"
 
 #include <components/esm/path.hpp>
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/esm3/lazystring.hpp>
+#endif
 #include <components/misc/finitevalues.hpp>
 #include <components/resource/resourcesystem.hpp>
 
@@ -85,6 +88,29 @@ namespace MWLua::Types
             return [=](Type& rec, std::string_view value) { accessor(rec) = value; };
         }
     };
+
+#ifdef OPENMW_PLATFORM_3DS
+    // Book text and dialogue strings are read from the content file on demand (esm3/lazystring.hpp).
+    template <class Type>
+    struct Getter<Type, ESM::LazyString>
+    {
+        template <class Accessor>
+        auto operator()(Accessor&& accessor) const
+        {
+            return [=](Type& rec) -> std::string_view { return accessor(rec).get(); };
+        }
+    };
+
+    template <class Type>
+    struct Setter<Type, ESM::LazyString>
+    {
+        template <class Accessor>
+        auto operator()(Accessor&& accessor) const
+        {
+            return [=](Type& rec, std::string_view value) { accessor(rec) = std::string(value); };
+        }
+    };
+#endif
 
     template <class T>
     struct RecordType

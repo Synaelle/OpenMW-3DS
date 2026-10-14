@@ -587,6 +587,8 @@ if (OPENMW_PLATFORM_3DS)
     # No OpenGL: the 3DS window has no GL context (see sdlutil/sdlgraphicswindow_3ds.cpp).
     list(FILTER COMPONENT_FILES EXCLUDE REGEX "sdlutil/sdlgraphicswindow\\.cpp$")
     list(APPEND COMPONENT_FILES sdlutil/sdlgraphicswindow_3ds.cpp)
+    # Dialogue/book text read from the content files on demand (esm3/lazystring.hpp).
+    list(APPEND COMPONENT_FILES esm3/lazystring.cpp)
 endif()
 
 add_library(components STATIC ${COMPONENT_FILES})

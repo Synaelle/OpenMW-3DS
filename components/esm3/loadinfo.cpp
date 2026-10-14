@@ -62,7 +62,11 @@ namespace ESM
                     mSound = esm.getHString();
                     break;
                 case SREC_NAME:
+#ifdef OPENMW_PLATFORM_3DS
+                    mResponse.load(esm);
+#else
                     mResponse = esm.getHString();
+#endif
                     break;
                 case fourCC("SCVR"):
                 {
@@ -72,7 +76,11 @@ namespace ESM
                     break;
                 }
                 case fourCC("BNAM"):
+#ifdef OPENMW_PLATFORM_3DS
+                    mResultScript.load(esm);
+#else
                     mResultScript = esm.getHString();
+#endif
                     break;
                 case fourCC("QSTN"):
                     mQuestStatus = QS_Name;

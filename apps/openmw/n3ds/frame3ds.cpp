@@ -8,10 +8,13 @@
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
+#include "../mwworld/esmstore.hpp"
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/refdata.hpp"
 
 #include <components/esm/position.hpp>
+#include <components/esm3/loadbook.hpp>
+#include <components/esm3/loaddial.hpp>
 
 #include <3ds.h>
 
@@ -37,6 +40,34 @@ namespace omw3ds
         double gLogAccum = 0;
         unsigned gLogFrames = 0;
         float gLogWorst = 0;
+
+        // Once: read a few texts that ESM::LazyString left in the content file, to check offsets and the
+        // code page conversion in a headless run (books and dialogue can't be opened yet).
+        void lazyStringSelfCheck()
+        {
+            const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+            int shown = 0;
+            for (const ESM::Book& book : store.get<ESM::Book>())
+            {
+                const std::string& text = book.mText.get();
+                P3DS_LOGI("lazy text: book %s: %zu bytes \"%.70s\"", book.mId.toDebugString().c_str(), text.size(),
+                    text.c_str());
+                if (++shown == 2)
+                    break;
+            }
+            shown = 0;
+            for (const ESM::Dialogue& dialogue : store.get<ESM::Dialogue>())
+            {
+                for (const ESM::DialInfo& info : dialogue.mInfo)
+                {
+                    if (info.mResponse.empty())
+                        continue;
+                    P3DS_LOGI("lazy text: %s: \"%.70s\"", dialogue.mStringId.c_str(), info.mResponse.get().c_str());
+                    if (++shown == 2)
+                        return;
+                }
+            }
+        }
 
         void refreshWorldInfo()
         {
@@ -76,7 +107,8 @@ namespace omw3ds
         lastTick = now;
         const float ms = frameSeconds * 1000.f;
         gTimer.addFrame(ms);
-        ++gStats.frameIndex;
+        if (++gStats.frameIndex == 100)
+            lazyStringSelfCheck();
 
         gLogAccum += frameSeconds;
         ++gLogFrames;

@@ -57,7 +57,7 @@ namespace MWGui
 
         const std::string* text;
         if (scroll.getType() == ESM::REC_BOOK)
-            text = &scroll.get<ESM::Book>()->mBase->mText;
+            text = &static_cast<const std::string&>(scroll.get<ESM::Book>()->mBase->mText); // (ESM::LazyString on 3DS)
         else
             text = &scroll.get<ESM4::Book>()->mBase->mText;
         bool shrinkTextAtLastTag = scroll.getType() == ESM::REC_BOOK;

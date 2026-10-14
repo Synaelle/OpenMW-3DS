@@ -35,7 +35,8 @@ namespace
         ++total;
         try
         {
-            std::istringstream input(info.mResultScript + "\n");
+            // (cast: on 3DS mResultScript is an ESM::LazyString)
+            std::istringstream input(static_cast<const std::string&>(info.mResultScript) + "\n");
 
             Compiler::Scanner scanner(errorHandler, input, extensions);
 

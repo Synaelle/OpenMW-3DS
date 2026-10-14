@@ -4,6 +4,9 @@
 #include <components/esm/defs.hpp>
 #include <components/esm/path.hpp>
 #include <components/esm/refid.hpp>
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/esm3/lazystring.hpp>
+#endif
 
 #include <cstdint>
 #include <string>
@@ -35,7 +38,11 @@ namespace ESM
         std::string mName;
         Path mModel;
         Path mIcon;
+#ifdef OPENMW_PLATFORM_3DS
+        LazyString mText; // ~2 MB for Morrowind.esm: read from the content file when the book is opened
+#else
         std::string mText;
+#endif
         uint32_t mRecordFlags;
         RefId mId;
         RefId mScript, mEnchant;

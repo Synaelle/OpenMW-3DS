@@ -95,7 +95,11 @@ namespace ESM
                     mEnchant = esm.getRefId();
                     break;
                 case fourCC("TEXT"):
+#ifdef OPENMW_PLATFORM_3DS
+                    mText.load(esm);
+#else
                     mText = esm.getHString();
+#endif
                     break;
                 case SREC_DELE:
                     esm.skipHSub();

@@ -8,6 +8,9 @@
 #include <components/esm/refid.hpp>
 
 #include "dialoguecondition.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include "lazystring.hpp"
+#endif
 #include "variant.hpp"
 
 namespace ESM
@@ -70,10 +73,16 @@ namespace ESM
 
         // Sound and text associated with this item
         std::string mSound;
+#ifdef OPENMW_PLATFORM_3DS
+        // ~8 MB for Morrowind.esm if loaded up front: read from the content file on first use instead.
+        LazyString mResponse;
+        LazyString mResultScript;
+#else
         std::string mResponse;
         // Result script (uncompiled) to run whenever this dialog item is
         // selected
         std::string mResultScript;
+#endif
 
         // ONLY include this item the NPC is not part of any faction.
         bool mFactionLess;

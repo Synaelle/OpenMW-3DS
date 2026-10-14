@@ -73,7 +73,7 @@ namespace MWLua
         if (rec["icon"] != sol::nil)
             book.mIcon = rec["icon"].get<std::string_view>();
         if (rec["text"] != sol::nil)
-            book.mText = rec["text"];
+            book.mText = rec["text"].get<std::string>(); // (explicit: ESM::LazyString on 3DS)
         if (rec["enchant"] != sol::nil)
         {
             std::string_view enchantId = rec["enchant"].get<std::string_view>();

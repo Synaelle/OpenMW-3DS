@@ -357,6 +357,9 @@ namespace ESM
 
         /// Sets font encoder for ESM strings
         void setEncoder(ToUTF8::Utf8Encoder* encoder) { mEncoder = encoder; }
+#ifdef OPENMW_PLATFORM_3DS
+        ToUTF8::Utf8Encoder* getEncoder() const { return mEncoder; } // for ESM::LazyString
+#endif
 
         /// Get record flags of last record
         uint32_t getRecordFlags() { return mRecordFlags; }
