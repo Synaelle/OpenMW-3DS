@@ -1,5 +1,6 @@
 #include "water.hpp"
 
+#include <cmath>
 #include <sstream>
 
 #include <osg/ClipNode>
@@ -210,6 +211,73 @@ namespace MWRender
         }
     };
 
+#ifdef OPENMW_PLATFORM_3DS
+    // The PICA rasterizes in fixed point: once one of the 30720-unit upstream water quads is clipped at the camera,
+    // its new corners lie far outside the screen and overflow, cutting the water along a horizontal line that moves
+    // as the camera turns (on hardware only: Azahar clips in floating point). The 3DS water is instead a grid of
+    // 256-unit tiles, the size of terrain triangles, reaching past the view distance and kept under the eye.
+    constexpr float sWaterTexturePeriod = Constants::CellSizeInUnits * 150 / 900.f; // units per texture repeat
+    constexpr float sWaterTile = 256.f;
+
+    class EmptyBoundCallback : public osg::Drawable::ComputeBoundingBoxCallback
+    {
+        osg::BoundingBox computeBound(const osg::Drawable&) const override { return osg::BoundingBox(); }
+    };
+
+    osg::ref_ptr<osg::Geometry> createEyeWaterGeometry(float radius)
+    {
+        const int tiles = static_cast<int>(std::ceil(radius / sWaterTile));
+        const int side = 2 * tiles + 1; // vertices per side
+        osg::ref_ptr<osg::Vec3Array> verts(new osg::Vec3Array);
+        osg::ref_ptr<osg::Vec2Array> texcoords(new osg::Vec2Array);
+        for (int y = -tiles; y <= tiles; ++y)
+            for (int x = -tiles; x <= tiles; ++x)
+            {
+                verts->push_back(osg::Vec3f(x * sWaterTile, y * sWaterTile, 0.f));
+                // Same mapping as upstream: u grows with x, v falls with y, one repeat per sWaterTexturePeriod.
+                texcoords->push_back(osg::Vec2f(x * sWaterTile / sWaterTexturePeriod, -y * sWaterTile / sWaterTexturePeriod));
+            }
+
+        osg::ref_ptr<osg::DrawElementsUShort> indices(new osg::DrawElementsUShort(osg::PrimitiveSet::TRIANGLES));
+        for (int y = 0; y + 1 < side; ++y)
+            for (int x = 0; x + 1 < side; ++x)
+            {
+                const unsigned short v00 = y * side + x, v10 = v00 + 1, v01 = v00 + side, v11 = v01 + 1;
+                for (unsigned short v : { v00, v10, v11, v00, v11, v01 }) // counter-clockwise from above
+                    indices->push_back(v);
+            }
+
+        osg::ref_ptr<osg::Geometry> waterGeom(new osg::Geometry);
+        waterGeom->setVertexArray(verts);
+        waterGeom->setTexCoordArray(0, texcoords);
+        osg::ref_ptr<osg::Vec3Array> normal(new osg::Vec3Array);
+        normal->push_back(osg::Vec3f(0, 0, 1));
+        waterGeom->setNormalArray(normal, osg::Array::BIND_OVERALL);
+        waterGeom->addPrimitiveSet(indices);
+        waterGeom->setComputeBoundingBoxCallback(new EmptyBoundCallback);
+        waterGeom->setCullingActive(false);
+        return waterGeom;
+    }
+
+    /// Moves the water grid under the eye, in steps of whole texture repeats so the texture stays put in the world
+    /// (the water node sits on a cell centre or the origin, both whole repeats). Must be added as a Cull callback.
+    class FollowEyeCallback : public SceneUtil::NodeCallback<FollowEyeCallback, osg::Node*, osgUtil::CullVisitor*>
+    {
+    public:
+        void operator()(osg::Node* node, osgUtil::CullVisitor* cv)
+        {
+            const osg::Vec3f eye = cv->getEyeLocal();
+            const osg::Vec3f offset(std::round(eye.x() / sWaterTexturePeriod) * sWaterTexturePeriod,
+                std::round(eye.y() / sWaterTexturePeriod) * sWaterTexturePeriod, 0.f);
+            osg::RefMatrix* modelViewMatrix = new osg::RefMatrix(*cv->getModelViewMatrix());
+            modelViewMatrix->preMultTranslate(offset);
+            cv->pushModelViewMatrix(modelViewMatrix, osg::Transform::RELATIVE_RF);
+            traverse(node, cv);
+            cv->popModelViewMatrix();
+        }
+    };
+#endif
+
     class RainSettingsUpdater : public SceneUtil::StateSetUpdater
     {
     public:
@@ -366,7 +434,11 @@ namespace MWRender
     {
         mSimulation = std::make_unique<RippleSimulation>(mSceneRoot, resourceSystem);
 
+#ifdef OPENMW_PLATFORM_3DS
+        mWaterGeom = createEyeWaterGeometry(Settings::camera().mViewingDistance + sWaterTexturePeriod);
+#else
         mWaterGeom = SceneUtil::createWaterGeometry(Constants::CellSizeInUnits * 150, 40, 900);
+#endif
         mWaterGeom->setDrawCallback(new DepthClampCallback);
         mWaterGeom->setNodeMask(Mask_Water);
         mWaterGeom->setDataVariance(osg::Object::STATIC);
@@ -376,6 +448,9 @@ namespace MWRender
         mWaterNode->setName("Water Root");
         mWaterNode->addChild(mWaterGeom);
         mWaterNode->addCullCallback(new FudgeCallback);
+#ifdef OPENMW_PLATFORM_3DS
+        mWaterNode->addCullCallback(new FollowEyeCallback);
+#endif
 
         // simple water fallback for the local map
         osg::ref_ptr<osg::Geometry> geom2(osg::clone(mWaterGeom.get(), osg::CopyOp::DEEP_COPY_NODES));

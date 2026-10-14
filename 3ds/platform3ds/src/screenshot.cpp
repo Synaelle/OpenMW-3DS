@@ -37,23 +37,18 @@ namespace p3ds::screenshot
         put16(header + 28, 24);
         put32(header + 34, imageBytes);
 
-        FILE* f = fopen(path, "wb");
-        if (f == nullptr)
+        // The whole file is built in memory and written at once: one small write per row took 3-7 s on the SD
+        // card (hardware test #21).
+        u8* file = static_cast<u8*>(calloc(1, sizeof(header) + imageBytes));
+        if (file == nullptr)
             return false;
-        fwrite(header, 1, sizeof(header), f);
-
-        u8* line = static_cast<u8*>(malloc(size_t(rowBytes)));
-        if (line == nullptr)
-        {
-            fclose(f);
-            return false;
-        }
-        memset(line, 0, size_t(rowBytes));
+        memcpy(file, header, sizeof(header));
         // BMP row 0 is the bottom of the image. In the rotated framebuffer, screen pixel (x, y)
         // (y down) is at x*h + (h-1-y), so the bottom screen row y=h-1 is index x*h + 0.
         for (int by = 0; by < h; ++by)
         {
             const int y = h - 1 - by;
+            u8* line = file + sizeof(header) + size_t(by) * size_t(rowBytes);
             for (int x = 0; x < w; ++x)
             {
                 const int idx = x * h + (h - 1 - y);
@@ -73,11 +68,16 @@ namespace p3ds::screenshot
                     dst[2] = u8(((px >> 11) & 0x1F) << 3);
                 }
             }
-            fwrite(line, 1, size_t(rowBytes), f);
         }
-        free(line);
-        fclose(f);
-        return true;
+        FILE* f = fopen(path, "wb");
+        bool ok = f != nullptr;
+        if (ok)
+        {
+            ok = fwrite(file, 1, sizeof(header) + imageBytes, f) == sizeof(header) + imageBytes;
+            ok = fclose(f) == 0 && ok;
+        }
+        free(file);
+        return ok;
     }
 
     bool saveBottomScreen(const char* path)
