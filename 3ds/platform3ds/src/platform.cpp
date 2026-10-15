@@ -6,12 +6,16 @@
 
 #include <3ds.h>
 
+#include <atomic>
 #include <cstdarg>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <pthread.h>
 #include <reent.h>
+#include <stdexcept>
 #include <sys/stat.h>
+#include <thread>
 
 // Replaces libctru's weak __system_allocateHeaps (it lives here because this object is always linked).
 // libctru's default split gives the app heap everything above 32 MB of linear memory, which in the
@@ -111,6 +115,99 @@ extern "C"
             P3DS_LOGW("thread: core 2 unavailable, std::thread falls back to core 0 at prio 0x3F");
         }
         return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// pthread keys (thread-specific data). newlib's pthread_key_create/getspecific call these hooks, which libctru
+// doesn't provide (weak, null): pthread_key_create failed, and libstdc++ then kept ONE exception state
+// (eh_globals.cc) for every thread. Two threads handling exceptions at the same time got each other's exceptions
+// and freed them twice (hardware test #25: the sound thread and OpenMW's sound warm-up thread crashed on a
+// garbage what()). Backed by __thread slots, which libctru sets up for every thread. Key destructors are not run
+// at thread exit (a few bytes per finished thread).
+namespace
+{
+    constexpr uint32_t kTlsKeys = 64;
+    std::atomic<bool> gTlsKeyUsed[kTlsKeys];
+    __thread const void* tTlsValues[kTlsKeys];
+}
+
+extern "C"
+{
+    int __syscall_tls_create(uint32_t* key, void (* /*destructor*/)(void*))
+    {
+        for (uint32_t i = 0; i < kTlsKeys; ++i)
+        {
+            bool expected = false;
+            if (gTlsKeyUsed[i].compare_exchange_strong(expected, true))
+            {
+                *key = i;
+                return 0;
+            }
+        }
+        return EAGAIN;
+    }
+
+    int __syscall_tls_set(uint32_t key, const void* value)
+    {
+        if (key >= kTlsKeys)
+            return EINVAL;
+        tTlsValues[key] = value;
+        return 0;
+    }
+
+    void* __syscall_tls_get(uint32_t key)
+    {
+        return key < kTlsKeys ? const_cast<void*>(tTlsValues[key]) : nullptr;
+    }
+
+    int __syscall_tls_delete(uint32_t key)
+    {
+        if (key >= kTlsKeys)
+            return EINVAL;
+        gTlsKeyUsed[key] = false;
+        return 0;
+    }
+}
+
+namespace
+{
+    // Startup check of the hooks above: a pthread key can be made, and (debug builds) two threads throwing and
+    // catching at the same time each get their own exception back.
+    void checkThreadExceptions()
+    {
+        pthread_key_t key;
+        const int rc = pthread_key_create(&key, nullptr);
+        if (rc == 0)
+            pthread_key_delete(key);
+#ifdef OPENMW3DS_DEBUG
+        std::atomic<int> mismatches{ 0 };
+        auto worker = [&mismatches](const char* tag) {
+            for (int i = 0; i < 200; ++i)
+            {
+                try
+                {
+                    throw std::runtime_error(tag);
+                }
+                catch (const std::exception& e)
+                {
+                    // Hold it while the other thread throws and catches: with one shared exception state, the
+                    // other thread's end of catch releases this exception.
+                    svcSleepThread(50 * 1000);
+                    if (std::strcmp(e.what(), tag) != 0)
+                        ++mismatches;
+                }
+            }
+        };
+        std::thread other(worker, "other thread");
+        worker("main thread");
+        other.join();
+        P3DS_LOGI("threads: pthread keys %s, exceptions on two threads at once %s (%d mismatches in 400)",
+            rc == 0 ? "ok" : "FAILED", mismatches == 0 ? "ok" : "BROKEN", mismatches.load());
+#else
+        if (rc != 0)
+            P3DS_LOGE("threads: pthread keys unavailable (%d): exceptions on two threads at once are unsafe", rc);
+#endif
     }
 }
 
@@ -326,6 +423,7 @@ namespace p3ds
         if (mem::overProvision(ms) > 0)
             P3DS_LOGW("memory region is %.1f MB larger than hardware: enforcing the hardware budget (%.1f MB heap)",
                 mem::toMB(mem::overProvision(ms)), mem::toMB(mem::heapBudget(ms)));
+        checkThreadExceptions();
         return gInfo;
     }
 

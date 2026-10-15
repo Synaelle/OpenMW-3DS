@@ -456,13 +456,20 @@ namespace MWSound
         try
         {
             DecoderPtr decoder = mManager.getDecoder();
-            decoder->open(Misc::ResourceHelpers::correctSoundPath(
-                VFS::Path::Normalized(effect.mName), *decoder->mResourceMgr));
-            ChannelConfig chans;
-            SampleType type;
-            decoder->getInfo(&effect.mRate, &chans, &type);
-            effect.mChannels = channelCount(chans);
-            decoder->readAll(data);
+            const VFS::Path::Normalized path = Misc::ResourceHelpers::correctSoundPath(
+                VFS::Path::Normalized(effect.mName), *decoder->mResourceMgr);
+            // A missing file is common (a mod, a missing archive): no exception for it.
+            if (!decoder->mResourceMgr->exists(path))
+                Log(Debug::Error) << "Failed to load audio from " << effect.mName << ": not found";
+            else
+            {
+                decoder->open(path);
+                ChannelConfig chans;
+                SampleType type;
+                decoder->getInfo(&effect.mRate, &chans, &type);
+                effect.mChannels = channelCount(chans);
+                decoder->readAll(data);
+            }
         }
         catch (const std::exception& e)
         {
