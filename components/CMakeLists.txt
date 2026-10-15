@@ -699,9 +699,11 @@ endif()
 set(COMPONENT_FILES ${COMPONENT_FILES} PARENT_SCOPE)
 
 target_compile_definitions(components PUBLIC
-    BT_USE_DOUBLE_PRECISION
     MYGUI_DONT_USE_OBSOLETE=ON
 )
+if (NOT OPENMW_PLATFORM_3DS OR OPENMW3DS_BULLET_DOUBLE) # 3DS: single precision by default (openmw-3ds-cache.cmake)
+    target_compile_definitions(components PUBLIC BT_USE_DOUBLE_PRECISION)
+endif()
 
 if(OSG_STATIC)
     if(CMAKE_VERSION VERSION_LESS 3.24)

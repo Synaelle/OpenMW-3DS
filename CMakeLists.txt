@@ -441,7 +441,33 @@ if (WIN32)
     )
 endif()
 
-if(OPENMW_USE_SYSTEM_BULLET)
+if(OPENMW_USE_SYSTEM_BULLET AND OPENMW_PLATFORM_3DS AND NOT OPENMW3DS_BULLET_DOUBLE)
+    # 3DS: single-precision Bullet from its own prefix (cmake/openmw-3ds-cache.cmake). A double-precision library
+    # there would fail the link check below instead of crashing at run time (mangled names differ).
+    set(BULLET_INCLUDE_DIRS "${OPENMW3DS_BULLET_FLOAT_PREFIX}/include/bullet")
+    set(BULLET_LIBRARIES "${OPENMW3DS_BULLET_FLOAT_PREFIX}/lib/libBulletCollision.a"
+        "${OPENMW3DS_BULLET_FLOAT_PREFIX}/lib/libLinearMath.a")
+    file(WRITE ${CMAKE_BINARY_DIR}/try-compile/checkbulletfloat.cpp
+"
+#include <BulletCollision/CollisionShapes/btSphereShape.h>
+int main(int argc, char** argv)
+{
+    btSphereShape shape(1.0);
+    btScalar mass(1.0);
+    btVector3 inertia;
+    shape.calculateLocalInertia(mass, inertia);
+    return 0;
+}
+")
+    try_compile(OPENMW3DS_BULLET_IS_FLOAT ${CMAKE_BINARY_DIR}/try-compile/float
+        ${CMAKE_BINARY_DIR}/try-compile/checkbulletfloat.cpp
+        LINK_LIBRARIES ${BULLET_LIBRARIES}
+        CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${BULLET_INCLUDE_DIRS}")
+    if (NOT OPENMW3DS_BULLET_IS_FLOAT)
+        message(FATAL_ERROR "No single-precision Bullet in ${OPENMW3DS_BULLET_FLOAT_PREFIX}: run scripts/build-deps.ps1 bulletfloat, or build with -BulletDouble")
+    endif()
+    message(STATUS "Bullet uses single precision (3DS)")
+elseif(OPENMW_USE_SYSTEM_BULLET)
     set(REQUIRED_BULLET_VERSION 287) # 287 for btIDebugDraw::clearLines (286 already needed for btCapsuleShape fixes)
 
     # First, try BulletConfig-float64.cmake which comes with Debian derivatives.

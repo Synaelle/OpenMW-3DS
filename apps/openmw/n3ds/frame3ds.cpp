@@ -33,6 +33,7 @@
 #include <components/esm3/loadbook.hpp>
 #include <components/esm3/loaddial.hpp>
 #include <components/esm3/loaddoor.hpp>
+#include <components/esm3/loadregn.hpp>
 
 #include <3ds.h>
 
@@ -520,6 +521,11 @@ namespace omw3ds
             unsigned mLuaProfileAt = 0; // "luaprof:F": write the Lua profiler table (needs "lua profiler = true")
             unsigned mPosAt = 0; // "pos:F,X,Y,Z": put the player at X Y Z (same worldspace) at frame F
             osg::Vec3f mPos;
+            // "weather:F,N": at frame F, the player's region changes to weather N (0 clear, 1 cloudy, 2 foggy,
+            // 3 overcast, 4 rain, 5 thunder, 6 ash, 7 blight, 8 snow, 9 blizzard), like the ChangeWeather
+            // command: it transitions over a few seconds.
+            unsigned mWeatherAt = 0;
+            int mWeather = 0;
         };
         static const Autorun autorun = [] {
             Autorun result;
@@ -537,6 +543,13 @@ namespace omw3ds
                 parseScriptedInput(buf, result.mInputs);
                 if (const char* q = std::strstr(buf, "luaprof:"))
                     result.mLuaProfileAt = unsigned(std::strtoul(q + 8, nullptr, 10));
+                if (const char* q = std::strstr(buf, "weather:"))
+                {
+                    char* end = nullptr;
+                    result.mWeatherAt = unsigned(std::strtoul(q + 8, &end, 10));
+                    if (*end == ',')
+                        result.mWeather = int(std::strtol(end + 1, nullptr, 10));
+                }
                 if (const char* q = std::strstr(buf, "pos:"))
                 {
                     char* end = nullptr;
@@ -584,6 +597,19 @@ namespace omw3ds
         for (unsigned door : autorun.mDoors)
             if (door == gStats.frameIndex)
                 activateNearestDoor();
+        if (autorun.mWeatherAt != 0 && gStats.frameIndex == autorun.mWeatherAt)
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            const ESM::RefId region = player.isInCell() ? player.getCell()->getCell()->getRegion() : ESM::RefId();
+            if (region.empty())
+                P3DS_LOGW("autorun: weather: the player is in no region (an interior?)");
+            else
+            {
+                world->changeWeather(region, ESM::Weather::indexToRefId(autorun.mWeather));
+                P3DS_LOGI("autorun: weather %d in %s", autorun.mWeather, region.toDebugString().c_str());
+            }
+        }
         if (autorun.mPosAt != 0 && gStats.frameIndex == autorun.mPosAt)
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();

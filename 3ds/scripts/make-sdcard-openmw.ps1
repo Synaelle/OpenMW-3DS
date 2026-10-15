@@ -1,16 +1,18 @@
 # Builds out\sdcard-openmw\: an OpenMW hardware test package to copy onto the root of the 3DS SD card.
-#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"]
+#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"] [-BulletDouble]
 # Morrowind's data files are NOT included: the tester copies Morrowind.esm and Morrowind.bsa from
 # their own installation into sdmc:/openmw/data/ (see the README in the package).
 param(
     [switch]$NoBuild,
     # Arrille's: the Census office's first door into it is the jail's PrisonMarker, whose destination is outside
     # the walls, so --start dropped the player into the void (OpenMW behaviour, see PORTING_NOTES).
-    [string]$Start = "Seyda Neen, Arrille's Tradehouse"
+    [string]$Start = "Seyda Neen, Arrille's Tradehouse",
+    # Double-precision Bullet (upstream) instead of single precision: see build-openmw.ps1.
+    [switch]$BulletDouble
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" | Out-Host }
+if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" -BulletDouble:$BulletDouble | Out-Host }
 
 $out = Join-Path $RepoRoot 'out'
 $sd = Join-Path $out 'sdcard-openmw'
@@ -45,8 +47,9 @@ What this tests (hardware test #22, several changes at once):
   b. PEOPLE APPEARING: should no longer pause the game (models now load in the background first).
   c. LOADING: shorter cell loads; from the SECOND launch on, startup skips the "counting refs" step
      (~12 s; the first launch writes sdmc:/openmw/cache/refinfo.bin).
-  d. PHYSICS at 30 steps per second instead of 60 (lighter on the CPU): walking, running, jumping,
-     stairs, swimming and NPCs walking around should feel the same as before.
+  d. PHYSICS at 30 steps per second instead of 60, and in single precision instead of double (much
+     lighter on the CPU): walking, running, jumping, stairs, swimming and NPCs walking around should
+     feel the same as before. Watch for anything odd: falling through floors, getting stuck, jitter.
   e. RENDERING fixes: enchanted items and objects with glow/dark maps no longer translucent; cut-out
      textures (hair, plants, leaf edges) use their real alpha test.
   f. Screenshots now save in under a second.

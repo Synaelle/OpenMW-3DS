@@ -115,17 +115,29 @@ build_boost() {
     done
 }
 
-build_bullet() {
+# Bullet twice: in double precision in $PREFIX (upstream OpenMW's requirement), and in single precision in
+# its own prefix, $WORK/3ds-bullet-float (much cheaper collision sweeps on the ARM11). The OpenMW build picks
+# one: OPENMW3DS_BULLET_DOUBLE (cmake/openmw-3ds-cache.cmake, scripts/build-openmw.ps1 -BulletDouble).
+build_bullet_variant() {
+    local name="$1" double="$2"; shift 2
     local v=3.25
     fetch "https://github.com/bulletphysics/bullet3/archive/refs/tags/$v.tar.gz" "bullet3-$v.tar.gz"
     unpack "bullet3-$v.tar.gz" bullet
-    # Same configuration as openmw/extern/CMakeLists.txt (OpenMW requires double precision).
-    cmake_build "$SRC/bullet" bullet \
-        -DUSE_DOUBLE_PRECISION=ON -DBULLET2_MULTITHREADING=ON \
+    # Same configuration as openmw/extern/CMakeLists.txt, precision aside.
+    cmake_build "$SRC/bullet" "$name" "$@" \
+        -DUSE_DOUBLE_PRECISION="$double" -DBULLET2_MULTITHREADING=ON \
         -DBUILD_UNIT_TESTS=OFF -DBUILD_BULLET2_DEMOS=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_OPENGL3_DEMOS=OFF \
         -DBUILD_EXTRAS=OFF -DBUILD_CLSOCKET=OFF -DBUILD_ENET=OFF -DBUILD_EGL=OFF \
         -DBUILD_PYBULLET=OFF -DUSE_GRAPHICAL_BENCHMARK=OFF -DINSTALL_LIBS=ON \
         -DBUILD_BULLET3=OFF  # OpenCL/GPU pipeline (needs dlopen); OpenMW uses BulletCollision + LinearMath only
+}
+
+build_bullet() {
+    build_bullet_variant bullet ON
+}
+
+build_bulletfloat() {
+    build_bullet_variant bullet-float OFF -DCMAKE_INSTALL_PREFIX="$WORK/3ds-bullet-float"
 }
 
 # POSIX bits newlib/libctru lack (dlfcn.h, ...): header-only shims in deps/compat/include.
@@ -293,7 +305,7 @@ build_icu() {
     )
 }
 
-ALL_COMPONENTS=(compat sdl2 boost bullet stubgl osg mygui recast sqlite3 yamlcpp icu)
+ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu)
 
 # ---------------------------------------------------------------- driver
 components=("$@")
