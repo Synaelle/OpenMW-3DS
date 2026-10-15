@@ -51,7 +51,8 @@ What this tests (hardware test #22, several changes at once):
      lighter on the CPU): walking, running, jumping, stairs, swimming and NPCs walking around should
      feel the same as before. Watch for anything odd: falling through floors, getting stuck, jitter.
   e. RENDERING fixes: enchanted items and objects with glow/dark maps no longer translucent; cut-out
-     textures (hair, plants, leaf edges) use their real alpha test.
+     textures (hair, plants, leaf edges) use their real alpha test; textures re-cooked so transparent
+     edges no longer turn dark (RAIN was drawn as dark streaks, mostly visible over water).
   f. Screenshots now save in under a second.
 OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
 menus/HUD (M8), sound (M7).

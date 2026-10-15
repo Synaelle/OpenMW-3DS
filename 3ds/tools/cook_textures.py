@@ -9,6 +9,9 @@ loads straight into GPU-readable (linear) memory. The source data is only read, 
 Per texture:
   - decode (Pillow: DXT1/DXT3/DXT5/uncompressed DDS, TGA, BMP);
   - resize to a power of two in [8, --max-size] (the PICA only supports power-of-two sizes);
+  - textures with alpha: give the fully transparent texels the colour of the visible ones around them
+    (tex3ds turns them black, which bilinear filtering and mipmaps then blend into the visible edges:
+    dark fringes, and Morrowind's faint white raindrops drawn black), see bleed_transparent;
   - flip vertically (PICA texture memory starts at t = 0, which OpenMW's images keep as the top row);
   - encode with devkitPro's tex3ds: ETC1 (4 bpp) for opaque textures, ETC1A4 (8 bpp) with alpha,
     RGBA8 for small uncompressed sources (UI elements, where ETC1 artifacts show); full mip chain.
@@ -40,6 +43,7 @@ import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
 
+import numpy as np
 from PIL import Image
 
 MAGIC = b"O3TP"
@@ -136,6 +140,46 @@ def dds_is_uncompressed(raw):
     return raw[:4] == b"DDS " and raw[84:88] == b"\0\0\0\0"
 
 
+def bleed_transparent(rgba, keep_alpha_zero):
+    """Colours the fully transparent texels with the alpha-weighted colour of the visible texels nearby (up to 8
+    texels away, wrapping like a repeating texture), then the texture's average colour. tex3ds replaces the colour
+    of alpha-0 texels with black, so for ETC1A4 they get alpha 1 instead, which keeps the colour and still
+    encodes as 0 in its 4-bit alpha. (RGBA8 would keep alpha 1: keep_alpha_zero, so those stay black.)"""
+    a = np.asarray(rgba).astype(np.float32)
+    clear = a[..., 3] == 0
+    if not clear.any() or clear.all():
+        return rgba
+    weight = a[..., 3] / 255.0
+    color = a[..., :3] * weight[..., None]  # premultiplied
+    filled = ~clear
+    for _ in range(8):
+        if filled.all():
+            break
+        color_sum = np.zeros_like(color)
+        weight_sum = np.zeros_like(weight)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                color_sum += np.roll(color, (dy, dx), axis=(0, 1))
+                weight_sum += np.roll(weight, (dy, dx), axis=(0, 1))
+        grow = ~filled & (weight_sum > 0)
+        if not grow.any():
+            break
+        # New texels carry their neighbours' average colour on, at a fraction of their weight.
+        new_weight = weight_sum[grow] / 18.0
+        color[grow] = color_sum[grow] / weight_sum[grow][:, None] * new_weight[:, None]
+        weight[grow] = new_weight
+        filled |= grow
+    visible = ~clear
+    mean = (a[..., :3][visible] * (a[..., 3][visible] / 255.0)[:, None]).sum(axis=0) / max(
+        1e-6, (a[..., 3][visible] / 255.0).sum())
+    rgb = np.where(filled[..., None], color / np.maximum(weight, 1e-6)[..., None], mean)
+    out = a.copy()
+    out[..., :3] = np.where(clear[..., None], rgb, a[..., :3])
+    if not keep_alpha_zero:
+        out[..., 3] = np.where(clear, 1.0, a[..., 3])
+    return Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8), "RGBA")
+
+
 def tga_kill_alpha(raw):
     """Morrowind ignores the alpha of 16 bpp TGAs (as OpenMW's ImageManager does)."""
     image_type = raw[2]
@@ -172,6 +216,9 @@ def cook_one(job):
         fmt = GPU_RGBA8
     else:
         fmt = GPU_ETC1A4 if has_alpha else GPU_ETC1
+
+    if has_alpha:
+        rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
 
     rgba = rgba.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 

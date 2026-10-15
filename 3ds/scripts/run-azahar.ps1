@@ -11,7 +11,10 @@ param(
     [switch]$NoBuild,
     [switch]$MemProfile, # OpenMW: enable the caller profiles (sdmc:/openmw/memprofile)
     [string]$Azahar = 'D:\Emulators\Azahar3DS\azahar.exe',
-    [string]$Config = 'RelWithDebInfo'
+    [string]$Config = 'RelWithDebInfo',
+    # Also capture the Azahar window every N seconds while the app runs (window_live_<seconds>s_*.png): what
+    # the emulator window shows, at its own rendering resolution (shot_* frames are the 400x240 render target).
+    [int]$CaptureEverySec = 0
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -94,7 +97,19 @@ function Save-ProcessWindows([int]$ProcId, [string]$Prefix) {
 
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $result = 'timeout'
+$started = Get-Date
+$nextCapture = if ($CaptureEverySec -gt 0) { $started.AddSeconds($CaptureEverySec) } else { [DateTime]::MaxValue }
+$liveDir = Join-Path $RepoRoot 'out\runs\live'
+if ($CaptureEverySec -gt 0) {
+    if (Test-Path $liveDir) { Remove-Item -Recurse -Force $liveDir }
+    New-Item -ItemType Directory -Force $liveDir | Out-Null
+}
 while ((Get-Date) -lt $deadline) {
+    if ((Get-Date) -ge $nextCapture -and -not $proc.HasExited) {
+        $elapsed = [int]((Get-Date) - $started).TotalSeconds
+        Save-ProcessWindows $proc.Id (Join-Path $liveDir ("window_live_{0:D4}s_" -f $elapsed)) | Out-Null
+        $nextCapture = $nextCapture.AddSeconds($CaptureEverySec)
+    }
     if (Test-Path (Join-Path $SdOpenmw 'autorun.done')) { $result = 'done'; break }
     if (Test-Path (Join-Path $SdOpenmw 'openmw3ds-crash.log')) { Start-Sleep -Seconds 3; $result = 'crash'; break }
     if ($proc.HasExited) { $result = 'emulator-exited'; break }
@@ -103,6 +118,10 @@ while ((Get-Date) -lt $deadline) {
 Start-Sleep -Seconds 1
 $runDir = Join-Path $RepoRoot ("out\runs\" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $runDir | Out-Null
+if ($CaptureEverySec -gt 0 -and (Test-Path $liveDir)) {
+    Get-ChildItem $liveDir | Move-Item -Destination $runDir
+    Remove-Item $liveDir
+}
 if (-not $proc.HasExited) {
     # Snapshot the emulator windows (catches emulator dialogs, e.g. its exception popup).
     Save-ProcessWindows $proc.Id (Join-Path $runDir 'window_')
