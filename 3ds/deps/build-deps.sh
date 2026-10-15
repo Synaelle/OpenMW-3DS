@@ -305,7 +305,32 @@ build_icu() {
     )
 }
 
-ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu)
+# mpg123 with its integer decoder and ARM assembly synth (arm_nofpu): devkitPro's 3ds-mpg123 is the generic
+# floating-point decoder, ~16% of a core for one 44.1 kHz stereo stream in Azahar (M7).
+build_mpg123() {
+    local v=1.32.10
+    fetch "https://www.mpg123.de/download/mpg123-$v.tar.bz2" "mpg123-$v.tar.bz2"
+    unpack "mpg123-$v.tar.bz2" "mpg123-$v"
+    local src="$SRC/mpg123-$v" out="$BUILD/mpg123"
+    local arch="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -mword-relocations"
+    rm -rf "$out"; mkdir -p "$out"
+    (
+        cd "$out"
+        export CC="$DEVKITARM/bin/arm-none-eabi-gcc"
+        export AR="$DEVKITARM/bin/arm-none-eabi-ar" RANLIB="$DEVKITARM/bin/arm-none-eabi-ranlib"
+        export CPPFLAGS="-D__3DS__ -I$DEVKITPRO/libctru/include"
+        export CFLAGS="$arch -O2 -ffunction-sections -fdata-sections"
+        export LDFLAGS="-specs=3dsx.specs $arch -L$DEVKITPRO/libctru/lib"
+        export LIBS="-lctru"
+        "$src/configure" --host=arm-none-eabi --prefix="$PREFIX" --enable-static --disable-shared \
+            --with-cpu=arm_nofpu --disable-components --enable-libmpg123 --disable-modules \
+            --disable-network --disable-largefile
+        make -j"$JOBS"
+        make install
+    )
+}
+
+ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu mpg123)
 
 # ---------------------------------------------------------------- driver
 components=("$@")

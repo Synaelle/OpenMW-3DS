@@ -1,5 +1,6 @@
 #include "frame3ds.hpp"
 #include "menus.hpp"
+#include "sound3ds.hpp"
 #ifdef OPENMW3DS_DEBUG
 #include "debugtools.hpp"
 #endif
@@ -393,6 +394,11 @@ namespace omw3ds
                 gLogFrames, gLogAccum, gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst,
                 gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]),
                 double(osg::RadiansToDegrees(gRot[2])), double(osg::RadiansToDegrees(gRot[0])));
+            if (const MWSound::SoundStats3DS sound = MWSound::takeSoundStats3DS(); sound.mActive)
+                P3DS_LOGI("sound: %d sounds, %d streams, effects %zu KB, stream decoding %.1f ms/s, %u skipped "
+                          "(no free channel)",
+                    sound.mSounds, sound.mStreams, sound.mBufferBytes / 1024, sound.mDecodeMs / gLogAccum,
+                    sound.mSkipped);
 #ifdef OPENMW3DS_DEBUG
             logTimings();
             if (Render3DS::isActive())

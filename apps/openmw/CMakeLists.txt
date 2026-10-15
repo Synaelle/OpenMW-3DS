@@ -119,11 +119,12 @@ add_openmw_dir (mwbase
 # Main executable
 
 if (OPENMW_PLATFORM_3DS)
-    # Nintendo 3DS: no OpenAL, FFmpeg or video playback. Replacements live in apps/openmw/n3ds/.
+    # Nintendo 3DS: no OpenAL, FFmpeg or video playback. Replacements live in apps/openmw/n3ds/: sound through the
+    # DSP (NDSP) with WAV and MP3 (mpg123) decoding.
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
-    list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp n3ds/frame3ds.cpp
-        n3ds/hydration.cpp n3ds/menus.cpp)
+    list(APPEND OPENMW_FILES n3ds/sound3ds.hpp n3ds/ndspoutput.cpp n3ds/sounddecoder3ds.cpp n3ds/videowidget_null.cpp
+        n3ds/main3ds.cpp n3ds/frame3ds.cpp n3ds/hydration.cpp n3ds/menus.cpp)
     if (OPENMW3DS_DEBUG) # debug tools: autorun scripts, scripted input, teleport buttons
         list(APPEND OPENMW_FILES n3ds/debugtools.cpp n3ds/hidinject.cpp)
     endif()
@@ -221,8 +222,11 @@ target_link_libraries(openmw-lib
     components
 )
 if (OPENMW_PLATFORM_3DS)
+    # Our mpg123 (deps/build-deps.sh: integer decoder, ARM synth), not devkitPro's floating-point 3ds-mpg123; its
+    # header is found first too (.deps/3ds/include comes before the portlibs).
     target_link_libraries(openmw-lib platform3ds
         ${OPENMW3DS_DEPS_PREFIX}/lib/libcompat3ds.a # POSIX stubs (fchown, geteuid)
+        ${OPENMW3DS_DEPS_PREFIX}/lib/libmpg123.a
         bz2)                                       # needed by freetype
 else()
     target_link_libraries(openmw-lib osg-ffmpeg-videoplayer)

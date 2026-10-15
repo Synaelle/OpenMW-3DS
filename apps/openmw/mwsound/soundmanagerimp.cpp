@@ -39,7 +39,7 @@
 
 #include "constants.hpp"
 #ifdef OPENMW_PLATFORM_3DS
-#include "../n3ds/nullsound.hpp"
+#include "../n3ds/sound3ds.hpp"
 #else
 #include "ffmpegdecoder.hpp"
 #include "openaloutput.hpp"
