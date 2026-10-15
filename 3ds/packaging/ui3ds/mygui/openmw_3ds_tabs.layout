@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS bottom-screen tab bar (M8, n3ds/hud3ds.cpp): the top 22 rows of the bottom screen (canvas (40, 240)).
+  Touching a tab shows its page over the HUD panel; touching it again goes back to the HUD.
+  On the Windows layer, not HUD: the HUD's root widget covers the whole canvas (OpenMW's "drop on the world" target)
+  and was created first, so in the HUD layer it would take every touch.
+-->
+<MyGUI type="Layout">
+    <Widget type="Widget" skin="FullBlackBG" layer="Windows" position="40 240 320 22" name="_Main" align="Left Top">
+        <Widget type="Button" skin="MW_Button" position="2 1 104 21" name="TabItems3DS">
+            <Property key="Caption" value="#{sInventory}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="108 1 104 21" name="TabMagic3DS">
+            <Property key="Caption" value="#{sMagicTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="214 1 104 21" name="TabStats3DS">
+            <Property key="Caption" value="#{sStats}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+    </Widget>
+</MyGUI>

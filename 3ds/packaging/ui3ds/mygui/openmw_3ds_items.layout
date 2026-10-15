@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS bottom screen's Inventory page (M8, n3ds/hud3ds.cpp): under the tab bar (canvas (40, 262), 320x218).
+  Morrowind's filter buttons, the item grid (OpenMW's ItemView), and the touched item's box: its name, weight and
+  value, Equip / Use, Drop, and Quick key (then one of the nine slots). With nothing touched, the box shows the gold
+  and the encumbrance.
+-->
+<MyGUI type="Layout">
+    <Widget type="Widget" skin="MW_DialogNoTransp" layer="Windows" position="40 262 320 218" name="_Main" align="Left Top">
+
+        <!-- Filters -->
+        <Widget type="Button" skin="MW_Button" position="2 2 52 22" name="FilterAll3DS">
+            <Property key="Caption" value="#{sAllTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="56 2 66 22" name="FilterWeapon3DS">
+            <Property key="Caption" value="#{sWeaponTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="124 2 70 22" name="FilterApparel3DS">
+            <Property key="Caption" value="#{sApparelTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="196 2 58 22" name="FilterMagic3DS">
+            <Property key="Caption" value="#{sMagicTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="256 2 54 22" name="FilterMisc3DS">
+            <Property key="Caption" value="#{sMiscTab}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+
+        <!-- Items -->
+        <Widget type="ItemView" skin="MW_ItemView" position="2 26 308 128" name="ItemView3DS"/>
+
+        <!-- The touched item, or the gold and encumbrance -->
+        <Widget type="Widget" skin="MW_Box" position="2 156 308 52" name="Details3DS">
+            <Widget type="TextBox" skin="SandText" position="6 2 296 18" name="ItemName3DS">
+                <Property key="TextAlign" value="Left"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+            <!-- Weight and value, in the small font (n3ds/hud3ds.hpp kSmallFont3DS) -->
+            <Widget type="TextBox" skin="NormalText" position="6 2 296 18" name="ItemInfo3DS">
+                <Property key="FontName" value="Journalbook DefaultFont"/>
+                <Property key="TextAlign" value="Right Bottom"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+
+            <!-- Actions -->
+            <Widget type="Button" skin="MW_Button" position="4 24 96 24" name="UseButton3DS">
+                <Property key="Caption" value="#{sEquip}"/>
+                <Property key="NeedKey" value="false"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="106 24 96 24" name="DropButton3DS">
+                <Property key="Caption" value="#{sDrop}"/>
+                <Property key="NeedKey" value="false"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="208 24 96 24" name="QuickKeyButton3DS">
+                <Property key="Caption" value="#{OMW3DS:QuickKey}"/>
+                <Property key="NeedKey" value="false"/>
+            </Widget>
+
+            <!-- Quick key slots, after Quick key -->
+            <Widget type="Widget" skin="" position="4 24 300 24" name="QuickSlots3DS">
+                <Property key="Visible" value="false"/>
+                <Widget type="Button" skin="MW_Button" position="0 0 32 24" name="QuickSlot3DS1"><Property key="Caption" value="1"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="33 0 32 24" name="QuickSlot3DS2"><Property key="Caption" value="2"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="66 0 32 24" name="QuickSlot3DS3"><Property key="Caption" value="3"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="99 0 32 24" name="QuickSlot3DS4"><Property key="Caption" value="4"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="132 0 32 24" name="QuickSlot3DS5"><Property key="Caption" value="5"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="165 0 32 24" name="QuickSlot3DS6"><Property key="Caption" value="6"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="198 0 32 24" name="QuickSlot3DS7"><Property key="Caption" value="7"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="231 0 32 24" name="QuickSlot3DS8"><Property key="Caption" value="8"/></Widget>
+                <Widget type="Button" skin="MW_Button" position="264 0 32 24" name="QuickSlot3DS9"><Property key="Caption" value="9"/></Widget>
+            </Widget>
+
+            <!-- Nothing touched -->
+            <Widget type="MWDynamicStat" skin="MW_ChargeBar_Blue" position="4 26 200 22" name="Encumbrance3DS"/>
+            <Widget type="TextBox" skin="SandText" position="208 26 96 22" name="Gold3DS">
+                <Property key="TextAlign" value="Right"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

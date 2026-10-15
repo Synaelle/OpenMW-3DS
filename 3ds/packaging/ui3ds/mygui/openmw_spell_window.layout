@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS: OpenMW's magic window (mwgui/spellwindow.cpp) as the bottom screen's Magic page (M8,
+  n3ds/hud3ds.cpp places it under the tab bar: canvas (40, 262), 320x218). Touch a spell to make it the one Y readies;
+  Quick key puts the selected one on a quick key.
+  The search box and the delete button are kept for the code but hidden (no keyboard; deleting spells comes later).
+-->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Page3DS" layer="Windows" position="40 262 320 218" name="_Main">
+
+        <!-- Active effects -->
+        <Widget type="Widget" skin="MW_Box" position="2 2 308 24" align="Left Top">
+            <Widget type="Widget" skin="" position="2 2 304 20" align="Left Top" name="EffectsBox"/>
+        </Widget>
+
+        <!-- Spell list -->
+        <Widget type="SpellView" skin="MW_SpellView" position="2 30 308 152" align="Left Top" name="SpellView">
+        </Widget>
+
+        <!-- The selected spell or magic item to a quick key (n3ds/hud3ds.cpp), then one of the nine slots -->
+        <Widget type="Button" skin="MW_Button" position="2 184 96 24" name="QuickKeyButton3DS">
+            <Property key="Caption" value="#{OMW3DS:QuickKey}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Widget" skin="" position="2 184 300 24" name="QuickSlots3DS">
+            <Property key="Visible" value="false"/>
+            <Widget type="Button" skin="MW_Button" position="0 0 32 24" name="QuickSlot3DS1"><Property key="Caption" value="1"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="33 0 32 24" name="QuickSlot3DS2"><Property key="Caption" value="2"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="66 0 32 24" name="QuickSlot3DS3"><Property key="Caption" value="3"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="99 0 32 24" name="QuickSlot3DS4"><Property key="Caption" value="4"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="132 0 32 24" name="QuickSlot3DS5"><Property key="Caption" value="5"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="165 0 32 24" name="QuickSlot3DS6"><Property key="Caption" value="6"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="198 0 32 24" name="QuickSlot3DS7"><Property key="Caption" value="7"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="231 0 32 24" name="QuickSlot3DS8"><Property key="Caption" value="8"/></Widget>
+            <Widget type="Button" skin="MW_Button" position="264 0 32 24" name="QuickSlot3DS9"><Property key="Caption" value="9"/></Widget>
+        </Widget>
+
+        <Widget type="AutoSizedButton" skin="MW_Button" position="200 186 0 22" align="Left Top" name="DeleteSpellButton">
+            <Property key="Caption" value="#{sDelete}"/>
+            <Property key="NeedKey" value="false"/>
+            <Property key="Visible" value="false"/>
+        </Widget>
+        <Widget type="EditBox" skin="MW_TextBoxEditWithBorder" position="200 186 100 22" align="Left Top" name="FilterEdit">
+            <Property key="Visible" value="false"/>
+        </Widget>
+
+    </Widget>
+</MyGUI>

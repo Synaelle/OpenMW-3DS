@@ -9,6 +9,7 @@ namespace
     u32 gUp = 0;
     omw3ds::hidinject::Stick gCircle;
     omw3ds::hidinject::Stick gCStick;
+    omw3ds::hidinject::Touch gTouch;
 
     void applyStick(circlePosition* pos, const omw3ds::hidinject::Stick& stick)
     {
@@ -22,13 +23,14 @@ namespace
 
 namespace omw3ds::hidinject
 {
-    void set(u32 held, const Stick& circle, const Stick& cstick)
+    void set(u32 held, const Stick& circle, const Stick& cstick, const Touch& touch)
     {
         gDown = held & ~gHeld;
         gUp = gHeld & ~held;
         gHeld = held;
         gCircle = circle;
         gCStick = cstick;
+        gTouch = touch;
     }
 }
 
@@ -39,6 +41,7 @@ extern "C"
     u32 __real_hidKeysHeld(void);
     void __real_hidCircleRead(circlePosition* pos);
     void __real_irrstCstickRead(circlePosition* pos);
+    void __real_hidTouchRead(touchPosition* pos);
 
     u32 __wrap_hidKeysDown(void)
     {
@@ -65,5 +68,15 @@ extern "C"
     {
         __real_irrstCstickRead(pos);
         applyStick(pos, gCStick);
+    }
+
+    void __wrap_hidTouchRead(touchPosition* pos)
+    {
+        __real_hidTouchRead(pos);
+        if (gTouch.mActive)
+        {
+            pos->px = gTouch.mX;
+            pos->py = gTouch.mY;
+        }
     }
 }

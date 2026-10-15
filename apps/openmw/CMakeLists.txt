@@ -183,7 +183,7 @@ if(BUILD_OPENMW)
         # Scripted input for automated emulator runs (n3ds/hidinject.cpp, debug tools).
         if (OPENMW3DS_DEBUG)
             target_link_options(openmw PRIVATE
-                "LINKER:--wrap=hidKeysDown,--wrap=hidKeysUp,--wrap=hidKeysHeld,--wrap=hidCircleRead,--wrap=irrstCstickRead")
+                "LINKER:--wrap=hidKeysDown,--wrap=hidKeysUp,--wrap=hidKeysHeld,--wrap=hidCircleRead,--wrap=irrstCstickRead,--wrap=hidTouchRead")
         endif()
     endif()
 

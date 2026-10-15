@@ -7,6 +7,8 @@
 #include "spellicons.hpp"
 #include "statswatcher.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWWorld
 {
     class Ptr;
@@ -20,6 +22,8 @@ namespace MWGui
 
     class HUD : public WindowBase, public LocalMapBase, public StatsListener
     {
+        OMW3DS_HUD_FRIEND
+
     public:
         HUD(CustomMarkerCollection& customMarkers, DragAndDrop* dragAndDrop, MWRender::LocalMap* localMapRender);
         virtual ~HUD();

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS: OpenMW's stats window (mwgui/statswindow.cpp) as the bottom screen's Stats page (M8, n3ds/hud3ds.cpp
+  places it under the tab bar: canvas (40, 262), 320x218). Same widget names as OpenMW's layout, in two columns:
+  level/race/class and the attributes on the left; health/magicka/fatigue and the skills list (scrolls) on the right.
+  LeftPaneRatio x the window width (320) is the left column's width (StatsWindow::onWindowResize). The left pane is
+  declared 68 pixels wider (216) than that: the code makes each attribute row 204 wide, and only the resize down to 148
+  (rows are HStretch) brings the values into the column.
+-->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Page3DS" layer="Windows" position="40 262 320 218" name="_Main">
+        <Widget type="Widget" skin="" name="LeftPane" position="0 0 216 218">
+            <UserString key="LeftOffsetWidth" value="0"/>
+            <UserString key="LeftPaneRatio" value="0.4625"/>
+
+            <!-- Level, race and class -->
+            <Widget type="Widget" skin="MW_Box" position="2 2 212 58" align="Left Top HStretch">
+                <Widget type="HBox" position="4 2 204 18" align="Top HStretch">
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="0 0 60 18" name="Level_str" align="Left Top">
+                        <Property key="Caption" value="#{sLevel}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="LevelToolTip"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandTextRight" position="60 0 144 18" name="LevelText" align="Right Top">
+                        <Property key="TextAlign" value="Right Top"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="LevelToolTip"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" position="4 20 204 18" align="Top HStretch">
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="0 0 60 18" name="Race_str" align="Left Top">
+                        <Property key="Caption" value="#{sRace}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="RaceToolTip"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandTextRight" position="60 0 144 18" name="RaceText" align="Left Top">
+                        <Property key="TextAlign" value="Right Top"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="RaceToolTip"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" position="4 38 204 18" align="Top HStretch">
+                    <Widget type="AutoSizedTextBox" skin="NormalText" position="0 0 60 18" name="Class_str" align="Left Top">
+                        <Property key="Caption" value="#{sClass}"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="ClassToolTip"/>
+                    </Widget>
+                    <Widget type="TextBox" skin="SandTextRight" position="60 0 144 18" name="ClassText" align="Left Top">
+                        <Property key="TextAlign" value="Right Top"/>
+                        <UserString key="ToolTipType" value="Layout"/>
+                        <UserString key="ToolTipLayout" value="ClassToolTip"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+            </Widget>
+
+            <!-- Attributes (filled in by the code) -->
+            <Widget type="Widget" skin="MW_Box" position="2 62 212 148" align="Left Top Stretch">
+                <Widget type="Widget" skin="" position="4 2 204 144" align="Left Top Stretch" name="AttributeView" />
+            </Widget>
+        </Widget>
+
+        <Widget type="Widget" skin="" name="RightPane" position="148 0 172 218">
+
+            <!-- Health, magicka, fatigue -->
+            <Widget type="Widget" skin="MW_Box" position="0 2 162 58" align="Left Top HStretch">
+                <Widget type="Widget" skin="" position="4 2 154 18" name="Health" align="Left Top HStretch">
+                    <Property key="NeedMouse" value="true"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                    <UserString key="ImageTexture_HealthImage" value="icons\k\health.dds"/>
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 18" name="Health_str" align="Left Top">
+                        <Property key="NeedMouse" value="false"/>
+                        <Property key="Caption" value="#{sHealth}"/>
+                    </Widget>
+                    <Widget type="ProgressBar" skin="MW_Progress_Red" position="66 0 88 18" name="HBar" align="Right Top">
+                        <Property key="NeedMouse" value="false"/>
+                        <Widget type="TextBox" skin="ProgressText" position="0 0 88 14" name="HBarT" align="Right VCenter">
+                            <Property key="NeedMouse" value="false"/>
+                        </Widget>
+                    </Widget>
+                </Widget>
+                <Widget type="Widget" skin="" position="4 20 154 18" name="Magicka" align="Left Top HStretch">
+                    <Property key="NeedMouse" value="true"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                    <UserString key="ImageTexture_HealthImage" value="icons\k\magicka.dds"/>
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 18" name="Magicka_str" align="Left Top">
+                        <Property key="Caption" value="#{sMagic}"/>
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                    <Widget type="ProgressBar" skin="MW_Progress_Blue" position="66 0 88 18" name="MBar" align="Right Top">
+                        <Property key="NeedMouse" value="false"/>
+                        <Widget type="TextBox" skin="ProgressText" position="0 0 88 14" name="MBarT" align="Right VCenter">
+                            <Property key="NeedMouse" value="false"/>
+                        </Widget>
+                    </Widget>
+                </Widget>
+                <Widget type="Widget" skin="" position="4 38 154 18" name="Fatigue" align="Left Top HStretch">
+                    <Property key="NeedMouse" value="true"/>
+                    <UserString key="ToolTipType" value="Layout"/>
+                    <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                    <UserString key="ImageTexture_HealthImage" value="icons\k\fatigue.dds"/>
+                    <Widget type="TextBox" skin="NormalText" position="0 0 64 18" name="Fatigue_str" align="Left Top">
+                        <Property key="Caption" value="#{sFatigue}"/>
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                    <Widget type="ProgressBar" skin="MW_Progress_Green" position="66 0 88 18" name="FBar" align="Right Top">
+                        <Property key="NeedMouse" value="false"/>
+                        <Widget type="TextBox" skin="ProgressText" position="0 0 88 14" name="FBarT" align="Right VCenter">
+                            <Property key="NeedMouse" value="false"/>
+                        </Widget>
+                    </Widget>
+                </Widget>
+            </Widget>
+
+            <!-- Skills, factions, birthsign and reputation (filled in by the code; scrolls) -->
+            <Widget type="Widget" skin="MW_Box" position="0 62 162 148" align="Left Stretch" name="Skills">
+                <Widget type="ScrollView" skin="MW_ScrollView" position="4 4 154 140" align="Left Top Stretch" name="SkillView">
+                    <Property key="CanvasAlign" value="Left Top"/>
+                </Widget>
+            </Widget>
+
+        </Widget>
+
+    </Widget>
+</MyGUI>

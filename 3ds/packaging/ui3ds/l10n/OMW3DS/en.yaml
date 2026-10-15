@@ -1,0 +1,4 @@
+# Nintendo 3DS port: the texts its own interface adds (packaging/ui3ds, n3ds/hud3ds.cpp), as #{OMW3DS:Key}.
+# Morrowind's own words (#{sEquip}, #{sDrop}...) come from the game's settings, as everywhere else.
+QuickKey: "Quick key"
+Unequip: "Unequip"

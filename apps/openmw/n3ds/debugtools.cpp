@@ -48,13 +48,14 @@ namespace omw3ds::debug
     namespace
     {
         // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3);
-        // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward).
+        // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward);
+        // "touch:F,X,Y,N" touches the bottom screen at pixel X,Y.
         struct ScriptedInput
         {
             unsigned mStart = 0;
             unsigned mFrames = 3;
             u32 mKeys = 0; // btn:
-            int mStick = -1; // move: 0, look: 1
+            int mStick = -1; // move: 0, look: 1, touch: 2
             float mX = 0, mY = 0;
             std::string mText;
         };
@@ -121,6 +122,7 @@ namespace omw3ds::debug
             };
             forEach("move:", parseStick(0));
             forEach("look:", parseStick(1));
+            forEach("touch:", parseStick(2));
         }
 
         void applyInputs(const std::vector<ScriptedInput>& inputs, unsigned frame)
@@ -129,6 +131,7 @@ namespace omw3ds::debug
                 return;
             u32 held = 0;
             hidinject::Stick sticks[2];
+            hidinject::Touch touch;
             // SDL takes the first value an axis reports as its rest position and drops it; a scripted stick goes
             // straight to its target, so its first move would be lost. Report a tiny value once, first.
             static bool primed = false;
@@ -154,10 +157,15 @@ namespace omw3ds::debug
                 }
                 if (input.mStick < 0)
                     held |= input.mKeys;
+                else if (input.mStick == 2)
+                {
+                    touch = hidinject::Touch{ true, u16(input.mX), u16(input.mY) };
+                    held |= KEY_TOUCH;
+                }
                 else
                     sticks[input.mStick] = hidinject::Stick{ true, input.mX, input.mY };
             }
-            hidinject::set(held, sticks[0], sticks[1]);
+            hidinject::set(held, sticks[0], sticks[1], touch);
         }
 
         // autorun "door:F": activate the nearest door that leads somewhere (an interior unless exteriors are

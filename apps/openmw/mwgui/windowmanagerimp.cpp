@@ -1,5 +1,11 @@
 #include "windowmanagerimp.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+
+#include "../n3ds/hud3ds.hpp"
+#endif
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -528,6 +534,15 @@ namespace MWGui
 
         mInputBlocker = MyGUI::Gui::getInstance().createWidget<MyGUI::Widget>(
             {}, 0, 0, w, h, MyGUI::Align::Stretch, "InputBlocker");
+#ifdef OPENMW_PLATFORM_3DS
+        // M8: the blocker (game mode: no GUI input) only covers the top screen; the bottom screen's HUD and tabs
+        // take touches while playing.
+        if (Render3DS::drawsGui())
+        {
+            mInputBlocker->setAlign(MyGUI::Align::Default);
+            mInputBlocker->setSize(Render3DS::kGuiCanvasWidth, Render3DS::kGuiBottomY);
+        }
+#endif
 
         mHud->setVisible(true);
 
@@ -1417,6 +1432,11 @@ namespace MWGui
     {
         if (mode == GM_Inventory && mAllowed == GW_None)
             return;
+#ifdef OPENMW_PLATFORM_3DS
+        // M8: the inventory is the bottom screen's Inventory tab, which doesn't pause the game.
+        if (mode == GM_Inventory && Render3DS::drawsGui() && omw3ds::toggleInventoryTab3DS())
+            return;
+#endif
 
         if (mGuiModes.empty() || mGuiModes.back() != mode)
         {

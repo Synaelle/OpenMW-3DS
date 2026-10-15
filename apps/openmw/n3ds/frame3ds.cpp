@@ -37,6 +37,8 @@
 #include <osgViewer/Viewer>
 
 #include <MyGUI_InputManager.h>
+#include <MyGUI_ILayer.h>
+#include <MyGUI_Widget.h>
 
 #include <3ds.h>
 
@@ -236,6 +238,26 @@ namespace omw3ds
     {
         // The touch screen as MyGUI's mouse, in canvas coordinates (the bottom screen's place in it:
         // Render3DS::kGuiBottomX/Y). Held touches move; touching and lifting press and release the left button.
+#ifdef OPENMW3DS_DEBUG
+        // What a touch reached (scripted touches in autorun tests): the widget, its root and the root's layer.
+        void logGuiTouch(MyGUI::InputManager& input, int x, int y, bool taken)
+        {
+            const MyGUI::Widget* focus = input.getMouseFocusWidget();
+            const MyGUI::Widget* root = focus;
+            while (root != nullptr && root->getParent() != nullptr)
+                root = root->getParent();
+            auto describe = [](const MyGUI::Widget* widget) {
+                if (widget == nullptr)
+                    return std::string("(none)");
+                return std::string(widget->getTypeName()) + " '" + widget->getName() + "' "
+                    + widget->getAbsoluteCoord().print();
+            };
+            const MyGUI::ILayer* layer = root != nullptr ? root->getLayer() : nullptr;
+            P3DS_LOGI("gui touch %d,%d: %s in %s on %s%s", x, y, describe(focus).c_str(), describe(root).c_str(),
+                layer != nullptr ? layer->getName().c_str() : "-", taken ? "" : " (not taken)");
+        }
+#endif
+
         void injectTouchToGui()
         {
             MyGUI::InputManager* input = MyGUI::InputManager::getInstancePtr();
@@ -252,7 +274,14 @@ namespace omw3ds
                 sY = touch.py + Render3DS::kGuiBottomY;
                 input->injectMouseMove(sX, sY, 0);
                 if (!sDown)
-                    input->injectMousePress(sX, sY, MyGUI::MouseButton::Left);
+                {
+                    const bool taken = input->injectMousePress(sX, sY, MyGUI::MouseButton::Left);
+#ifdef OPENMW3DS_DEBUG
+                    logGuiTouch(*input, sX, sY, taken);
+#else
+                    (void)taken;
+#endif
+                }
             }
             else if (sDown)
                 input->injectMouseRelease(sX, sY, MyGUI::MouseButton::Left);

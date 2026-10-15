@@ -2734,7 +2734,9 @@ namespace Render3DS
 
         void drawGui()
         {
-            if (!gDrawsGui || gGuiSource == nullptr || gFlatProjection < 0)
+            // Only while the GUI owns the bottom screen: OpenMW's menus still go to the M6 text menus there, and
+            // their MyGUI windows (desktop layouts) mustn't show on the top screen meanwhile.
+            if (!gDrawsGui || !gGuiOwnsBottom || gGuiSource == nullptr || gFlatProjection < 0)
                 return;
             p3ds::perf::Phase phase("guiDraw");
             const uint64_t hash = prepareGuiDraws();

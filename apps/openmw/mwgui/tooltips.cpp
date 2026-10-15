@@ -36,6 +36,15 @@
 
 #include "itemmodel.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+namespace
+{
+    // M8: while set, the tooltip being built is the crosshair's, a one-line label at the top of the screen in the
+    // small font: no icon, effects or notes (n3ds/hud3ds.hpp).
+    bool sTargetLabel3DS = false;
+}
+#endif
+
 namespace MWGui
 {
     ToolTips::ToolTips()
@@ -313,18 +322,20 @@ namespace MWGui
         {
             if (!mFocusObject.isEmpty())
             {
+#ifdef OPENMW_PLATFORM_3DS
+                sTargetLabel3DS = Render3DS::drawsGui();
+#endif
                 MyGUI::IntSize tooltipSize = getToolTipViaPtr(mFocusObject.getCellRef().getCount(), true, checkOwned());
 
                 int left = viewSize.width / 2 - tooltipSize.width / 2;
                 int top = std::max(0, int(mFocusToolTipY * viewSize.height - tooltipSize.height - 20));
 #ifdef OPENMW_PLATFORM_3DS
-                // M8: in the bottom screen's target panel, not over the game.
-                if (Render3DS::drawsGui())
+                if (sTargetLabel3DS)
                 {
-                    const MyGUI::IntCoord panel = omw3ds::targetPanel3DS();
-                    left = panel.left + (panel.width - tooltipSize.width) / 2;
-                    top = panel.top + std::max(0, (panel.height - tooltipSize.height) / 2);
-                    top = std::min(top, Render3DS::kGuiCanvasHeight - 4 - tooltipSize.height);
+                    const MyGUI::IntPoint at = omw3ds::targetLabel3DS(tooltipSize);
+                    left = at.left;
+                    top = at.top;
+                    sTargetLabel3DS = false;
                 }
 #endif
                 setCoord(left, top, tooltipSize.width, tooltipSize.height);
@@ -392,6 +403,18 @@ namespace MWGui
             ToolTipInfo info = object.getToolTipInfo(mFocusObject, count);
             if (!image)
                 info.icon.clear();
+#ifdef OPENMW_PLATFORM_3DS
+            if (sTargetLabel3DS)
+            {
+                info.caption = omw3ds::targetLabelText3DS(info.caption, info.text);
+                info.text.clear();
+                info.icon.clear();
+                info.enchant = ESM::RefId();
+                info.effects.clear();
+                info.notes.clear();
+                info.extra.clear();
+            }
+#endif
             tooltipSize = createToolTip(info, isOwned);
         }
 
@@ -456,7 +479,11 @@ namespace MWGui
         // this the maximum width of the tooltip before it starts word-wrapping
         setCoord(0, 0, 300, 300);
 
+#ifdef OPENMW_PLATFORM_3DS
+        const MyGUI::IntPoint padding = sTargetLabel3DS ? MyGUI::IntPoint(6, 3) : MyGUI::IntPoint(8, 8);
+#else
         const MyGUI::IntPoint padding(8, 8);
+#endif
 
         const int imageCaptionHPadding = !caption.empty() ? 8 : 0;
         const int imageCaptionVPadding = !caption.empty() ? 4 : 0;
@@ -470,6 +497,10 @@ namespace MWGui
             "NormalText", MyGUI::IntCoord(0, 0, 300, 300), MyGUI::Align::Left | MyGUI::Align::Top, "ToolTipCaption");
         captionWidget->setEditStatic(true);
         captionWidget->setNeedKeyFocus(false);
+#ifdef OPENMW_PLATFORM_3DS
+        if (sTargetLabel3DS)
+            captionWidget->setFontName(omw3ds::kSmallFont3DS);
+#endif
         captionWidget->setCaptionWithReplacing(caption);
         MyGUI::IntSize captionSize = captionWidget->getTextSize();
 
@@ -481,6 +512,10 @@ namespace MWGui
         textWidget->setEditStatic(true);
         textWidget->setEditMultiLine(true);
         textWidget->setEditWordWrap(info.wordWrap);
+#ifdef OPENMW_PLATFORM_3DS
+        if (sTargetLabel3DS)
+            textWidget->setFontName(omw3ds::kSmallFont3DS);
+#endif
         textWidget->setCaptionWithReplacing(text);
         textWidget->setTextAlign(MyGUI::Align::HCenter | MyGUI::Align::Top);
         textWidget->setNeedKeyFocus(false);

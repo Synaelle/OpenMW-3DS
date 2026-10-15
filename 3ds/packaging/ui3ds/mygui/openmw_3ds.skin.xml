@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS skins (M8, docs/M8_UI_IDEAS.md), loaded after OpenMW's own (skins.xml).
+  MW_Page3DS: a bottom-screen page (Stats, Magic): Morrowind's thick dialog frame with an opaque black inside, and the
+  pin button OpenMW's pinnable windows expect, without size.
+-->
+<MyGUI type="Resource" version="1.1">
+    <Resource type="ResourceSkin" name="MW_Page3DS" size="256 54">
+        <Child type="Widget" skin="FullBlackBG" offset="4 4 248 46" align="Stretch" name="Client"/>
+
+        <!-- Outer borders -->
+        <Child type="Widget" skin="DB_T" offset="4 0 248 4" align="Top HStretch" name="Border">
+            <Property key="Scale" value="0 1 0 -1"/>
+        </Child>
+        <Child type="Widget" skin="DB_L" offset="0 4 4 46" align="Left VStretch" name="Border">
+            <Property key="Scale" value="1 0 -1 0"/>
+        </Child>
+        <Child type="Widget" skin="DB_B" offset="4 50 248 4" align="Bottom HStretch" name="Border">
+            <Property key="Scale" value="0 0 0 1"/>
+        </Child>
+        <Child type="Widget" skin="DB_R" offset="252 4 4 46" align="Right VStretch" name="Border">
+            <Property key="Scale" value="0 0 1 0"/>
+        </Child>
+
+        <Child type="Widget" skin="DB_BR" offset="252 50 4 4" align="Right Bottom" name="Border">
+            <Property key="Scale" value="0 0 1 1"/>
+        </Child>
+        <Child type="Widget" skin="DB_BL" offset="0 50 4 4" align="Left Bottom" name="Border">
+            <Property key="Scale" value="1 0 -1 1"/>
+        </Child>
+        <Child type="Widget" skin="DB_TR" offset="252 0 4 4" align="Right Top" name="Border">
+            <Property key="Scale" value="0 1 1 -1"/>
+        </Child>
+        <Child type="Widget" skin="DB_TL" offset="0 0 4 4" align="Left Top" name="Border">
+            <Property key="Scale" value="1 1 -1 -1"/>
+        </Child>
+
+        <!-- WindowPinnableBase looks for the pin button: none to show on the 3DS -->
+        <Child type="Button" skin="PinUp" offset="252 0 0 0" align="Right Top" name="Button"/>
+    </Resource>
+</MyGUI>
