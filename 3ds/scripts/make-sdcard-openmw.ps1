@@ -57,9 +57,7 @@ If the bottom screen shows another build, the new CIA is not the one installed.
 What this tests (hardware test #25, M7 started: SOUND):
   Music, sound effects (footsteps, ambience, combat, spells, creatures) and NPC voices now play, in 3D
   (left/right follows where things are; muffled underwater).
-  SOUND NEEDS THE 3DS'S DSP FIRMWARE: the file sdmc:/3ds/dspfirm.cdc. If you have ever played homebrew
-  with sound, you most likely have it. If it's missing, run the DSP1 homebrew once (it creates that
-  file). Without it the game runs silent and the log says why.
+  Sound needs the 3DS's DSP firmware: see step 2.
   Morrowind's Sound and Music folders are in the package, packed into one file:
   openmw/data/sound3ds.bsa (~240 MB, made from your own game files). Do NOT copy the loose Sound and
   Music folders to the SD card: they'd override it and slow every startup by several seconds.
@@ -76,7 +74,12 @@ the HUD and graphical menus (M8).
 2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
      Morrowind.esm   (~79 MB)
      Morrowind.bsa   (~310 MB)
-   (Nothing else is needed. The files are only read, never modified.)
+   (Nothing else: Sound and Music come packed in openmw/data/sound3ds.bsa, so don't copy those folders.
+   The files are only read, never modified.)
+   SOUND also needs the 3DS's DSP firmware, the file sdmc:/3ds/dspfirm.cdc (once per SD card, not per
+   build). If you've played homebrew with sound, it's already there. If not, run the DSP1 homebrew once:
+   it creates the file. Without it the game runs silent and logs/openmw3ds.log says
+   "sound: the DSP didn't start".
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
 4. While loading, the top screen is black (dark) and the bottom screen shows "(loading)", then FPS,
    cell, position and so on once the game runs. Loading takes under a minute.
