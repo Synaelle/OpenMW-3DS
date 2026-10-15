@@ -13,6 +13,7 @@
 #include <MyGUI_Button.h>
 #include <MyGUI_EditBox.h>
 #include <MyGUI_Gui.h>
+#include <MyGUI_ImageBox.h>
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_ResourceManager.h>
@@ -577,17 +578,26 @@ namespace omw3ds
 
         Tab sTab = Tab::None;
         std::unique_ptr<MWGui::Layout> sTabBar;
-        std::array<MyGUI::Button*, 4> sTabButtons{};
+        std::array<MyGUI::Button*, 5> sTabButtons{}; // Home, then the tabs
+        MyGUI::ImageBox* sHomeIcon = nullptr;
+        std::array<MyGUI::Colour, 2> sHomeColours; // as MW_Button's caption: normal, selected
+        int sHomeColour = -1; // which one the icon has
         std::unique_ptr<ItemsPage> sItems;
         std::unique_ptr<DebugPage> sDebug;
         QuickKeyPicker sMagicPicker;
         const MWGui::SpellWindow* sMagicBoundTo = nullptr;
         Tab sShown = Tab::None;
 
+        // Home shows the HUD; a tab shows its page, or the HUD again if it's already shown.
         void onTabClicked(MyGUI::Widget* sender)
         {
             const Tab tab = *sender->getUserData<Tab>();
             sTab = sTab == tab ? Tab::None : tab;
+        }
+
+        MyGUI::Colour fontColour(const char* tag)
+        {
+            return MyGUI::Colour::parse(MyGUI::LanguageManager::getInstance().replaceTags(tag));
         }
 
         bool bindTabs()
@@ -598,6 +608,7 @@ namespace omw3ds
                 return false;
             sTabBar = std::make_unique<MWGui::Layout>("openmw_3ds_tabs.layout");
             const std::pair<const char*, Tab> tabs[] = {
+                { "TabHome3DS", Tab::None },
                 { "TabItems3DS", Tab::Items },
                 { "TabMagic3DS", Tab::Magic },
                 { "TabStats3DS", Tab::Stats },
@@ -609,13 +620,15 @@ namespace omw3ds
                 sTabButtons[i]->setUserData(tabs[i].second);
                 sTabButtons[i]->eventMouseButtonClick += MyGUI::newDelegate(&onTabClicked);
             }
+            sTabBar->getWidget(sHomeIcon, "TabHomeIcon3DS");
+            sHomeColours = { fontColour("#{fontcolour=normal}"), fontColour("#{fontcolour=active}") };
 #ifdef OPENMW3DS_DEBUG
             sDebug = std::make_unique<DebugPage>();
 #else
-            // No Debug tab: the other three share the bar.
-            sTabButtons[3]->setVisible(false);
-            for (int i = 0; i < 3; ++i)
-                sTabButtons[i]->setCoord(2 + i * 106, 1, 104, 21);
+            // No Debug tab: the other three share the bar, after Home.
+            sTabButtons[4]->setVisible(false);
+            for (int i = 1; i < 4; ++i)
+                sTabButtons[i]->setCoord(28 + (i - 1) * 97, 1, 95, 21);
 #endif
             sItems = std::make_unique<ItemsPage>();
             return true;
@@ -651,6 +664,12 @@ namespace omw3ds
             sTabBar->setVisible(active);
             for (MyGUI::Button* button : sTabButtons)
                 button->setStateSelected(*button->getUserData<Tab>() == sTab);
+            const int homeColour = sTab == Tab::None ? 1 : 0;
+            if (homeColour != sHomeColour)
+            {
+                sHomeIcon->setColour(sHomeColours[homeColour]);
+                sHomeColour = homeColour;
+            }
 
             if (tab != sShown)
             {

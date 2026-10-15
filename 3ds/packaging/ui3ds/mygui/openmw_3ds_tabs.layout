@@ -2,26 +2,34 @@
 
 <!--
   Nintendo 3DS bottom-screen tab bar (M8, n3ds/hud3ds.cpp): the top 22 rows of the bottom screen (canvas (40, 240)).
-  Touching a tab shows its page over the HUD panel; touching it again goes back to the HUD.
+  Home (the house) shows the HUD; a tab shows its page over the HUD panel (touching it again goes back to the HUD).
   On the Windows layer, not HUD: the HUD's root widget covers the whole canvas (OpenMW's "drop on the world" target)
   and was created first, so in the HUD layer it would take every touch.
 -->
 <MyGUI type="Layout">
     <Widget type="Widget" skin="FullBlackBG" layer="Windows" position="40 240 320 22" name="_Main" align="Left Top">
+        <!-- The icon is white: the code tints it as MW_Button tints its caption (tools/make_ui_icons.py draws it) -->
+        <Widget type="Button" skin="MW_Button" position="2 1 24 21" name="TabHome3DS">
+            <Property key="NeedKey" value="false"/>
+            <Widget type="ImageBox" skin="ImageBox" position="4 2 16 16" name="TabHomeIcon3DS">
+                <Property key="ImageTexture" value="textures\omw_3ds_home.png"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+        </Widget>
         <!-- Debug builds; the others share its width when it's hidden (n3ds/hud3ds.cpp) -->
-        <Widget type="Button" skin="MW_Button" position="2 1 86 21" name="TabItems3DS">
+        <Widget type="Button" skin="MW_Button" position="28 1 80 21" name="TabItems3DS">
             <Property key="Caption" value="#{sInventory}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="90 1 74 21" name="TabMagic3DS">
+        <Widget type="Button" skin="MW_Button" position="110 1 68 21" name="TabMagic3DS">
             <Property key="Caption" value="#{sMagicTab}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="166 1 74 21" name="TabStats3DS">
+        <Widget type="Button" skin="MW_Button" position="180 1 68 21" name="TabStats3DS">
             <Property key="Caption" value="#{sStats}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="242 1 76 21" name="TabDebug3DS">
+        <Widget type="Button" skin="MW_Button" position="250 1 68 21" name="TabDebug3DS">
             <Property key="Caption" value="#{OMW3DS:Debug}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>

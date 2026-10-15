@@ -2,8 +2,8 @@
 #define OPENMW_APPS_OPENMW_N3DS_HUD3DS_H
 
 // Nintendo 3DS HUD and bottom-screen tabs (M8, docs/M8_UI_IDEAS.md): what the bottom-screen HUD adds to OpenMW's
-// (packaging/ui3ds/mygui/openmw_hud.layout), the tab bar (Inventory, Magic, Stats: pages over the HUD panel that
-// don't pause the game), and where things sit on MyGUI's two-screen canvas (components/render3ds/render3ds.hpp: the
+// (packaging/ui3ds/mygui/openmw_hud.layout), the tab bar (Home for the HUD, then Inventory, Magic, Stats: pages over
+// the HUD panel that don't pause the game), and where things sit on MyGUI's two-screen canvas (components/render3ds/render3ds.hpp: the
 // bottom screen is at (40, 240)).
 //
 // Pages: Inventory is the 3DS's own (openmw_3ds_items.layout: touch an item, then Equip/Use, Drop, Quick key);
