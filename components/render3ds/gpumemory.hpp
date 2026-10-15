@@ -29,14 +29,20 @@ namespace Render3DS
     class CookedImage : public osg::Image
     {
     public:
-        CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, GPU_TEXCOLOR format,
-            uint8_t levels, uint8_t flags);
+        CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, uint16_t srcWidth,
+            uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags);
 
         void* gpuData() const { return mGpuData; }
         uint32_t gpuSize() const { return mGpuSize; }
         GPU_TEXCOLOR gpuFormat() const { return mGpuFormat; }
         uint8_t levels() const { return mLevels; }
         uint8_t flags() const { return mFlags; } // tools/cook_textures.py FLAG_*
+        // The original image's size. MyGUI sizes skins with it and divides pixel coordinates by it.
+        uint16_t sourceWidth() const { return mSrcWidth; }
+        uint16_t sourceHeight() const { return mSrcHeight; }
+        // UI images are padded, not resampled (FLAG_PADDED): the image fills sourceWidth x sourceHeight from the
+        // top left, so texture coordinates over the image are scaled by source / cooked size.
+        bool padded() const { return (mFlags & 4) != 0; }
 
     protected:
         ~CookedImage() override;
@@ -47,6 +53,8 @@ namespace Render3DS
         GPU_TEXCOLOR mGpuFormat;
         uint8_t mLevels;
         uint8_t mFlags;
+        uint16_t mSrcWidth;
+        uint16_t mSrcHeight;
     };
 }
 

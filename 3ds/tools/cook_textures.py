@@ -16,6 +16,11 @@ Per texture:
   - encode with devkitPro's tex3ds: ETC1 (4 bpp) for opaque textures, ETC1A4 (8 bpp) with alpha,
     RGBA8 for small uncompressed sources (UI elements, where ETC1 artifacts show); full mip chain.
 
+UI images (menu frames, icons, book art, OpenMW's own menu textures; see is_ui) are cooked differently, so menus
+look pixel-exact (M8): never resampled but padded (edge texels repeated) to the next power of two (the runtime
+scales the texture coordinates by source / cooked size: flag 4), no mipmaps (MyGUI never uses them), RGBA8 up to
+128 texels and ETC1/ETC1A4 for bigger pictures (book art, level-up art), up to 1024 (the PICA's largest).
+
 Pack layout (little endian), read by components/render3ds/texturepack.cpp:
   header  (32 bytes): magic 'O3TP', version, entry count, index offset, data offset, 3 x reserved
   index   (entry count x 32 bytes, sorted by hash):
@@ -27,10 +32,12 @@ Pack layout (little endian), read by components/render3ds/texturepack.cpp:
           u32 reserved
   data    texture data in PICA tiled layout, each texture 128-byte aligned, mip levels back to back.
 
-Flags: 1 = has alpha (some texel < 255), 2 = alpha is only 0/255 (good for alpha testing).
+Flags: 1 = has alpha (some texel < 255), 2 = alpha is only 0/255 (good for alpha testing), 4 = padded (UI: the
+image fills srcWidth x srcHeight of the cooked width x height, from the top left; no mipmaps).
 
 Usage:
-  python tools/cook_textures.py --data "D:/.../Morrowind/Data Files" --out out/cooked/textures.o3tp
+  python tools/cook_textures.py --data "D:/.../Morrowind/Data Files" --resources build/openmw/resources/vfs \
+      --out out/cooked/textures.o3tp
 """
 
 import argparse
@@ -59,6 +66,17 @@ GPU_ETC1A4 = 0xD
 
 FLAG_ALPHA = 1
 FLAG_ALPHA_BINARY = 2
+FLAG_PADDED = 4
+
+# UI images (see the docstring). Prefixes of normalized paths, then basename prefixes under textures/.
+UI_PREFIXES = ("icons/", "bookart/", "textures/omw_", "textures/levelup/", "textures/birthsigns/")
+UI_TEXTURE_NAMES = ("menu_", "tx_menu", "tx_cursor", "compass", "target", "scroll", "detect_", "menu")
+UI_MAX_SIZE = 1024
+# Read by the CPU (the global map's colours) or not used on the 3DS: left out of the pack.
+EXCLUDED = ("textures/omw_map_color_palette", "textures/omw/water_nm")
+# The controller button glyphs are drawn small (button hints): cooked down to this size.
+GLYPH_PREFIX = "textures/omw_steam_button_"
+GLYPH_SIZE = 32
 
 TEX3DS_FORMAT = {GPU_RGBA8: "rgba8", GPU_ETC1: "etc1", GPU_ETC1A4: "etc1a4"}
 BITS_PER_PIXEL = {GPU_RGBA8: 32, GPU_ETC1: 4, GPU_ETC1A4: 8}
@@ -103,9 +121,25 @@ def read_bsa_index(path):
     return files
 
 
-def collect_sources(data_dir, archives, prefixes):
-    """name -> (file, offset, size). Later archives and loose files override earlier ones (VFS order)."""
+def is_ui(name):
+    if name.startswith(UI_PREFIXES):
+        return True
+    if name.startswith("textures/") and "/" not in name[len("textures/"):]:
+        return name[len("textures/"):].startswith(UI_TEXTURE_NAMES)
+    return False
+
+
+def collect_sources(data_dir, archives, prefixes, resources=None):
+    """name -> (file, offset, size). Later archives and loose files override earlier ones (VFS order); OpenMW's own
+    resources (resources/vfs) come first, as OpenMW adds them before the game's data."""
     sources = {}
+    if resources:
+        for root, _, files in os.walk(resources):
+            for file in files:
+                full = os.path.join(root, file)
+                name = normalize(os.path.relpath(full, resources))
+                if name.startswith(prefixes) and name.endswith(IMAGE_EXTENSIONS):
+                    sources[name] = (full, 0, os.path.getsize(full))
     for archive in archives:
         bsa = os.path.join(data_dir, archive)
         for name, src in read_bsa_index(bsa).items():
@@ -121,6 +155,8 @@ def collect_sources(data_dir, archives, prefixes):
     by_key = {}
     for name in sorted(sources):
         key = stem_key(name)
+        if key.startswith(EXCLUDED):
+            continue
         if key not in by_key or name.endswith(".dds"):
             by_key[key] = (name, sources[name])
     return by_key
@@ -187,11 +223,21 @@ def tga_kill_alpha(raw):
     return depth == 16 and (raw[17] & 0x0F) == 1
 
 
+def pow2_ceil(n, max_size):
+    p = 8
+    while p < n and p < max_size:
+        p *= 2
+    return p
+
+
 def cook_one(job):
     key, name, raw, max_size, tex3ds, quality = job
     image = Image.open(io.BytesIO(raw))
     image.load()
+    if key.startswith(GLYPH_PREFIX) and max(image.size) > GLYPH_SIZE:
+        image = image.resize((GLYPH_SIZE, GLYPH_SIZE), Image.Resampling.LANCZOS)
     src_w, src_h = image.size
+    ui = is_ui(key) and max(src_w, src_h) <= UI_MAX_SIZE
 
     if name.endswith(".tga") and tga_kill_alpha(raw):
         image = image.convert("RGB")
@@ -207,18 +253,31 @@ def cook_one(job):
         if sum(histogram[1:255]) == 0:
             flags |= FLAG_ALPHA_BINARY
 
-    w, h = pow2_size(src_w, max_size), pow2_size(src_h, max_size)
-    if (w, h) != (src_w, src_h):
-        rgba = rgba.resize((w, h), Image.Resampling.LANCZOS if w < src_w or h < src_h else Image.Resampling.BICUBIC)
-
-    small_raw = name.endswith(".dds") and dds_is_uncompressed(raw) and max(w, h) <= 128
-    if small_raw:
-        fmt = GPU_RGBA8
+    if ui:
+        w, h = pow2_ceil(src_w, UI_MAX_SIZE), pow2_ceil(src_h, UI_MAX_SIZE)
+        fmt = GPU_RGBA8 if max(src_w, src_h) <= 128 else (GPU_ETC1A4 if has_alpha else GPU_ETC1)
+        if has_alpha:
+            rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
+        if (w, h) != (src_w, src_h):
+            # Pad by repeating the edge texels: filtering at the image's edge then sees the edge itself.
+            texels = np.asarray(rgba)
+            texels = np.pad(texels, ((0, h - src_h), (0, w - src_w), (0, 0)), mode="edge")
+            rgba = Image.fromarray(texels, "RGBA")
+            flags |= FLAG_PADDED
     else:
-        fmt = GPU_ETC1A4 if has_alpha else GPU_ETC1
+        w, h = pow2_size(src_w, max_size), pow2_size(src_h, max_size)
+        if (w, h) != (src_w, src_h):
+            rgba = rgba.resize(
+                (w, h), Image.Resampling.LANCZOS if w < src_w or h < src_h else Image.Resampling.BICUBIC)
 
-    if has_alpha:
-        rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
+        small_raw = name.endswith(".dds") and dds_is_uncompressed(raw) and max(w, h) <= 128
+        if small_raw:
+            fmt = GPU_RGBA8
+        else:
+            fmt = GPU_ETC1A4 if has_alpha else GPU_ETC1
+
+        if has_alpha:
+            rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
 
     rgba = rgba.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
@@ -227,6 +286,8 @@ def cook_one(job):
         out = os.path.join(tmp, "out.bin")
         (rgba if has_alpha else rgba.convert("RGB")).save(png)
         cmd = [tex3ds, "-f", TEX3DS_FORMAT[fmt], "-m", "box", "-z", "none", "-r", "-o", out, png]
+        if ui:
+            cmd[3:5] = []  # no mipmaps
         if fmt != GPU_RGBA8:
             cmd[1:1] = ["-q", quality]
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -246,7 +307,7 @@ def cook_one(job):
     while True:
         expected += lw * lh * BITS_PER_PIXEL[fmt] // 8
         levels += 1
-        if lw <= 8 or lh <= 8:
+        if ui or lw <= 8 or lh <= 8:
             break
         lw //= 2
         lh //= 2
@@ -261,7 +322,9 @@ def main():
     parser.add_argument("--data", required=True, help='Morrowind "Data Files" directory (read only)')
     parser.add_argument("--out", required=True, help="output pack file")
     parser.add_argument("--archives", default="Morrowind.bsa", help="comma-separated BSAs, in load order")
-    parser.add_argument("--prefixes", default="textures/", help="comma-separated VFS path prefixes to cook")
+    parser.add_argument("--prefixes", default="textures/,icons/,bookart/",
+                        help="comma-separated VFS path prefixes to cook")
+    parser.add_argument("--resources", default="", help="OpenMW's resources/vfs (its own UI textures), read first")
     parser.add_argument("--max-size", type=int, default=256, help="largest cooked dimension (power of two)")
     parser.add_argument("--quality", default="medium", choices=("low", "medium", "high"), help="ETC1 quality")
     parser.add_argument("--tex3ds", default=DEFAULT_TEX3DS)
@@ -272,7 +335,7 @@ def main():
     started = time.time()
     archives = [a.strip() for a in args.archives.split(",") if a.strip()]
     prefixes = tuple(normalize(p.strip()) for p in args.prefixes.split(",") if p.strip())
-    sources = collect_sources(args.data, archives, prefixes)
+    sources = collect_sources(args.data, archives, prefixes, args.resources)
     keys = sorted(sources)
     if args.limit:
         keys = keys[: args.limit]
@@ -325,6 +388,8 @@ def main():
         size = f.tell()
     os.replace(tmp_out, args.out)
 
+    ui_count = sum(1 for e in entries if e[9] & FLAG_PADDED)
+    print(f"  UI images padded to a power of two (no mipmaps): {ui_count}")
     names = {GPU_RGBA8: "RGBA8", GPU_ETC1: "ETC1", GPU_ETC1A4: "ETC1A4"}
     for fmt, (count, total) in sorted(by_format.items()):
         print(f"  {names[fmt]:7s} {count:5d} textures {total / 1048576:7.1f} MB")

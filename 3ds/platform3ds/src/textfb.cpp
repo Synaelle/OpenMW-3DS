@@ -1,9 +1,23 @@
 #include <platform3ds/textfb.hpp>
 
+#include <atomic>
+
 extern "C" const u8 default_font_bin[]; // libctru console font: 256 glyphs, 8x8, 1 bpp
 
 namespace p3ds::textfb
 {
+    static std::atomic<bool> gGpuOwned{ false };
+
+    void setGpuOwned(bool owned)
+    {
+        gGpuOwned = owned;
+    }
+
+    bool gpuOwned()
+    {
+        return gGpuOwned;
+    }
+
     // The 3DS LCD framebuffer is rotated: it is stored as 320 columns of 240 pixels, each column
     // running bottom to top. Screen pixel (x, y) with y pointing down lives at x*240 + (239 - y).
     static inline uint16_t* pixelPtr(uint16_t* fb, int x, int y)
@@ -26,6 +40,8 @@ namespace p3ds::textfb
 
     void clear(uint16_t c)
     {
+        if (gGpuOwned)
+            return;
         uint16_t* fb = framebuffer();
         for (int i = 0; i < kWidth * kHeight; ++i)
             fb[i] = c;
@@ -33,7 +49,7 @@ namespace p3ds::textfb
 
     void fillRows(int row, int rowCount, uint16_t c)
     {
-        if (row < 0 || row >= kRows)
+        if (row < 0 || row >= kRows || gGpuOwned)
             return;
         if (row + rowCount > kRows)
             rowCount = kRows - row;
@@ -51,7 +67,7 @@ namespace p3ds::textfb
 
     void drawText(int col, int row, const char* text, uint16_t fg, uint16_t bg, int maxChars)
     {
-        if (row < 0 || row >= kRows)
+        if (row < 0 || row >= kRows || gGpuOwned)
             return;
         uint16_t* fb = framebuffer();
         for (int i = 0; i < maxChars && text[i] != '\0'; ++i)
@@ -76,6 +92,8 @@ namespace p3ds::textfb
 
     void present()
     {
+        if (gGpuOwned)
+            return;
         GSPGPU_FlushDataCache(framebuffer(), kWidth * kHeight * sizeof(uint16_t));
         gfxScreenSwapBuffers(GFX_BOTTOM, false);
     }

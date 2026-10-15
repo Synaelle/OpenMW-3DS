@@ -35,6 +35,8 @@
 #include <osg/Stats>
 #include <osgViewer/Viewer>
 
+#include <MyGUI_InputManager.h>
+
 #include <3ds.h>
 
 #include <algorithm>
@@ -231,6 +233,31 @@ namespace omw3ds
 
     namespace
     {
+        // The touch screen as MyGUI's mouse, in canvas coordinates (the bottom screen's place in it:
+        // Render3DS::kGuiBottomX/Y). Held touches move; touching and lifting press and release the left button.
+        void injectTouchToGui()
+        {
+            MyGUI::InputManager* input = MyGUI::InputManager::getInstancePtr();
+            if (input == nullptr)
+                return;
+            static bool sDown = false;
+            static int sX = 0, sY = 0;
+            const bool down = (hidKeysHeld() & KEY_TOUCH) != 0;
+            if (down)
+            {
+                touchPosition touch;
+                hidTouchRead(&touch);
+                sX = touch.px + Render3DS::kGuiBottomX;
+                sY = touch.py + Render3DS::kGuiBottomY;
+                input->injectMouseMove(sX, sY, 0);
+                if (!sDown)
+                    input->injectMousePress(sX, sY, MyGUI::MouseButton::Left);
+            }
+            else if (sDown)
+                input->injectMouseRelease(sX, sY, MyGUI::MouseButton::Left);
+            sDown = down;
+        }
+
         // HOME menu / power button: SDL only services APT in its 3DS video driver, which we don't use.
         // aptMainLoop() blocks while the app is suspended and returns false when it must close.
         void closeRequested(bool loading);
@@ -339,7 +366,21 @@ namespace omw3ds
 #ifdef OPENMW3DS_DEBUG
         debug::applyScriptedInput(gStats.frameIndex);
 #endif
-        if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
+        // M8: MyGUI draws the bottom screen, except while an M6 text menu shows there (until each window has its
+        // M8 version); the text display then gets the whole screen back.
+        if (gBottomReady && Render3DS::drawsGui())
+        {
+            const bool guiBottom = !gBottom.menuActive();
+            if (guiBottom != Render3DS::guiOwnsBottomScreen())
+            {
+                Render3DS::setGuiOwnsBottomScreen(guiBottom);
+                if (!guiBottom)
+                    gBottom.redrawAll();
+            }
+        }
+        if (Render3DS::guiOwnsBottomScreen())
+            injectTouchToGui();
+        else if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
         {
             touchPosition touch;
             hidTouchRead(&touch);

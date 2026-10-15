@@ -77,6 +77,9 @@ int main(int, char**)
     // on the PC by tools/cook_textures.py.
     if (!Render3DS::init())
         P3DS_LOGE("citro3d renderer failed to start: running headless");
+    // M8's UI (MyGUI drawn on both screens) while it's being built: on with sdmc:/openmw/m8ui, otherwise the M6
+    // text menus.
+    Render3DS::setDrawsGui(access("sdmc:/openmw/m8ui", F_OK) == 0);
     Render3DS::openTexturePack("sdmc:/openmw/cooked/textures.o3tp");
 
     // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)

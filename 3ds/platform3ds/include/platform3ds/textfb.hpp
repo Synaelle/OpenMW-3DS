@@ -43,4 +43,10 @@ namespace p3ds::textfb
 
     // Flushes the CPU cache for the framebuffer and presents it.
     void present();
+
+    // While the GPU draws the bottom screen (M8's UI: citro3d transfers into this framebuffer), clear, fillRows,
+    // drawText and present do nothing, so the debug display and the watchdog's heartbeat leave it alone. The crash
+    // screen takes it back (setGpuOwned(false)).
+    void setGpuOwned(bool owned);
+    bool gpuOwned();
 }

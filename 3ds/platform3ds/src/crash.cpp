@@ -228,6 +228,7 @@ namespace p3ds::crash
         void showScreenAndExit(const char* headline)
         {
             using namespace textfb;
+            setGpuOwned(false); // the crash screen always shows, even over M8's GPU-drawn bottom screen
             clear(color::darkRed);
             drawText(1, 1, "OpenMW 3DS stopped", color::white, color::darkRed);
             drawText(1, 3, headline, color::yellow, color::darkRed, kCols - 2);

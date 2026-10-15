@@ -30,6 +30,14 @@ namespace p3ds
         // consumeMenuSelection returns the touched option's index once, else -1.
         void setMenu(const MenuView* menu);
         int consumeMenuSelection();
+        bool menuActive() const { return mMenuActive; }
+
+        // Everything again at the next render (the screen was drawn by something else meanwhile: M8's GUI).
+        void redrawAll()
+        {
+            mNeedsClear = true;
+            mLastRedrawTick = 0;
+        }
 
         // Redraws immediately, ignoring the rate limit (progress display during long blocking steps).
         void forceRedraw();

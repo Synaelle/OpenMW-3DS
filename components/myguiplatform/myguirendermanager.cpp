@@ -18,6 +18,8 @@
 
 #include "myguitexture.hpp"
 #ifdef OPENMW_PLATFORM_3DS
+#include <osg/BlendFunc>
+
 #include <components/render3ds/render3ds.hpp>
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
 #endif
@@ -227,6 +229,11 @@ namespace MyGUIPlatform
             mBatchVector[mWriteTo].clear();
         }
 
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS backend doesn't draw the GUI camera's stage: it reads the batches collected in this frame's cull.
+        const std::vector<Batch>& collectedBatches() const { return mBatchVector[mWriteTo]; }
+#endif
+
         osg::StateSet* getDrawableStateSet() { return mStateSet; }
 
         META_Object(osgMyGUI, Drawable)
@@ -243,6 +250,44 @@ namespace MyGUIPlatform
 
         osg::ref_ptr<osg::Texture2D> mDummyTexture;
     };
+
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        const Drawable* sDrawable3DS = nullptr;
+
+        Render3DS::GuiBlend blendOf(const osg::StateSet* stateSet)
+        {
+            const auto* blendFunc = stateSet != nullptr
+                ? static_cast<const osg::BlendFunc*>(stateSet->getAttribute(osg::StateAttribute::BLENDFUNC))
+                : nullptr;
+            if (blendFunc == nullptr)
+                return Render3DS::GuiBlend::Alpha;
+            if (blendFunc->getDestination() == osg::BlendFunc::ONE)
+                return Render3DS::GuiBlend::Additive;
+            if (blendFunc->getSource() == osg::BlendFunc::ONE)
+                return Render3DS::GuiBlend::Premultiplied;
+            return Render3DS::GuiBlend::Alpha;
+        }
+
+        void forEachGuiBatch(Render3DS::GuiBatchSink sink)
+        {
+            if (sDrawable3DS == nullptr)
+                return;
+            for (const Drawable::Batch& batch : sDrawable3DS->collectedBatches())
+            {
+                if (batch.mVertexCount == 0 || batch.mArray == nullptr || batch.mArray->getNumElements() == 0)
+                    continue;
+                Render3DS::GuiBatch out;
+                out.mTexture = batch.mTexture.get();
+                out.mVertices = batch.mArray->getDataPointer();
+                out.mCount = static_cast<uint32_t>(batch.mVertexCount);
+                out.mBlend = blendOf(batch.mStateSet.get());
+                sink(out);
+            }
+        }
+    }
+#endif
 
     class OSGVertexBuffer : public MyGUI::IVertexBuffer
     {
@@ -421,6 +466,10 @@ namespace MyGUIPlatform
     {
         MYGUI_PLATFORM_LOG(Info, "* Shutdown: " << getClassTypeName());
 
+#ifdef OPENMW_PLATFORM_3DS
+        Render3DS::setGuiSource(nullptr);
+        sDrawable3DS = nullptr;
+#endif
         if (mGuiRoot.valid())
             mSceneRoot->removeChild(mGuiRoot.get());
         mGuiRoot = nullptr;
@@ -454,6 +503,10 @@ namespace MyGUIPlatform
 
         mGuiRoot = camera;
         mSceneRoot->addChild(mGuiRoot.get());
+#ifdef OPENMW_PLATFORM_3DS
+        sDrawable3DS = mDrawable.get();
+        Render3DS::setGuiSource(&forEachGuiBatch);
+#endif
 
         osg::ref_ptr<osg::Viewport> vp = mViewer->getCamera()->getViewport();
         setViewSize(static_cast<int>(vp->width()), static_cast<int>(vp->height()));
@@ -554,6 +607,14 @@ namespace MyGUIPlatform
 
     void RenderManager::setViewSize(int width, int height)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // One canvas for both screens (Render3DS::kGuiCanvas*), whatever the window says.
+        if (Render3DS::drawsGui())
+        {
+            width = Render3DS::kGuiCanvasWidth;
+            height = Render3DS::kGuiCanvasHeight;
+        }
+#endif
         if (width < 1)
             width = 1;
         if (height < 1)

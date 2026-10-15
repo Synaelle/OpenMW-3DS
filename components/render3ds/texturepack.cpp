@@ -136,13 +136,15 @@ namespace Render3DS
         LightLock_Unlock(&linearLock());
     }
 
-    CookedImage::CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, GPU_TEXCOLOR format,
-        uint8_t levels, uint8_t flags)
+    CookedImage::CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, uint16_t srcWidth,
+        uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags)
         : mGpuData(data)
         , mGpuSize(size)
         , mGpuFormat(format)
         , mLevels(levels)
         , mFlags(flags)
+        , mSrcWidth(srcWidth)
+        , mSrcHeight(srcHeight)
     {
         const GLenum glFormat = glFormatFor(format);
         setImage(width, height, 1, glFormat, glFormat, GL_UNSIGNED_BYTE, static_cast<unsigned char*>(data),
@@ -230,10 +232,21 @@ namespace Render3DS
             GSPGPU_FlushDataCache(data, entry.mSize);
 
             osg::ref_ptr<osg::Image> image = new CookedImage(data, entry.mSize, entry.mWidth, entry.mHeight,
-                static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels, entry.mFlags);
+                entry.mSrcWidth, entry.mSrcHeight, static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels,
+                entry.mFlags);
             image->setFileName(std::string(name));
             return image;
         }
+    }
+
+    bool cookedSourceSize(const osg::Image& image, int& width, int& height)
+    {
+        const auto* cooked = dynamic_cast<const CookedImage*>(&image);
+        if (cooked == nullptr || cooked->sourceWidth() == 0 || cooked->sourceHeight() == 0)
+            return false;
+        width = cooked->sourceWidth();
+        height = cooked->sourceHeight();
+        return true;
     }
 
     osg::ref_ptr<osg::Image> loadCookedImage(std::string_view normalizedPath)

@@ -27,6 +27,7 @@
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/screenshot.hpp>
+#include <platform3ds/textfb.hpp>
 
 #include <citro3d.h>
 
@@ -2568,6 +2569,205 @@ namespace Render3DS
             return true;
         }
 
+        // ------------------------------------------------------------------ MyGUI (M8)
+
+        // The bottom screen stays RGB565 and single-buffered (platform3ds textfb): only frames in which the UI on it
+        // changed are drawn and transferred (citro3d only transfers targets drawn on in the frame).
+        constexpr u32 kBottomTransferFlags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0)
+            | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8)
+            | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+        constexpr uint32_t kGuiMaxVertices = 65536; // 1.5 MB of linear memory at most
+
+        bool gDrawsGui = false;
+        GuiBatchSource gGuiSource = nullptr;
+        C3D_RenderTarget* gBottomTarget = nullptr; // created when the GUI first owns the bottom screen
+        bool gGuiOwnsBottom = false;
+        uint64_t gBottomHash = 0; // what the bottom screen shows (0: redraw)
+        int gFlatProjection = -1;
+        int gFlatModelView = -1;
+
+        struct GuiVertex
+        {
+            float mPosition[3];
+            uint8_t mColor[4];
+            float mTexCoord[2];
+        };
+        static_assert(sizeof(GuiVertex) == 24);
+        GuiVertex* gGuiBuffer = nullptr; // linear memory, grows on demand
+        uint32_t gGuiCapacity = 0;
+
+        struct GuiDraw
+        {
+            uint32_t mFirst;
+            uint32_t mCount;
+            C3D_Tex* mTexture;
+            GuiBlend mBlend;
+        };
+        std::vector<GuiBatch> gGuiBatches;
+        std::vector<GuiDraw> gGuiDraws;
+
+        bool ensureGuiCapacity(uint32_t vertices)
+        {
+            if (vertices <= gGuiCapacity)
+                return true;
+            uint32_t capacity = std::max<uint32_t>(4096, gGuiCapacity);
+            while (capacity < vertices)
+                capacity *= 2;
+            if (capacity > kGuiMaxVertices)
+                return false;
+            // The GPU finished the previous frame (beginFrame) and nothing drew from the old buffer in this one.
+            gpuFree(gGuiBuffer);
+            gGuiBuffer = static_cast<GuiVertex*>(gpuAlloc(capacity * sizeof(GuiVertex)));
+            gGuiCapacity = gGuiBuffer != nullptr ? capacity : 0;
+            if (gGuiBuffer == nullptr)
+                P3DS_LOGW("render3ds: no linear memory for %lu GUI vertices", (unsigned long)capacity);
+            return gGuiBuffer != nullptr;
+        }
+
+        // Copies this frame's batches into the GUI buffer (texture coordinates of padded UI textures scaled to the
+        // image) and returns a hash of what they draw.
+        uint64_t prepareGuiDraws()
+        {
+            gGuiBatches.clear();
+            gGuiDraws.clear();
+            gGuiSource([](const GuiBatch& batch) { gGuiBatches.push_back(batch); });
+            uint32_t total = 0;
+            for (const GuiBatch& batch : gGuiBatches)
+                total += batch.mCount;
+            if (total == 0 || !ensureGuiCapacity(total))
+                return 0;
+
+            uint64_t hash = 0xCBF29CE484222325ull;
+            auto mix = [&hash](uint64_t value) { hash = (hash ^ value) * 0x100000001B3ull; };
+            uint32_t used = 0;
+            for (const GuiBatch& batch : gGuiBatches)
+            {
+                C3D_Tex* texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
+                float scaleU = 1.f, scaleV = 1.f;
+                const osg::Image* image
+                    = batch.mTexture != nullptr && batch.mTexture->getNumImages() > 0 ? batch.mTexture->getImage(0) : nullptr;
+                const auto* cooked = dynamic_cast<const CookedImage*>(image);
+                if (cooked != nullptr && cooked->padded())
+                {
+                    scaleU = float(cooked->sourceWidth()) / float(cooked->s());
+                    scaleV = float(cooked->sourceHeight()) / float(cooked->t());
+                }
+                // Images made at runtime (MyGUI's font atlases) are uploaded with their first row at t = 0, the
+                // cooked ones (which MyGUI's v = 0 at the top expects) flipped: mirror v for the runtime ones.
+                const bool flipV = image != nullptr && cooked == nullptr;
+                GuiVertex* out = gGuiBuffer + used;
+                std::memcpy(out, batch.mVertices, batch.mCount * sizeof(GuiVertex));
+                if (scaleU != 1.f || scaleV != 1.f || flipV)
+                    for (uint32_t i = 0; i < batch.mCount; ++i)
+                    {
+                        out[i].mTexCoord[0] *= scaleU;
+                        out[i].mTexCoord[1] = flipV ? 1.f - out[i].mTexCoord[1] : out[i].mTexCoord[1] * scaleV;
+                    }
+                const auto* words = reinterpret_cast<const uint32_t*>(out);
+                for (uint32_t i = 0, n = batch.mCount * sizeof(GuiVertex) / 4; i < n; ++i)
+                    mix(words[i]);
+                mix(reinterpret_cast<uintptr_t>(texture));
+                mix(image != nullptr ? image->getModifiedCount() : 0);
+                mix(static_cast<uint64_t>(batch.mBlend));
+                gGuiDraws.push_back(GuiDraw{ used, batch.mCount, texture, batch.mBlend });
+                used += batch.mCount;
+            }
+            flushToGpu(gGuiBuffer, used * sizeof(GuiVertex));
+            return hash | 1; // never 0 ("redraw")
+        }
+
+        // Draws the GUI on one screen. The canvas's clip space (x right, y up) maps to the screen's by
+        // x_s = scaleX * x, y_s = 2 * y + offsetY, then the screens' 90-degree rotation (x' = y_s, y' = -x_s, as
+        // setProjection) and the fixed depth z' = -0.5 (no depth test).
+        void drawGuiOn(C3D_RenderTarget* target, float scaleX, float offsetY)
+        {
+            C3D_FrameDrawOn(target);
+            C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
+            projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
+            projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
+            projection[2] = FVec4_New(0.f, 0.f, 0.f, -0.5f);
+            projection[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
+            C3D_FVec* modelView = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatModelView, 4);
+            modelView[0] = FVec4_New(1.f, 0.f, 0.f, 0.f);
+            modelView[1] = FVec4_New(0.f, 1.f, 0.f, 0.f);
+            modelView[2] = FVec4_New(0.f, 0.f, 1.f, 0.f);
+            modelView[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
+
+            C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
+            int blend = -1;
+            for (const GuiDraw& draw : gGuiDraws)
+            {
+                if (draw.mTexture != bound)
+                {
+                    bound = draw.mTexture;
+                    if (bound != nullptr)
+                        C3D_TexBind(0, bound);
+                    gBound.mTexEnv = -1;
+                    setTexEnv(bound != nullptr ? TexEnv_Textured : TexEnv_VertexColor);
+                }
+                if (static_cast<int>(draw.mBlend) != blend)
+                {
+                    blend = static_cast<int>(draw.mBlend);
+                    switch (draw.mBlend)
+                    {
+                        case GuiBlend::Additive:
+                            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
+                            break;
+                        case GuiBlend::Premultiplied:
+                            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE,
+                                GPU_ONE_MINUS_SRC_ALPHA);
+                            break;
+                        default:
+                            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+                                GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+                            break;
+                    }
+                }
+                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(draw.mFirst), static_cast<int>(draw.mCount));
+                ++gStats.mGuiDraws;
+            }
+        }
+
+        void drawGui()
+        {
+            if (!gDrawsGui || gGuiSource == nullptr || gFlatProjection < 0)
+                return;
+            p3ds::perf::Phase phase("guiDraw");
+            const uint64_t hash = prepareGuiDraws();
+            if (gGuiDraws.empty())
+                return;
+
+            C3D_BindProgram(&gFlatProgram);
+            C3D_AttrInfo* attr = C3D_GetAttrInfo();
+            AttrInfo_Init(attr);
+            AttrInfo_AddLoader(attr, Attr_Position, GPU_FLOAT, 3);
+            AttrInfo_AddLoader(attr, Attr_Color, GPU_UNSIGNED_BYTE, 4);
+            AttrInfo_AddLoader(attr, Attr_TexCoord, GPU_FLOAT, 2);
+            C3D_BufInfo* buf = C3D_GetBufInfo();
+            BufInfo_Init(buf);
+            buf->base_paddr = gBufferBase;
+            BufInfo_Add(buf, gGuiBuffer, sizeof(GuiVertex), 3, 0x210);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+            C3D_CullFace(GPU_CULL_NONE);
+
+            // Top screen: the canvas's upper half (y in [0, 1]).
+            drawGuiOn(gTarget, 1.f, -1.f);
+            // Bottom screen: x in [-0.8, 0.8] (canvas pixels 40..360), y in [-1, 0]; only when it changed.
+            if (gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
+            {
+                C3D_RenderTargetClear(gBottomTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
+                drawGuiOn(gBottomTarget,
+                    float(kGuiCanvasWidth) / float(kGuiCanvasWidth - 2 * kGuiBottomX), 1.f);
+                gBottomHash = hash;
+                ++gStats.mGuiBottomFrames;
+            }
+
+            // The rest of the frame's state is the scene's: rebind it when the next frame starts (beginFrame).
+            gBound = Bound{};
+            gSceneBuffer = nullptr;
+        }
+
         void drawMainStage(osgUtil::RenderStage* stage)
         {
             p3ds::perf::Phase phase("drawEmit");
@@ -2617,6 +2817,8 @@ namespace Render3DS
                 gVerifiedDraws = 0;
             }
             gVerifyThisFrame = false;
+
+            drawGui();
 
             gStats.mEmitMs += static_cast<float>(p3ds::memprobe::ticks() - start) / CPU_TICKS_PER_MSEC;
         }
@@ -2724,6 +2926,10 @@ namespace Render3DS
         gLoc.mMatEmission = loc("matEmission");
         gLoc.mColorSel = loc("colorSel");
         gLoc.mLights = loc("lights");
+        gFlatProjection = shaderInstanceGetUniformLocation(gFlatProgram.vertexShader, "projection");
+        gFlatModelView = shaderInstanceGetUniformLocation(gFlatProgram.vertexShader, "modelView");
+        if (gFlatProjection < 0 || gFlatModelView < 0)
+            P3DS_LOGE("render3ds: flat shader uniforms not found: no GUI");
         for (shaderProgram_s* variant : { &gProgram1, &gProgram0 })
         {
             if (!gVariants)
@@ -2813,9 +3019,45 @@ namespace Render3DS
         return gFailure;
     }
 
+    void setDrawsGui(bool draws)
+    {
+        gDrawsGui = draws;
+        P3DS_LOGI("render3ds: MyGUI %s", draws ? "drawn (M8 UI)" : "not drawn (text menus)");
+    }
+
     bool drawsGui()
     {
-        return false; // MyGUI is not drawn yet (M8)
+        return gDrawsGui;
+    }
+
+    void setGuiSource(GuiBatchSource source)
+    {
+        gGuiSource = source;
+    }
+
+    void setGuiOwnsBottomScreen(bool owns)
+    {
+        if (owns == gGuiOwnsBottom || !gActive)
+            return;
+        if (owns && gBottomTarget == nullptr)
+        {
+            gBottomTarget = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, -1);
+            if (gBottomTarget == nullptr)
+            {
+                P3DS_LOGE("render3ds: no bottom-screen render target: the GUI stays off the bottom screen");
+                return;
+            }
+            C3D_RenderTargetSetOutput(gBottomTarget, GFX_BOTTOM, GFX_LEFT, kBottomTransferFlags);
+        }
+        gGuiOwnsBottom = owns;
+        gBottomHash = 0;
+        p3ds::textfb::setGpuOwned(owns);
+        P3DS_LOGI("render3ds: bottom screen drawn by %s", owns ? "the GUI (GPU)" : "the text display (CPU)");
+    }
+
+    bool guiOwnsBottomScreen()
+    {
+        return gGuiOwnsBottom;
     }
 
     void requestCapture(const char* path)
