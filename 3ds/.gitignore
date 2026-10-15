@@ -4,3 +4,6 @@
 /out/
 
 /.deps/
+
+# Hardware test logs the tester drops in (3dslogs/logs/)
+/3dslogs/
