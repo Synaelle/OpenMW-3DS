@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS: the bottom screen's Debug page (debug builds, n3ds/hud3ds.cpp): the debug screen's lines (build,
+  FPS, cell, position, what the crosshair is on, game state, status) and its Screenshot button (the top screen, to
+  sdmc:/openmw/screenshots).
+-->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Page3DS" layer="Windows" position="40 262 320 218" name="_Main">
+        <Widget type="Widget" skin="MW_Box" position="2 2 308 90" align="Left Top">
+            <Widget type="TextBox" skin="SandText" position="6 4 296 82" name="DebugText3DS">
+                <Property key="FontName" value="Journalbook MonoFont"/>
+                <Property key="TextAlign" value="Left Top"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="2 96 120 24" name="ScreenshotButton3DS">
+            <Property key="Caption" value="#{OMW3DS:Screenshot}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+    </Widget>
+</MyGUI>

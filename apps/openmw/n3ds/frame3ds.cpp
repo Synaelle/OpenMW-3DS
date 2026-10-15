@@ -49,6 +49,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <sys/stat.h>
@@ -61,6 +62,7 @@ namespace omw3ds
         p3ds::FrameTimer gTimer;
         p3ds::FrameStats gStats;
         bool gBottomReady = false;
+        bool gScreenshotRequested = false; // M8's Debug tab
 
         // Cell name / position / player state are refreshed a few times a second only (string work).
         std::string gCellName = "-";
@@ -209,6 +211,29 @@ namespace omw3ds
                 P3DS_LOGI("state: %s", gStateLine);
             }
         }
+    }
+
+    std::string debugScreenText3DS()
+    {
+        std::string text;
+        for (int r = 0; r <= 6; ++r)
+        {
+            const uint16_t colour = p3ds::DebugBottomScreen::textRowColour(r);
+            char tag[8];
+            std::snprintf(tag, sizeof(tag), "#%02X%02X%02X", ((colour >> 11) & 31) * 255 / 31,
+                ((colour >> 5) & 63) * 255 / 63, (colour & 31) * 255 / 31);
+            std::string row = p3ds::DebugBottomScreen::textRow(r);
+            row.erase(0, row.find_first_not_of(' ')); // the title's margin
+            for (size_t at = row.find('#'); at != std::string::npos; at = row.find('#', at + 2))
+                row.insert(at, 1, '#'); // "##" is a '#' in MyGUI text
+            text += tag + row + "\n";
+        }
+        return text;
+    }
+
+    void requestScreenshot3DS()
+    {
+        gScreenshotRequested = true;
     }
 
     bool exteriorsEnabled()
@@ -418,7 +443,7 @@ namespace omw3ds
             hidTouchRead(&touch);
             gBottom.onTouch(p3ds::TouchEvent{ touch.px, touch.py, true });
         }
-        if (gBottomReady && gBottom.consumeScreenshotRequest())
+        if (gBottomReady && (gBottom.consumeScreenshotRequest() || std::exchange(gScreenshotRequested, false)))
         {
             static unsigned count = 0;
             if (count == 0)

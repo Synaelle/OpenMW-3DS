@@ -3,6 +3,8 @@
 
 // Per-frame 3DS hooks for the engine loop: bottom-screen display and frame-time log (debug tools in
 // debugtools.cpp).
+
+#include <string>
 namespace osgViewer
 {
     class Viewer;
@@ -34,6 +36,11 @@ namespace omw3ds
     // once OpenMW has saved what it keeps (settings, Lua storage, input bindings), skipping the engine's teardown:
     // ~16 s of freeing the world on hardware after the HOME Menu's Close (test #25). The system reclaims the memory.
     [[noreturn]] void exitProcess(int code);
+
+    // M8's Debug tab (hud3ds.cpp): the debug screen's rows (build, FPS, cell, position, look, state, status) as
+    // MyGUI text with colour tags, and its Screenshot button (the top screen, as the debug screen's button).
+    std::string debugScreenText3DS();
+    void requestScreenshot3DS();
 
     // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
     // hydration they ran out of memory; the switch stays for memory experiments.

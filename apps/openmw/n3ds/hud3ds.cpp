@@ -1,6 +1,7 @@
 // Nintendo 3DS HUD and bottom-screen tabs (see hud3ds.hpp).
 
 #include "hud3ds.hpp"
+#include "frame3ds.hpp"
 
 #include <algorithm>
 #include <array>
@@ -68,6 +69,7 @@ namespace omw3ds
             Items,
             Magic,
             Stats,
+            Debug, // debug builds
         };
     }
 
@@ -526,10 +528,58 @@ namespace omw3ds
 
         // ------------------------------------------------------------------ tabs
 
+        // ------------------------------------------------------------------ Debug page
+
+        // The debug screen's lines (frame3ds.cpp) while the GUI draws the bottom screen.
+        class DebugPage : public MWGui::Layout
+        {
+        public:
+            DebugPage()
+                : Layout("openmw_3ds_debug.layout")
+            {
+                getWidget(mText, "DebugText3DS");
+                MyGUI::Button* screenshot = nullptr;
+                getWidget(screenshot, "ScreenshotButton3DS");
+                screenshot->eventMouseButtonClick += MyGUI::newDelegate(this, &DebugPage::onScreenshot);
+                setVisible(false);
+            }
+
+            void show()
+            {
+                mShown.clear();
+                tick();
+                setVisible(true);
+            }
+
+            void hide() { setVisible(false); }
+
+            // The debug screen redraws at 4 Hz.
+            void tick()
+            {
+                if (mFrames++ % 15 != 0)
+                    return;
+                std::string text = debugScreenText3DS();
+                if (text == mShown)
+                    return;
+                mShown = std::move(text);
+                mText->setCaption(mShown);
+            }
+
+        private:
+            void onScreenshot(MyGUI::Widget*) { requestScreenshot3DS(); }
+
+            MyGUI::TextBox* mText = nullptr;
+            std::string mShown;
+            unsigned mFrames = 0;
+        };
+
+        // ------------------------------------------------------------------ tabs
+
         Tab sTab = Tab::None;
         std::unique_ptr<MWGui::Layout> sTabBar;
-        std::array<MyGUI::Button*, 3> sTabButtons{};
+        std::array<MyGUI::Button*, 4> sTabButtons{};
         std::unique_ptr<ItemsPage> sItems;
+        std::unique_ptr<DebugPage> sDebug;
         QuickKeyPicker sMagicPicker;
         const MWGui::SpellWindow* sMagicBoundTo = nullptr;
         Tab sShown = Tab::None;
@@ -551,6 +601,7 @@ namespace omw3ds
                 { "TabItems3DS", Tab::Items },
                 { "TabMagic3DS", Tab::Magic },
                 { "TabStats3DS", Tab::Stats },
+                { "TabDebug3DS", Tab::Debug },
             };
             for (size_t i = 0; i < std::size(tabs); ++i)
             {
@@ -558,6 +609,14 @@ namespace omw3ds
                 sTabButtons[i]->setUserData(tabs[i].second);
                 sTabButtons[i]->eventMouseButtonClick += MyGUI::newDelegate(&onTabClicked);
             }
+#ifdef OPENMW3DS_DEBUG
+            sDebug = std::make_unique<DebugPage>();
+#else
+            // No Debug tab: the other three share the bar.
+            sTabButtons[3]->setVisible(false);
+            for (int i = 0; i < 3; ++i)
+                sTabButtons[i]->setCoord(2 + i * 106, 1, 104, 21);
+#endif
             sItems = std::make_unique<ItemsPage>();
             return true;
         }
@@ -599,6 +658,13 @@ namespace omw3ds
                     sItems->show();
                 else
                     sItems->hide();
+                if (sDebug != nullptr)
+                {
+                    if (tab == Tab::Debug)
+                        sDebug->show();
+                    else
+                        sDebug->hide();
+                }
                 if (MWGui::SpellWindow* magic = Hud3DS::magic())
                 {
                     bindMagicPage(*magic);
@@ -610,6 +676,8 @@ namespace omw3ds
             showWindow(Hud3DS::stats(), tab == Tab::Stats);
             if (tab == Tab::Items)
                 sItems->tick();
+            else if (tab == Tab::Debug && sDebug != nullptr)
+                sDebug->tick();
         }
 
         // ------------------------------------------------------------------ HUD panel

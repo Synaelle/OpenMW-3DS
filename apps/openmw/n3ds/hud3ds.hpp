@@ -7,7 +7,8 @@
 // bottom screen is at (40, 240)).
 //
 // Pages: Inventory is the 3DS's own (openmw_3ds_items.layout: touch an item, then Equip/Use, Drop, Quick key);
-// Magic and Stats are OpenMW's windows with 3DS layouts, shown under the tab bar.
+// Magic and Stats are OpenMW's windows with 3DS layouts, shown under the tab bar; Debug (debug builds) shows the
+// debug screen's lines.
 
 #include <string>
 #include <string_view>

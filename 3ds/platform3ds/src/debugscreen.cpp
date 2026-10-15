@@ -241,6 +241,22 @@ namespace p3ds
         }
     }
 
+    std::string DebugBottomScreen::textRow(int r)
+    {
+        std::string text(gShadow[r], textfb::kCols);
+        std::replace(text.begin(), text.end(), '\0', ' '); // not drawn yet
+        text.erase(text.find_last_not_of(' ') + 1);
+        return text;
+    }
+
+    uint16_t DebugBottomScreen::textRowColour(int r)
+    {
+        for (int c = 0; c < textfb::kCols; ++c)
+            if (gShadow[r][c] != ' ' && gShadow[r][c] != '\0')
+                return gShadowFg[r][c];
+        return textfb::color::white;
+    }
+
     bool DebugBottomScreen::consumeScreenshotRequest()
     {
         const bool requested = mScreenshotRequested;

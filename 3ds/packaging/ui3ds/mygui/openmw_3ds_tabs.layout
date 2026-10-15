@@ -8,16 +8,21 @@
 -->
 <MyGUI type="Layout">
     <Widget type="Widget" skin="FullBlackBG" layer="Windows" position="40 240 320 22" name="_Main" align="Left Top">
-        <Widget type="Button" skin="MW_Button" position="2 1 104 21" name="TabItems3DS">
+        <!-- Debug builds; the others share its width when it's hidden (n3ds/hud3ds.cpp) -->
+        <Widget type="Button" skin="MW_Button" position="2 1 86 21" name="TabItems3DS">
             <Property key="Caption" value="#{sInventory}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="108 1 104 21" name="TabMagic3DS">
+        <Widget type="Button" skin="MW_Button" position="90 1 74 21" name="TabMagic3DS">
             <Property key="Caption" value="#{sMagicTab}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="214 1 104 21" name="TabStats3DS">
+        <Widget type="Button" skin="MW_Button" position="166 1 74 21" name="TabStats3DS">
             <Property key="Caption" value="#{sStats}"/>
+            <Property key="NeedKey" value="false"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="242 1 76 21" name="TabDebug3DS">
+            <Property key="Caption" value="#{OMW3DS:Debug}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
     </Widget>
