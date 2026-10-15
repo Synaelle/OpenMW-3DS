@@ -270,6 +270,7 @@ namespace omw3ds::debug
             unsigned mQuitAt = 0;
             unsigned mCloseAt = 0; // "close:N": like closing from the HOME Menu after N frames
             std::vector<unsigned> mShots;
+            std::vector<unsigned> mLoadViews; // "loading:N,...": both screens at the Nth tick of a load
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
             std::vector<ScriptedInput> mInputs;
             std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
@@ -297,6 +298,8 @@ namespace omw3ds::debug
             std::vector<std::pair<unsigned, std::string>> mUses;
             std::vector<std::pair<unsigned, int>> mPicks; // "pick:F,N" (any number): touch menu option N at frame F
         };
+        unsigned sLoadingTicks = 0; // since the last engine frame
+
         const Autorun& autorunScript()
         {
             static const Autorun autorun = [] {
@@ -399,6 +402,14 @@ namespace omw3ds::debug
                             result.mDoors.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
                         while (*end == ',');
                     }
+                    if (const char* q = std::strstr(buf, "loading:"))
+                    {
+                        char* end = const_cast<char*>(q + 8);
+                        do
+                            result.mLoadViews.push_back(
+                                unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
+                        while (*end == ',');
+                    }
                     if (const char* q = std::strstr(buf, "shot:"))
                     {
                         char* end = const_cast<char*>(q + 5);
@@ -491,6 +502,7 @@ namespace omw3ds::debug
     void runAutorun(unsigned frame)
     {
         const Autorun& autorun = autorunScript();
+        sLoadingTicks = 0;
         if (autorun.mQuitAt != 0 && frame == autorun.mQuitAt)
         {
             P3DS_LOGI("autorun: quitting after %u frames", autorun.mQuitAt);
@@ -595,6 +607,19 @@ namespace omw3ds::debug
             world->rotateObject(player, rot, MWBase::RotationFlag_none);
             P3DS_LOGI("debug: player turned to %.0f degrees", double(osg::RadiansToDegrees(rot.z())));
         }
+    }
+
+    void onLoadingTickAutorun()
+    {
+        const unsigned tick = ++sLoadingTicks;
+        for (unsigned view : autorunScript().mLoadViews)
+            if (view == tick)
+            {
+                const std::string name = "load" + std::to_string(view);
+                Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + name + ".bmp").c_str());
+                p3ds::screenshot::saveBottomScreen(("sdmc:/openmw/shot_bottom_" + name + ".bmp").c_str());
+                P3DS_LOGI("autorun: loading screens saved (%s)", name.c_str());
+            }
     }
 
     void applyScriptedInput(unsigned frame)

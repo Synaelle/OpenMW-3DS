@@ -382,6 +382,11 @@ namespace omw3ds
     void onLoadingTick()
     {
         serviceApt(true);
+#ifdef OPENMW3DS_DEBUG
+        debug::onLoadingTickAutorun();
+#endif
+        if (Render3DS::drawsGui())
+            onLoadingTick3DS();
         if (!gBottomReady)
             return;
         p3ds::GameSnapshot snap;

@@ -16,6 +16,10 @@ namespace omw3ds::debug
     // (quit, doors, screenshots, weather, hour, view, ...).
     void runAutorun(unsigned frame);
 
+    // Each loading tick (frame3ds.cpp onLoadingTick): autorun "loading:N,..." saves both screens at the Nth tick of
+    // a load (counted from the last engine frame) as sdmc:/openmw/shot_top_loadN.bmp and shot_bottom_loadN.bmp.
+    void onLoadingTickAutorun();
+
     // Right after hidScanInput(): the autorun script's buttons and sticks for this frame (n3ds/hidinject.cpp).
     void applyScriptedInput(unsigned frame);
 

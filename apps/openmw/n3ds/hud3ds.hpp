@@ -30,6 +30,10 @@ namespace omw3ds
     // tab bar and its pages show in game mode while the GUI draws the bottom screen.
     void updateHud3DS();
 
+    // Each loading tick (frame3ds.cpp): loading is a GUI mode, so the tabs and their pages go (the HUD's other
+    // parts read the player, which may be changing).
+    void onLoadingTick3DS();
+
     // The inventory key (B) and anything else opening the inventory: the Inventory tab instead of OpenMW's inventory
     // menu (which pauses the game). False if there are no tabs (OpenMW's own layouts).
     bool toggleInventoryTab3DS();

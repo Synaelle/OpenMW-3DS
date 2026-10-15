@@ -822,6 +822,12 @@ namespace omw3ds
         updateTabs();
     }
 
+    void onLoadingTick3DS()
+    {
+        if (Hud3DS::ready())
+            updateTabs();
+    }
+
     bool toggleInventoryTab3DS()
     {
         if (sTabBar == nullptr)
