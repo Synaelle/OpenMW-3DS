@@ -4,6 +4,8 @@
 #include "referenceinterface.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace Gui
 {
     class NumericEditBox;
@@ -22,6 +24,7 @@ namespace MWGui
 
     class TradeWindow : public WindowBase, public ReferenceInterface
     {
+        OMW3DS_MENU_FRIEND
     public:
         TradeWindow();
 

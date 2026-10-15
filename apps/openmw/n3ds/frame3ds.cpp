@@ -1,4 +1,5 @@
 #include "frame3ds.hpp"
+#include "menus.hpp"
 #ifdef OPENMW3DS_DEBUG
 #include "debugtools.hpp"
 #endif
@@ -138,43 +139,6 @@ namespace omw3ds
         }
 #endif
 
-        const char* guiModeName(MWGui::GuiMode mode)
-        {
-            switch (mode)
-            {
-                case MWGui::GM_Inventory:
-                    return "inventory";
-                case MWGui::GM_Container:
-                    return "container";
-                case MWGui::GM_Companion:
-                    return "companion";
-                case MWGui::GM_MainMenu:
-                    return "main menu";
-                case MWGui::GM_Journal:
-                    return "journal";
-                case MWGui::GM_Scroll:
-                case MWGui::GM_Book:
-                    return "book";
-                case MWGui::GM_Dialogue:
-                    return "dialogue";
-                case MWGui::GM_Barter:
-                    return "barter";
-                case MWGui::GM_Rest:
-                    return "rest";
-                case MWGui::GM_Levelup:
-                    return "level up";
-                case MWGui::GM_Loading:
-                case MWGui::GM_LoadingWallpaper:
-                    return "loading";
-                case MWGui::GM_QuickKeysMenu:
-                    return "quick keys";
-                case MWGui::GM_None:
-                    return "message";
-                default:
-                    return "service";
-            }
-        }
-
         void refreshWorldInfo()
         {
             const MWBase::Environment& env = MWBase::Environment::get();
@@ -206,17 +170,17 @@ namespace omw3ds
             }
 #endif
 
-            // No HUD and no menus are drawn until M8: say what the game is waiting for.
+            // No HUD until M8 (menus are on the bottom screen, menus.cpp): say what the game is waiting for.
             const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
             MWBase::WindowManager* windows = env.getWindowManager();
             if (stats.isDead())
             {
-                std::snprintf(gStateLine, sizeof(gStateLine), "DEAD (no load menu yet: HOME, close)");
+                std::snprintf(gStateLine, sizeof(gStateLine), "DEAD (load a save below)");
                 gStateAlert = true;
             }
             else if (windows->isGuiMode())
             {
-                std::snprintf(gStateLine, sizeof(gStateLine), "menu: %s - not drawn, B closes",
+                std::snprintf(gStateLine, sizeof(gStateLine), "menu: %s",
                     windows->isConsoleMode() ? "console" : guiModeName(windows->getMode()));
                 gStateAlert = true;
             }
@@ -255,9 +219,6 @@ namespace omw3ds
     void initBottomScreen(const char* status)
     {
         gBottom.init();
-#ifdef OPENMW3DS_DEBUG
-        gBottom.setTeleportTargets(debug::teleportLabels(), debug::teleportCount());
-#endif
         gBottomReady = true;
         p3ds::GameSnapshot snap;
         snap.cellName = status;
@@ -395,11 +356,8 @@ namespace omw3ds
             P3DS_LOGI("screenshot %s", path);
 #endif
         }
-#ifdef OPENMW3DS_DEBUG
         if (gBottomReady)
-            if (const int target = gBottom.consumeTeleportRequest(); target >= 0)
-                debug::teleport(target);
-#endif
+            refreshMenus(gBottom);
 
         const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
         gStats.drawCalls = render.mDraws;

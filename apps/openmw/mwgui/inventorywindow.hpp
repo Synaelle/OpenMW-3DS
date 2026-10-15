@@ -9,6 +9,8 @@
 
 #include <components/misc/notnullptr.hpp>
 
+#include "../n3ds/menufriend.hpp"
+
 namespace osg
 {
     class Group;
@@ -35,6 +37,7 @@ namespace MWGui
 
     class InventoryWindow : public WindowPinnableBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         explicit InventoryWindow(DragAndDrop& dragAndDrop, ItemTransfer& itemTransfer, osg::Group* parent,
             Resource::ResourceSystem* resourceSystem);

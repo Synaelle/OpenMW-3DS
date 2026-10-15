@@ -5,14 +5,15 @@
 namespace p3ds
 {
     // Bottom-screen debug display: build, then (debug builds) FPS, cell, position and view, the object in reach,
-    // then the game state, the teleport buttons (debug builds), the screenshot button, and the watchdog's alive
-    // line at the very bottom (crash.cpp). Everything else is in the log. Redraws at most kRedrawHz, only the
-    // characters that changed: a few hundred microseconds every 250 ms, and zero when hidden.
+    // then the game state, the screenshot button, and the watchdog's alive line at the very bottom (crash.cpp).
+    // Everything else is in the log. While a game menu is open (setMenu), it takes the middle rows: title, body
+    // text (touch its upper/lower half to scroll), options (touch to select, two per row, 10 per page). Redraws at
+    // most kRedrawHz, only the characters that changed: a few hundred microseconds every 250 ms, and zero when
+    // hidden.
     class DebugBottomScreen final : public IBottomScreen
     {
     public:
         static constexpr float kRedrawHz = 4.f;
-        static constexpr int kMaxTeleports = 8;
 
         void init() override;
         void shutdown() override;
@@ -25,10 +26,10 @@ namespace p3ds
         // True once after the SCREENSHOT button was tapped.
         bool consumeScreenshotRequest();
 
-        // Teleport buttons (debug builds): two columns of up to kMaxTeleports labels (the strings must outlive
-        // the screen). consumeTeleportRequest returns the tapped button's index once, else -1.
-        void setTeleportTargets(const char* const* labels, int count);
-        int consumeTeleportRequest();
+        // Game menu (rows 2-25, in place of the debug rows) while set; nullptr: none.
+        // consumeMenuSelection returns the touched option's index once, else -1.
+        void setMenu(const MenuView* menu);
+        int consumeMenuSelection();
 
         // Redraws immediately, ignoring the rate limit (progress display during long blocking steps).
         void forceRedraw();
@@ -39,6 +40,7 @@ namespace p3ds
     private:
         void redraw();
         void drawStatic();
+        void drawMenu();
 
         GameSnapshot mSnapshot;
         FrameStats mFrameCopy;
@@ -46,10 +48,12 @@ namespace p3ds
         char mStatus[64] = {};
         char mLooking[64] = {};
         char mState[64] = {};
-        char mTeleportNote[48] = {};
-        const char* const* mTeleportLabels = nullptr;
-        int mTeleportCount = 0;
-        int mTeleportRequest = -1;
+        bool mMenuActive = false;
+        MenuView mMenu;
+        std::vector<std::string> mMenuLines; // the body, wrapped
+        int mMenuScroll = 0; // first body line shown
+        int mMenuPage = 0; // options page
+        int mMenuSelection = -1;
         bool mScreenshotRequested = false;
         bool mVisible = true;
         bool mNeedsClear = true;

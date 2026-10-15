@@ -4,11 +4,14 @@
 #include "../mwworld/ptr.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
 
     class MerchantRepair : public WindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         MerchantRepair();
 

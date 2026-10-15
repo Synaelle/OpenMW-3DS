@@ -7,10 +7,13 @@
 
 #include <components/widgets/imagebutton.hpp>
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
     class BookWindow : public BookWindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         BookWindow();
 

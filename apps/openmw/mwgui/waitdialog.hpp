@@ -5,6 +5,8 @@
 #include "windowbase.hpp"
 #include <components/esm/refid.hpp>
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
 
@@ -24,6 +26,7 @@ namespace MWGui
 
     class WaitDialog : public WindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         WaitDialog();
 

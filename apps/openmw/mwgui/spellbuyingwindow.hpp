@@ -4,6 +4,8 @@
 #include "referenceinterface.hpp"
 #include "windowbase.hpp"
 #include <components/esm/refid.hpp>
+
+#include "../n3ds/menufriend.hpp"
 namespace ESM
 {
     struct Spell;
@@ -19,6 +21,7 @@ namespace MWGui
 {
     class SpellBuyingWindow : public ReferenceInterface, public WindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         SpellBuyingWindow();
 

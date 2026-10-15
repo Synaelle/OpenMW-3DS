@@ -2,6 +2,7 @@
 
 #include "frame3ds.hpp"
 #include "hidinject.hpp"
+#include "menus.hpp"
 
 #include <platform3ds/log.hpp>
 
@@ -27,6 +28,7 @@
 #include <components/esm3/loadbook.hpp>
 #include <components/esm3/loaddial.hpp>
 #include <components/esm3/loaddoor.hpp>
+#include <components/esm3/loadnpc.hpp>
 #include <components/esm3/loadregn.hpp>
 #include <components/render3ds/render3ds.hpp>
 
@@ -189,6 +191,69 @@ namespace omw3ds::debug
             MWBase::Environment::get().getLuaManager()->objectActivated(nearest, player);
         }
 
+        // autorun "talk:F": activate the nearest other actor (a dialogue with an NPC).
+        void talkToNearestActor()
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
+            MWWorld::Ptr nearest;
+            float best = 0;
+            player.getCell()->forEachType<ESM::NPC>([&](const MWWorld::Ptr& npc) {
+                if (npc == player || !npc.getRefData().isEnabled() || npc.getRefData().getBaseNode() == nullptr)
+                    return true;
+                const float distance = (npc.getRefData().getPosition().asVec3() - playerPos).length2();
+                if (nearest.isEmpty() || distance < best)
+                {
+                    nearest = npc;
+                    best = distance;
+                }
+                return true;
+            });
+            if (nearest.isEmpty())
+            {
+                P3DS_LOGW("autorun: no one to talk to");
+                return;
+            }
+            P3DS_LOGI("autorun: talking to %s", nearest.getCellRef().getRefId().toDebugString().c_str());
+            MWBase::Environment::get().getLuaManager()->objectActivated(nearest, player);
+        }
+
+        // autorun "use:F,TEXT": activate the nearest object (in the scene) whose id contains TEXT (any case).
+        void useNearest(std::string text)
+        {
+            const auto lower = [](std::string value) {
+                for (char& c : value)
+                    c = char(std::tolower(static_cast<unsigned char>(c)));
+                return value;
+            };
+            text = lower(text);
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
+            MWWorld::Ptr nearest;
+            float best = 0;
+            player.getCell()->forEach([&](const MWWorld::Ptr& ptr) {
+                if (ptr == player || !ptr.getRefData().isEnabled() || ptr.getRefData().getBaseNode() == nullptr
+                    || lower(ptr.getCellRef().getRefId().toDebugString()).find(text) == std::string::npos)
+                    return true;
+                const float distance = (ptr.getRefData().getPosition().asVec3() - playerPos).length2();
+                if (nearest.isEmpty() || distance < best)
+                {
+                    nearest = ptr;
+                    best = distance;
+                }
+                return true;
+            });
+            if (nearest.isEmpty())
+            {
+                P3DS_LOGW("autorun: nothing matching \"%s\" to use", text.c_str());
+                return;
+            }
+            P3DS_LOGI("autorun: using %s", nearest.getCellRef().getRefId().toDebugString().c_str());
+            MWBase::Environment::get().getLuaManager()->objectActivated(nearest, player);
+        }
+
         // Automated runs, sdmc:/openmw/autorun.txt: "quit:N" quits after N game frames (tests shutdown),
         // "shot:N,M,..." saves the top screen at those frames (sdmc:/openmw/shot_top_N.bmp).
         struct Autorun
@@ -216,8 +281,12 @@ namespace omw3ds::debug
             std::string mViewCell;
             unsigned mHourAt = 0; // "hour:F,H": at frame F, the game time is H o'clock
             float mHour = 0;
-            unsigned mTeleportAt = 0; // "tp:F,N": at frame F, the bottom screen's teleport button N (from 0)
+            unsigned mTeleportAt = 0; // "tp:F,N": at frame F, teleport N (from 0, sTeleports)
             int mTeleport = 0;
+            unsigned mTalkAt = 0; // "talk:F": at frame F, talk to the nearest actor (activate it)
+            // "use:F,TEXT" (any number): at frame F, activate the nearest object whose id contains TEXT
+            std::vector<std::pair<unsigned, std::string>> mUses;
+            std::vector<std::pair<unsigned, int>> mPicks; // "pick:F,N" (any number): touch menu option N at frame F
         };
         const Autorun& autorunScript()
         {
@@ -252,6 +321,27 @@ namespace omw3ds::debug
                             result.mHour = std::strtof(end + 1, nullptr);
                         else
                             result.mHourAt = 0;
+                    }
+                    if (const char* q = std::strstr(buf, "talk:"))
+                        result.mTalkAt = unsigned(std::strtoul(q + 5, nullptr, 10));
+                    for (const char* q = std::strstr(buf, "use:"); q != nullptr; q = std::strstr(q + 4, "use:"))
+                    {
+                        char* end = nullptr;
+                        const unsigned at = unsigned(std::strtoul(q + 4, &end, 10));
+                        if (*end != ',')
+                            continue;
+                        const char* text = end + 1;
+                        const char* textEnd = text;
+                        while (*textEnd != '\0' && !std::isspace(static_cast<unsigned char>(*textEnd)))
+                            ++textEnd;
+                        result.mUses.emplace_back(at, std::string(text, textEnd));
+                    }
+                    for (const char* q = std::strstr(buf, "pick:"); q != nullptr; q = std::strstr(q + 5, "pick:"))
+                    {
+                        char* end = nullptr;
+                        const unsigned at = unsigned(std::strtoul(q + 5, &end, 10));
+                        if (*end == ',')
+                            result.mPicks.emplace_back(at, int(std::strtol(end + 1, nullptr, 10)));
                     }
                     if (const char* q = std::strstr(buf, "tp:"))
                     {
@@ -333,7 +423,6 @@ namespace omw3ds::debug
             { "Sadrith Mora", nullptr, { 144071, 35904, 876 }, 270.f }, // Gateway Inn
             { "Council Club", "Balmora, Council Club", {}, 0.f }, // interior: lights and people
         };
-        const char* sTeleportLabels[std::size(sTeleports)] = {};
     }
 
     // Where the player is and what the camera looks at, starting with autorun tokens that put the player
@@ -465,6 +554,17 @@ namespace omw3ds::debug
         }
         if (autorun.mTeleportAt != 0 && frame == autorun.mTeleportAt)
             teleport(autorun.mTeleport);
+        if (autorun.mTalkAt != 0 && frame == autorun.mTalkAt)
+            talkToNearestActor();
+        for (const auto& [at, text] : autorun.mUses)
+            if (at == frame)
+                useNearest(text);
+        for (const auto& [at, option] : autorun.mPicks)
+            if (at == frame)
+            {
+                P3DS_LOGI("autorun: menu option %d", option);
+                pressMenuOption(option);
+            }
         for (unsigned shot : autorun.mShots)
             if (shot == frame)
             {
@@ -489,21 +589,9 @@ namespace omw3ds::debug
         applyInputs(autorunScript().mInputs, frame);
     }
 
-    const char* const* teleportLabels()
-    {
-        for (std::size_t i = 0; i < std::size(sTeleports); ++i)
-            sTeleportLabels[i] = sTeleports[i].mLabel;
-        return sTeleportLabels;
-    }
-
-    int teleportCount()
-    {
-        return static_cast<int>(std::size(sTeleports));
-    }
-
     void teleport(int index)
     {
-        if (index < 0 || index >= teleportCount())
+        if (index < 0 || index >= int(std::size(sTeleports)))
             return;
         const TeleportTarget& target = sTeleports[index];
         MWBase::World* world = MWBase::Environment::get().getWorld();

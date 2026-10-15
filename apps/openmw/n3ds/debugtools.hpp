@@ -3,7 +3,7 @@
 
 // 3DS debug tools (debug builds only: OPENMW3DS_DEBUG, platform3ds/CMakeLists.txt; this file and
 // debugtools.cpp aren't compiled without it): the autorun script of automated emulator runs and its scripted
-// input, replayable view lines for screenshots, and the debug bottom screen's teleport buttons.
+// input, and replayable view lines for screenshots.
 #ifndef OPENMW3DS_DEBUG
 #error "debugtools.hpp is only for builds with the 3DS debug tools (OPENMW3DS_DEBUG)"
 #endif
@@ -23,9 +23,7 @@ namespace omw3ds::debug
     // there ("view:F,... hour:F,H weather:F,N"): logged with every screenshot.
     std::string describeView(unsigned frame);
 
-    // The bottom screen's teleport buttons: like the console's "coc <cell>".
-    const char* const* teleportLabels();
-    int teleportCount();
+    // Autorun "tp:F,N": to a town (at a well-known building's door) or an interior.
     void teleport(int index);
 
     // Once, a few frames in: reads a few texts ESM::LazyString left in the content file (offset and code page

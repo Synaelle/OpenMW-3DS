@@ -4,6 +4,8 @@
 #include "referenceinterface.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MyGUI
 {
     class Gui;
@@ -14,6 +16,7 @@ namespace MWGui
 {
     class TravelWindow : public ReferenceInterface, public WindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         TravelWindow();
 

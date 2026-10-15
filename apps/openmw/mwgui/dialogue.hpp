@@ -10,6 +10,7 @@
 
 #include "../mwbase/dialoguemanager.hpp"
 #include "../mwdialogue/keywordsearch.hpp"
+#include "../n3ds/menufriend.hpp"
 
 #include <MyGUI_Delegate.h>
 
@@ -42,6 +43,7 @@ namespace MWGui
 
     class PersuasionDialog : public WindowModal
     {
+        OMW3DS_MENU_FRIEND
     public:
         PersuasionDialog(std::unique_ptr<ResponseCallback> callback);
 
@@ -137,6 +139,7 @@ namespace MWGui
 
     class DialogueWindow : public WindowBase, public ReferenceInterface
     {
+        OMW3DS_MENU_FRIEND
     public:
         DialogueWindow();
 

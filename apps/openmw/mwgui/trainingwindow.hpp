@@ -6,6 +6,8 @@
 #include "waitdialog.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWMechanics
 {
     class NpcStats;
@@ -16,6 +18,7 @@ namespace MWGui
 
     class TrainingWindow : public WindowBase, public ReferenceInterface
     {
+        OMW3DS_MENU_FRIEND
     public:
         TrainingWindow();
 

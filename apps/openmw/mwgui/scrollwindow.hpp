@@ -5,6 +5,8 @@
 
 #include "../mwworld/ptr.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace Gui
 {
     class ImageButton;
@@ -14,6 +16,7 @@ namespace MWGui
 {
     class ScrollWindow : public BookWindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         ScrollWindow();
 

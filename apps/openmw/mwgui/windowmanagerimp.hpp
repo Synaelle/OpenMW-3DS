@@ -34,6 +34,8 @@
 #include "tooltips.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 #include <MyGUI_Gui.h>
 #include <MyGUI_KeyCode.h>
 #include <MyGUI_Types.h>
@@ -123,6 +125,7 @@ namespace MWGui
 
     class WindowManager : public MWBase::WindowManager
     {
+        OMW3DS_MENU_FRIEND
     public:
         typedef std::pair<std::string, int> Faction;
         typedef std::vector<Faction> FactionList;

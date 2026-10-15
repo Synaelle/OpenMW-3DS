@@ -7,12 +7,15 @@
 #include "spellmodel.hpp"
 #include "windowpinnablebase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
     class SpellView;
 
     class SpellWindow : public WindowPinnableBase, public NoDrop
     {
+        OMW3DS_MENU_FRIEND
     public:
         SpellWindow(DragAndDrop* drag);
 

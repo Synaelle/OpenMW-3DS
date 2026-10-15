@@ -5,6 +5,8 @@
 
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MyGUI
 {
     class Widget;
@@ -19,6 +21,7 @@ namespace MWGui
     class MessageBox;
     class MessageBoxManager
     {
+        OMW3DS_MENU_FRIEND
     public:
         MessageBoxManager(float timePerChar);
         ~MessageBoxManager();
@@ -91,6 +94,7 @@ namespace MWGui
 
     class InteractiveMessageBox : public WindowModal
     {
+        OMW3DS_MENU_FRIEND
     public:
         InteractiveMessageBox(MessageBoxManager& parMessageBoxManager, const std::string& message,
             const std::vector<std::string>& buttons, bool immediate, size_t defaultFocus);

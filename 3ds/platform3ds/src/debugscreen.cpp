@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <string_view>
 
 namespace p3ds
 {
@@ -38,23 +39,50 @@ namespace p3ds
     namespace
     {
         // Rows (8 px each, 30 in all; the last one is the watchdog's alive line, crash.cpp).
-        constexpr int kTeleportLabelRow = 7;
-        constexpr int kTeleportFirstRow = 8; // buttons: 3 rows tall, every 4 rows, two columns
-        constexpr int kTeleportPitch = 4;
-        constexpr int kTeleportNoteRow = 24;
+        // Game menu: title, body, pager, options (two columns of 2-row buttons: label, detail).
+        constexpr int kMenuTitleRow = 2;
+        constexpr int kMenuBodyRow = 3;
+        constexpr int kMenuBodyRows = 11;
+        constexpr int kMenuPagerRow = 14;
+        constexpr int kMenuOptionRow = 15;
+        constexpr int kMenuOptionRows = 5; // of 2 text rows each
+        constexpr int kMenuOptionsPerPage = kMenuOptionRows * 2;
+        constexpr int kMenuWrap = textfb::kCols - 1; // the last column shows the scroll marks
         // Screenshot button above the alive line: rows 26-28, 24 px tall.
         constexpr int kButtonRow = textfb::kRows - 4;
         constexpr int kButtonRows = 3;
 
+        constexpr uint16_t kOptionDetailBg = textfb::rgb565(18, 24, 44);
+
         // Shadow of what is on screen, so a redraw only touches characters that changed.
         char gShadow[textfb::kRows][textfb::kCols];
         uint16_t gShadowFg[textfb::kRows][textfb::kCols];
+        uint16_t gShadowBg[textfb::kRows][textfb::kCols];
         bool gStaticDrawn = false;
 
         void invalidateShadow()
         {
             memset(gShadow, 0, sizeof(gShadow));
             gStaticDrawn = false;
+        }
+
+        // Draws text at (col, r), padded with spaces to width, touching only the characters that changed.
+        void cells(int r, int col, const char* text, int width, uint16_t fg, uint16_t bg)
+        {
+            const size_t len = strlen(text);
+            for (int i = 0; i < width && col + i < textfb::kCols; ++i)
+            {
+                const int c = col + i;
+                char ch = size_t(i) < len ? text[i] : ' ';
+                if (static_cast<unsigned char>(ch) < 32 || static_cast<unsigned char>(ch) > 126)
+                    ch = '?'; // the 8x8 font is ASCII
+                if (gShadow[r][c] == ch && gShadowFg[r][c] == fg && gShadowBg[r][c] == bg)
+                    continue;
+                gShadow[r][c] = ch;
+                gShadowFg[r][c] = fg;
+                gShadowBg[r][c] = bg;
+                textfb::drawText(c, r, &ch, fg, bg, 1);
+            }
         }
 
         void row(int r, uint16_t fg, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
@@ -65,33 +93,38 @@ namespace p3ds
             va_start(args, fmt);
             vsnprintf(buf, sizeof(buf), fmt, args);
             va_end(args);
-            // Pad to the full width so stale characters are overwritten without clearing.
-            size_t n = strlen(buf);
-            while (n < size_t(textfb::kCols))
-                buf[n++] = ' ';
-            buf[textfb::kCols] = '\0';
-            for (int c = 0; c < textfb::kCols; ++c)
-            {
-                if (gShadow[r][c] == buf[c] && gShadowFg[r][c] == fg)
-                    continue;
-                gShadow[r][c] = buf[c];
-                gShadowFg[r][c] = fg;
-                textfb::drawText(c, r, buf + c, fg, textfb::color::black, 1);
-            }
+            cells(r, 0, buf, textfb::kCols, fg, textfb::color::black);
         }
 
-        // A filled box of `rows` rows from column col, with the label centered on its middle row.
-        void button(int col, int firstRow, int width, int rows, const char* label)
+        // Word wrap to `width` columns; paragraphs keep their own line breaks.
+        void wrap(const std::string& text, int width, std::vector<std::string>& out)
         {
-            char line[textfb::kCols + 1];
-            const int n = std::min<int>(width, int(sizeof(line)) - 1);
-            memset(line, ' ', size_t(n));
-            line[n] = '\0';
-            for (int r = 0; r < rows; ++r)
-                textfb::drawText(col, firstRow + r, line, textfb::color::white, textfb::color::header);
-            const int len = std::min<int>(int(strlen(label)), width);
-            textfb::drawText(col + (width - len) / 2, firstRow + rows / 2, label, textfb::color::white,
-                textfb::color::header, len);
+            size_t start = 0;
+            while (start <= text.size())
+            {
+                size_t end = text.find('\n', start);
+                if (end == std::string::npos)
+                    end = text.size();
+                std::string_view para(text.data() + start, end - start);
+                if (para.empty())
+                    out.emplace_back();
+                while (!para.empty())
+                {
+                    if (int(para.size()) <= width)
+                    {
+                        out.emplace_back(para);
+                        break;
+                    }
+                    size_t cut = para.rfind(' ', size_t(width));
+                    if (cut == std::string_view::npos || cut == 0)
+                        cut = size_t(width);
+                    out.emplace_back(para.substr(0, cut));
+                    para.remove_prefix(cut);
+                    while (!para.empty() && para.front() == ' ')
+                        para.remove_prefix(1);
+                }
+                start = end + 1;
+            }
         }
     }
 
@@ -134,11 +167,44 @@ namespace p3ds
         mSnapshot.state = mState;
     }
 
-    void DebugBottomScreen::setTeleportTargets(const char* const* labels, int count)
+    void DebugBottomScreen::setMenu(const MenuView* menu)
     {
-        mTeleportLabels = labels;
-        mTeleportCount = std::min(count, kMaxTeleports);
-        mNeedsClear = true;
+        if (menu == nullptr)
+        {
+            if (mMenuActive)
+            {
+                mMenuActive = false;
+                mMenu = MenuView{};
+                mNeedsClear = true; // back to the debug rows
+                mLastRedrawTick = 0;
+            }
+            return;
+        }
+        if (mMenuActive && *menu == mMenu)
+            return;
+        const bool newMenu = !mMenuActive || menu->mTitle != mMenu.mTitle;
+        const bool optionsChanged = !mMenuActive || menu->mOptions != mMenu.mOptions;
+        if (!mMenuActive)
+            mNeedsClear = true; // the debug rows go
+        mMenuActive = true;
+        mMenu = *menu;
+        mMenuLines.clear();
+        for (const std::string& paragraph : mMenu.mBody)
+            wrap(paragraph, kMenuWrap, mMenuLines);
+        const int maxScroll = std::max(0, int(mMenuLines.size()) - kMenuBodyRows);
+        if (newMenu || mMenu.mBodyFromEnd)
+            mMenuScroll = mMenu.mBodyFromEnd ? maxScroll : 0;
+        mMenuScroll = std::clamp(mMenuScroll, 0, maxScroll);
+        if (newMenu || optionsChanged)
+            mMenuPage = 0;
+        mLastRedrawTick = 0; // show the change at once
+    }
+
+    int DebugBottomScreen::consumeMenuSelection()
+    {
+        const int selection = mMenuSelection;
+        mMenuSelection = -1;
+        return selection;
     }
 
     void DebugBottomScreen::onTouch(const TouchEvent& event)
@@ -146,16 +212,32 @@ namespace p3ds
         if (!mVisible || !event.down)
             return;
         const int r = event.y / 8;
+        const bool left = event.x < textfb::kWidth / 2;
         if (r >= kButtonRow && r < kButtonRow + kButtonRows)
             mScreenshotRequested = true;
-        else if (mTeleportCount > 0 && r >= kTeleportFirstRow && r < kTeleportFirstRow + kMaxTeleports / 2 * kTeleportPitch)
+        else if (mMenuActive)
         {
-            const int index = (r - kTeleportFirstRow) / kTeleportPitch * 2 + (event.x < textfb::kWidth / 2 ? 0 : 1);
-            if (index < mTeleportCount)
+            if (r >= kMenuBodyRow && r < kMenuBodyRow + kMenuBodyRows)
             {
-                mTeleportRequest = index;
-                snprintf(mTeleportNote, sizeof(mTeleportNote), "-> %s", mTeleportLabels[index]);
+                // Upper half: back a page, lower half: forward a page.
+                const int maxScroll = std::max(0, int(mMenuLines.size()) - kMenuBodyRows);
+                const int step = kMenuBodyRows - 1;
+                const bool up = r < kMenuBodyRow + kMenuBodyRows / 2;
+                mMenuScroll = std::clamp(mMenuScroll + (up ? -step : step), 0, maxScroll);
             }
+            else if (r == kMenuPagerRow)
+            {
+                const int pages = (int(mMenu.mOptions.size()) + kMenuOptionsPerPage - 1) / kMenuOptionsPerPage;
+                mMenuPage = std::clamp(mMenuPage + (left ? -1 : 1), 0, std::max(0, pages - 1));
+            }
+            else if (r >= kMenuOptionRow && r < kMenuOptionRow + kMenuOptionRows * 2)
+            {
+                const int index
+                    = mMenuPage * kMenuOptionsPerPage + (r - kMenuOptionRow) / 2 * 2 + (left ? 0 : 1);
+                if (index < int(mMenu.mOptions.size()))
+                    mMenuSelection = index;
+            }
+            mLastRedrawTick = 0;
         }
     }
 
@@ -164,13 +246,6 @@ namespace p3ds
         const bool requested = mScreenshotRequested;
         mScreenshotRequested = false;
         return requested;
-    }
-
-    int DebugBottomScreen::consumeTeleportRequest()
-    {
-        const int request = mTeleportRequest;
-        mTeleportRequest = -1;
-        return request;
     }
 
     void DebugBottomScreen::render()
@@ -220,19 +295,57 @@ namespace p3ds
             snprintf(stamp, sizeof(stamp), "%.4s-%.4s", p3ds_build_id + 4, p3ds_build_id + 9);
         snprintf(title, sizeof(title), " OpenMW3DS  %s %s  build %s", pi.isNew3DS ? "N3DS" : "O3DS",
             pi.speedupEnabled ? "804MHz" : "268MHz", stamp);
-        fillRows(0, 1, color::header);
-        drawText(0, 0, title, color::cyan, color::header);
-        fillRows(kButtonRow, kButtonRows, color::header);
+        cells(0, 0, title, kCols, color::cyan, color::header);
+        for (int r = kButtonRow; r < kButtonRow + kButtonRows; ++r)
+            cells(r, 0, "", kCols, color::white, color::header);
         static const char kButton[] = "[ tap: SCREENSHOT ]";
-        drawText((kCols - int(sizeof(kButton) - 1)) / 2, kButtonRow + 1, kButton, color::white, color::header);
-        if (mTeleportCount > 0)
-        {
-            drawText(1, kTeleportLabelRow, "teleport (coc):", color::grey, color::black);
-            for (int i = 0; i < mTeleportCount; ++i)
-                button(i % 2 == 0 ? 1 : kCols / 2 + 1, kTeleportFirstRow + i / 2 * kTeleportPitch, kCols / 2 - 2, 3,
-                    mTeleportLabels[i]);
-        }
+        cells(kButtonRow + 1, (kCols - int(sizeof(kButton) - 1)) / 2, kButton, int(sizeof(kButton) - 1), color::white,
+            color::header);
         gStaticDrawn = true;
+    }
+
+    void DebugBottomScreen::drawMenu()
+    {
+        using namespace textfb;
+        cells(kMenuTitleRow, 0, mMenu.mTitle.c_str(), kCols, color::yellow, color::black);
+        const int maxScroll = std::max(0, int(mMenuLines.size()) - kMenuBodyRows);
+        for (int i = 0; i < kMenuBodyRows; ++i)
+        {
+            const int line = mMenuScroll + i;
+            cells(kMenuBodyRow + i, 0, line < int(mMenuLines.size()) ? mMenuLines[line].c_str() : "", kMenuWrap,
+                color::white, color::black);
+            const char* mark = (i == 0 && mMenuScroll > 0) ? "^" : (i == kMenuBodyRows - 1 && mMenuScroll < maxScroll) ? "v" : "";
+            cells(kMenuBodyRow + i, kMenuWrap, mark, 1, color::cyan, color::black);
+        }
+        const int count = int(mMenu.mOptions.size());
+        const int pages = (count + kMenuOptionsPerPage - 1) / kMenuOptionsPerPage;
+        char pager[kCols + 1] = "";
+        if (pages > 1)
+            snprintf(pager, sizeof(pager), "%s      options %d-%d of %d      %s", mMenuPage > 0 ? "[<]" : "   ",
+                mMenuPage * kMenuOptionsPerPage + 1, std::min(count, (mMenuPage + 1) * kMenuOptionsPerPage), count,
+                mMenuPage + 1 < pages ? "[>]" : "   ");
+        cells(kMenuPagerRow, 0, pager, kCols, color::cyan, color::black);
+        for (int slot = 0; slot < kMenuOptionsPerPage; ++slot)
+        {
+            const int index = mMenuPage * kMenuOptionsPerPage + slot;
+            const int r = kMenuOptionRow + slot / 2 * 2;
+            const int col = slot % 2 == 0 ? 0 : kCols / 2;
+            if (index < count)
+            {
+                const MenuView::Option& option = mMenu.mOptions[index];
+                char label[kCols + 1];
+                snprintf(label, sizeof(label), " %s", option.mLabel.c_str());
+                char detail[kCols + 1];
+                snprintf(detail, sizeof(detail), " %s", option.mDetail.c_str());
+                cells(r, col, label, kCols / 2 - 1, color::white, color::header);
+                cells(r + 1, col, detail, kCols / 2 - 1, color::grey, kOptionDetailBg);
+            }
+            else
+            {
+                cells(r, col, "", kCols / 2 - 1, color::black, color::black);
+                cells(r + 1, col, "", kCols / 2 - 1, color::black, color::black);
+            }
+        }
     }
 
     void DebugBottomScreen::redraw()
@@ -245,6 +358,13 @@ namespace p3ds
         const FrameStats& f = mFrameCopy;
         const uint16_t fpsColor = f.fps >= 25.f ? color::green : (f.fps >= 15.f ? color::yellow : color::red);
         row(1, fpsColor, "FPS %5.1f  low %5.1f  frame %6.2f ms", f.fps, f.fpsLow, f.frameMs);
+#endif
+        if (mMenuActive)
+        {
+            drawMenu();
+            return;
+        }
+#ifdef OPENMW3DS_DEBUG
         row(2, color::cyan, "cell %.34s", mSnapshot.cellName);
         row(3, color::cyan, "pos %.0f %.0f %.0f  yaw %.0f pitch %.0f", mSnapshot.playerPos[0],
             mSnapshot.playerPos[1], mSnapshot.playerPos[2], mSnapshot.yaw, mSnapshot.pitch);
@@ -252,7 +372,5 @@ namespace p3ds
 #endif
         row(5, mSnapshot.stateAlert ? color::yellow : color::cyan, "%s", mState);
         row(6, color::grey, "%s", mStatus);
-        if (mTeleportCount > 0)
-            row(kTeleportNoteRow, color::cyan, " %s", mTeleportNote);
     }
 }

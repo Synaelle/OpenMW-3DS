@@ -5,11 +5,14 @@
 
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
 
     class LevelupDialog : public WindowBase
     {
+        OMW3DS_MENU_FRIEND
     public:
         LevelupDialog();
 

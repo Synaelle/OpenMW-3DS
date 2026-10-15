@@ -7,6 +7,8 @@
 
 #include <components/misc/notnullptr.hpp>
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MyGUI
 {
     class Gui;
@@ -22,6 +24,7 @@ namespace MWGui
 
     class ContainerWindow : public WindowBase, public ReferenceInterface
     {
+        OMW3DS_MENU_FRIEND
     public:
         explicit ContainerWindow(DragAndDrop& dragAndDrop, ItemTransfer& itemTransfer);
 

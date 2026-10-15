@@ -3,6 +3,8 @@
 #include <platform3ds/memstats.hpp>
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 // Replaceable bottom-screen module. Today: DebugBottomScreen. Later: the in-game UI
 // (inventory, map, spells, journal). The game loop only talks to IBottomScreen.
@@ -32,6 +34,24 @@ namespace p3ds
         const char* status = nullptr; // free-form one-liner (renderer failure, test app status)
         const char* state = nullptr; // stance, view, open menu, death
         bool stateAlert = false; // the state needs the player's attention (a menu we can't draw yet, death)
+    };
+
+    // A game menu as text on the bottom screen (until M8's UI): a title, body paragraphs (wrapped by the screen) and
+    // touch options. The game rebuilds it a few times a second; the screen keeps its scroll position and option page
+    // while the content is unchanged.
+    struct MenuView
+    {
+        struct Option
+        {
+            std::string mLabel;
+            std::string mDetail; // second line (count, price, state), may be empty
+            bool operator==(const Option&) const = default;
+        };
+        std::string mTitle;
+        std::vector<std::string> mBody;
+        std::vector<Option> mOptions;
+        bool mBodyFromEnd = false; // show the end of the body first (dialogue history), else the start (books)
+        bool operator==(const MenuView&) const = default;
     };
 
     struct TouchEvent
