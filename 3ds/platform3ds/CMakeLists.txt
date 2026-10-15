@@ -24,6 +24,16 @@ target_include_directories(platform3ds PUBLIC include)
 target_compile_definitions(platform3ds PUBLIC
     OPENMW_PLATFORM_3DS=1
 )
+
+# Debug tools, for test builds: the bottom screen's FPS / position / teleport display, autorun scripts and
+# scripted input, the detailed profiling log lines (perf/more, gpu/vs, physics, per-insert breakdowns, SD read
+# sizes, cull phases) and screenshot view lines. OFF for a release: all of it compiles out (OPENMW3DS_DEBUG
+# undefined). The log file, crash reports, the watchdog, the GPU self-test and the 5 s perf/memory summary
+# lines stay either way.
+option(OPENMW3DS_DEBUG "3DS debug tools (debug bottom screen, autorun, detailed profiling)" ON)
+if (OPENMW3DS_DEBUG)
+    target_compile_definitions(platform3ds PUBLIC OPENMW3DS_DEBUG=1)
+endif()
 target_compile_options(platform3ds PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
 # Frame pointers make the crash handler's backtrace walk reliable.

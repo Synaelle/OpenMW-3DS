@@ -1,7 +1,8 @@
 #ifndef OPENMW_APPS_OPENMW_N3DS_FRAME3DS_H
 #define OPENMW_APPS_OPENMW_N3DS_FRAME3DS_H
 
-// Per-frame 3DS hooks for the engine loop: bottom-screen debug display and frame-time log.
+// Per-frame 3DS hooks for the engine loop: bottom-screen display and frame-time log (debug tools in
+// debugtools.cpp).
 namespace osgViewer
 {
     class Viewer;
@@ -25,6 +26,9 @@ namespace omw3ds
     void onLoadingTick();
 
     void shutdownBottomScreen();
+
+    // Closes as if from the HOME Menu (autorun "close:N").
+    void closeAsFromHomeMenu();
 
     // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
     // hydration they ran out of memory; the switch stays for memory experiments.

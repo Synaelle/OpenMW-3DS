@@ -2,7 +2,7 @@
 #   <SdRoot>/openmw/openmw.cfg, defaults.bin, resources/   (from the OpenMW build)
 #   <SdRoot>/openmw/config/openmw.cfg   data path, content, encoding, fallbacks from Morrowind.ini
 #   <SdRoot>/openmw/config/settings.cfg 3DS settings (packaging/settings-3ds.cfg)
-#   <SdRoot>/openmw/{cache,saves,data}  pre-created (directory creation costs ~1.5 s on real SD)
+#   <SdRoot>/openmw/{cache,saves,data,logs,screenshots}  pre-created (directory creation costs ~1.5 s on real SD)
 #   <SdRoot>/openmw/data                -> -DataMode junction: a junction to the Morrowind "Data Files"
 #                                          (emulator only; Morrowind data is never copied or modified)
 #   <SdRoot>/openmw/cooked/textures.o3tp   textures converted for the 3DS GPU (out\cooked, cooked on
@@ -23,7 +23,7 @@ $Build = Join-Path $RepoRoot 'build\openmw'
 $Dst = Join-Path $SdRoot 'openmw'
 $DataFiles = Join-Path $MorrowindDir 'Data Files'
 
-foreach ($d in 'config', 'cache', 'saves', 'screenshots') { New-Item -ItemType Directory -Force (Join-Path $Dst $d) | Out-Null }
+foreach ($d in 'config', 'cache', 'saves', 'screenshots', 'logs') { New-Item -ItemType Directory -Force (Join-Path $Dst $d) | Out-Null }
 
 # Local (engine) files from the build.
 Copy-Item (Join-Path $Build 'openmw.cfg') $Dst -Force

@@ -157,7 +157,7 @@ namespace Files
 
         if (!quiet)
         {
-            Log(Debug::Info) << "Logs dir: " << getUserConfigPath();
+            Log(Debug::Info) << "Logs dir: " << getLogPath();
             Log(Debug::Info) << "User data dir: " << mUserDataPath;
             Log(Debug::Info) << "Screenshots dir: " << mScreenshotPath;
         }

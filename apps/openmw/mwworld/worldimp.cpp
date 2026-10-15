@@ -225,11 +225,11 @@ namespace MWWorld
         mContentFiles = contentFiles;
         mESMVersions.resize(mContentFiles.size(), -1);
 
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         p3ds::perf::detail::begin(); // how much of the load is SD reads (io.read)
 #endif
         loadContentFiles(fileCollections, contentFiles, encoder, listener);
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         {
             char detail[300];
             p3ds::perf::detail::end(detail, sizeof(detail));
@@ -246,11 +246,11 @@ namespace MWWorld
 
         mStore.setUp();
         OMW3DS_STAGE("loadData: store setUp");
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         p3ds::perf::detail::begin();
 #endif
         mStore.validateRecords(mReaders);
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         {
             char detail[300];
             p3ds::perf::detail::end(detail, sizeof(detail));

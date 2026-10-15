@@ -1,5 +1,7 @@
 #include "frame3ds.hpp"
-#include "hidinject.hpp"
+#ifdef OPENMW3DS_DEBUG
+#include "debugtools.hpp"
+#endif
 
 #include <platform3ds/debugscreen.hpp>
 #include <platform3ds/log.hpp>
@@ -15,31 +17,20 @@
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
 #include "../mwphysics/raycasting.hpp"
-#include "../mwrender/camera.hpp"
-#include "../mwbase/luamanager.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
-#include "../mwworld/esmstore.hpp"
-#include "../mwworld/globals.hpp"
-#include "../mwworld/timestamp.hpp"
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/refdata.hpp"
 
 #include "../profile.hpp"
 
 #include <components/esm/position.hpp>
-#include <components/esm/refid.hpp>
-#include <components/esm/util.hpp>
 #include <components/render3ds/render3ds.hpp>
 #include <components/settings/values.hpp>
 
 #include <osg/Stats>
 #include <osgViewer/Viewer>
-#include <components/esm3/loadbook.hpp>
-#include <components/esm3/loaddial.hpp>
-#include <components/esm3/loaddoor.hpp>
-#include <components/esm3/loadregn.hpp>
 
 #include <3ds.h>
 
@@ -67,7 +58,7 @@ namespace omw3ds
         std::string gCellName = "-";
         float gPos[3] = {};
         float gRot[3] = {}; // player rotation (radians): x pitch, z yaw
-        char gPlayerLine[48] = "";
+        char gLooking[64] = ""; // the object in reach under the crosshair
         char gStateLine[48] = "";
         bool gStateAlert = false;
         unsigned gFramesSinceInfo = 0;
@@ -77,6 +68,7 @@ namespace omw3ds
         unsigned gLogFrames = 0;
         float gLogWorst = 0;
 
+#ifdef OPENMW3DS_DEBUG
         // Renderer counters summed between perf lines.
         struct RenderSums
         {
@@ -144,34 +136,7 @@ namespace omw3ds
             gTimingFrames = 0;
             P3DS_LOGI("%s", line.c_str());
         }
-
-        // Once: read a few texts that ESM::LazyString left in the content file, to check offsets and the
-        // code page conversion in a headless run (books and dialogue can't be opened yet).
-        void lazyStringSelfCheck()
-        {
-            const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
-            int shown = 0;
-            for (const ESM::Book& book : store.get<ESM::Book>())
-            {
-                const std::string& text = book.mText.get();
-                P3DS_LOGI("lazy text: book %s: %zu bytes \"%.70s\"", book.mId.toDebugString().c_str(), text.size(),
-                    text.c_str());
-                if (++shown == 2)
-                    break;
-            }
-            shown = 0;
-            for (const ESM::Dialogue& dialogue : store.get<ESM::Dialogue>())
-            {
-                for (const ESM::DialInfo& info : dialogue.mInfo)
-                {
-                    if (info.mResponse.empty())
-                        continue;
-                    P3DS_LOGI("lazy text: %s: \"%.70s\"", dialogue.mStringId.c_str(), info.mResponse.get().c_str());
-                    if (++shown == 2)
-                        return;
-                }
-            }
-        }
+#endif
 
         const char* guiModeName(MWGui::GuiMode mode)
         {
@@ -227,12 +192,22 @@ namespace omw3ds
                 gRot[i] = pos.rot[i];
             }
 
+#ifdef OPENMW3DS_DEBUG
+            // The object in reach under the crosshair: this frame's focus ray (World::updateFocusObject).
+            const MWWorld::Ptr focus = world->getFocusRay().mHitObject;
+            if (focus.isEmpty())
+                gLooking[0] = '\0';
+            else
+            {
+                const std::string name(focus.getClass().getName(focus));
+                const std::string id = focus.getCellRef().getRefId().toString();
+                std::snprintf(gLooking, sizeof(gLooking), "%s%s%s%s", name.c_str(), name.empty() ? "" : " [",
+                    id.c_str(), name.empty() ? "" : "]");
+            }
+#endif
+
             // No HUD and no menus are drawn until M8: say what the game is waiting for.
             const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
-            std::snprintf(gPlayerLine, sizeof(gPlayerLine), "HP %.0f/%.0f  MP %.0f/%.0f  FT %.0f/%.0f",
-                double(stats.getHealth().getCurrent()), double(stats.getHealth().getModified()),
-                double(stats.getMagicka().getCurrent()), double(stats.getMagicka().getModified()),
-                double(stats.getFatigue().getCurrent()), double(stats.getFatigue().getModified()));
             MWBase::WindowManager* windows = env.getWindowManager();
             if (stats.isDead())
             {
@@ -265,168 +240,6 @@ namespace omw3ds
         }
     }
 
-    namespace
-    {
-        // Where the player is and what the camera looks at, starting with autorun tokens that put the player
-        // back there: "view:F,X,Y,Z,YAW,PITCH,POV,CELL" (degrees; POV 1 or 3 = first/third person; CELL "ext"
-        // for exteriors, else the interior's name with '_' for spaces), "hour:F,H" and, outdoors, "weather:F,N".
-        // Logged with every screenshot, so a view seen on the console can be recreated in the emulator. The
-        // crosshair ray costs a few ms: screenshots only.
-        std::string describeView(unsigned frame)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            if (world == nullptr)
-                return "(no world yet)";
-            const MWWorld::Ptr player = world->getPlayerPtr();
-            if (player.isEmpty() || !player.isInCell())
-                return "(no player yet)";
-            const ESM::Position& p = player.getRefData().getPosition();
-            const MWWorld::Cell& cell = *player.getCell()->getCell();
-            std::string cellField = "ext";
-            if (!cell.isExterior())
-            {
-                cellField = std::string(cell.getNameId());
-                std::replace(cellField.begin(), cellField.end(), ' ', '_');
-            }
-            const bool firstPerson = world->isFirstPerson();
-            char weather[32] = "";
-            if (cell.isExterior()) // applied after the view (it needs the player in the region)
-                std::snprintf(weather, sizeof(weather), " weather:%u,%d", frame + 30, world->getCurrentWeatherScriptId());
-            char buf[768];
-            int len = std::snprintf(buf, sizeof(buf), "view:%u,%.0f,%.0f,%.0f,%.1f,%.1f,%d,%s hour:%u,%.2f%s [%s]",
-                frame, double(p.pos[0]), double(p.pos[1]), double(p.pos[2]), double(osg::RadiansToDegrees(p.rot[2])),
-                double(osg::RadiansToDegrees(p.rot[0])), firstPerson ? 1 : 3, cellField.c_str(), frame,
-                double(world->getTimeStamp().getHour()), weather, std::string(cell.getDescription()).c_str());
-            if (const MWRender::Camera* camera = world->getCamera(); camera != nullptr && len > 0)
-            {
-                const osg::Vec3f eye = camera->getPosition();
-                const osg::Vec3f forward = camera->getOrient() * osg::Vec3f(0, 1, 0);
-                const osg::Vec3f end = eye + forward * 8192.f;
-                MWPhysics::RayCastingResult hit;
-                std::string target = "nothing within 8192 units";
-                if (world->castRenderingRay(hit, eye, end, true, false, false))
-                {
-                    char at[48];
-                    std::snprintf(at, sizeof(at), " at %.0f units", double((hit.mHitPos - eye).length()));
-                    target = hit.mHitObject.isEmpty() ? std::string("terrain") + at
-                                                      : hit.mHitObject.getCellRef().getRefId().toDebugString() + " ("
-                            + std::string(hit.mHitObject.getTypeDescription()) + ")" + at;
-                }
-                std::snprintf(buf + len, sizeof(buf) - len,
-                    " | %s person, eye %.0f %.0f %.0f, camera yaw %.1f pitch %.1f, crosshair: %s",
-                    firstPerson ? "first" : "third", double(eye.x()), double(eye.y()), double(eye.z()),
-                    double(osg::RadiansToDegrees(-camera->getYaw())),
-                    double(osg::RadiansToDegrees(-camera->getPitch())), target.c_str()); // the player's conventions
-            }
-            return buf;
-        }
-
-        // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3);
-        // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward).
-        struct ScriptedInput
-        {
-            unsigned mStart = 0;
-            unsigned mFrames = 3;
-            u32 mKeys = 0; // btn:
-            int mStick = -1; // move: 0, look: 1
-            float mX = 0, mY = 0;
-            std::string mText;
-        };
-
-        u32 keyFromName(const std::string& name)
-        {
-            static const struct
-            {
-                const char* mName;
-                u32 mKey;
-            } keys[] = { { "a", KEY_A }, { "b", KEY_B }, { "x", KEY_X }, { "y", KEY_Y }, { "l", KEY_L },
-                { "r", KEY_R }, { "zl", KEY_ZL }, { "zr", KEY_ZR }, { "start", KEY_START }, { "select", KEY_SELECT },
-                { "up", KEY_DUP }, { "down", KEY_DDOWN }, { "left", KEY_DLEFT }, { "right", KEY_DRIGHT } };
-            for (const auto& key : keys)
-                if (name == key.mName)
-                    return key.mKey;
-            return 0;
-        }
-
-        void parseScriptedInput(const char* text, std::vector<ScriptedInput>& out)
-        {
-            auto forEach = [&](const char* tag, auto&& parse) {
-                for (const char* q = std::strstr(text, tag); q != nullptr; q = std::strstr(q + 1, tag))
-                {
-                    ScriptedInput input;
-                    const char* end = q;
-                    while (*end != '\0' && !std::isspace(static_cast<unsigned char>(*end)))
-                        ++end;
-                    input.mText.assign(q, end);
-                    if (parse(q + std::strlen(tag), input))
-                        out.push_back(std::move(input));
-                    else
-                        P3DS_LOGW("autorun: can't parse \"%s\"", input.mText.c_str());
-                }
-            };
-            forEach("btn:", [](const char* p, ScriptedInput& input) {
-                char* end = nullptr;
-                input.mStart = unsigned(std::strtoul(p, &end, 10));
-                if (*end != ',')
-                    return false;
-                std::string name;
-                for (++end; std::isalpha(static_cast<unsigned char>(*end)); ++end)
-                    name += char(std::tolower(static_cast<unsigned char>(*end)));
-                if (*end == ',')
-                    input.mFrames = unsigned(std::strtoul(end + 1, nullptr, 10));
-                input.mKeys = keyFromName(name);
-                return input.mKeys != 0;
-            });
-            auto parseStick = [](int stick) {
-                return [stick](const char* p, ScriptedInput& input) {
-                    char* end = nullptr;
-                    input.mStick = stick;
-                    input.mStart = unsigned(std::strtoul(p, &end, 10));
-                    if (*end != ',')
-                        return false;
-                    input.mX = std::strtof(end + 1, &end);
-                    if (*end != ',')
-                        return false;
-                    input.mY = std::strtof(end + 1, &end);
-                    if (*end == ',')
-                        input.mFrames = unsigned(std::strtoul(end + 1, nullptr, 10));
-                    return true;
-                };
-            };
-            forEach("move:", parseStick(0));
-            forEach("look:", parseStick(1));
-        }
-
-        void applyScriptedInput(const std::vector<ScriptedInput>& inputs, unsigned frame)
-        {
-            if (inputs.empty())
-                return;
-            u32 held = 0;
-            hidinject::Stick sticks[2];
-            // SDL takes the first value an axis reports as its rest position and drops it; a scripted stick goes
-            // straight to its target, so its first move would be lost. Report a tiny value once, first.
-            static bool primed = false;
-            if (!primed)
-            {
-                sticks[0] = sticks[1] = hidinject::Stick{ true, 1.f / 160.f, 1.f / 160.f };
-                primed = true;
-            }
-            for (const ScriptedInput& input : inputs)
-            {
-                if (frame < input.mStart || frame >= input.mStart + input.mFrames)
-                    continue;
-                if (frame == input.mStart)
-                    P3DS_LOGI("autorun: %s at pos %.0f %.0f %.0f", input.mText.c_str(), double(gPos[0]),
-                        double(gPos[1]), double(gPos[2]));
-                if (input.mStick < 0)
-                    held |= input.mKeys;
-                else
-                    sticks[input.mStick] = hidinject::Stick{ true, input.mX, input.mY };
-            }
-            hidinject::set(held, sticks[0], sticks[1]);
-        }
-    }
-
     bool exteriorsEnabled()
     {
         static const bool enabled = [] {
@@ -439,47 +252,16 @@ namespace omw3ds
         return enabled;
     }
 
-    namespace
-    {
-        // autorun "door:F": activate the nearest door that leads somewhere (an interior unless exteriors are
-        // enabled), as if the player pressed A on it (tests cell changes without scripting a walk to the door).
-        void activateNearestDoor()
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            const MWWorld::Ptr player = world->getPlayerPtr();
-            const osg::Vec3f playerPos = player.getRefData().getPosition().asVec3();
-            MWWorld::Ptr nearest;
-            float best = 0;
-            player.getCell()->forEachType<ESM::Door>([&](const MWWorld::Ptr& door) {
-                if (!door.getCellRef().getTeleport())
-                    return true;
-                if (!exteriorsEnabled() && door.getCellRef().getDestCell().is<ESM::ESM3ExteriorCellRefId>())
-                    return true; // refused anyway (ActionTeleport)
-                const float distance = (door.getRefData().getPosition().asVec3() - playerPos).length2();
-                if (nearest.isEmpty() || distance < best)
-                {
-                    nearest = door;
-                    best = distance;
-                }
-                return true;
-            });
-            if (nearest.isEmpty())
-            {
-                P3DS_LOGW("autorun: no door to activate");
-                return;
-            }
-            P3DS_LOGI("autorun: activating door %s (to %s)", nearest.getCellRef().getRefId().toDebugString().c_str(),
-                nearest.getCellRef().getDestCell().toDebugString().c_str());
-            MWBase::Environment::get().getLuaManager()->objectActivated(nearest, player);
-        }
-    }
-
     void initBottomScreen(const char* status)
     {
         gBottom.init();
+#ifdef OPENMW3DS_DEBUG
+        gBottom.setTeleportTargets(debug::teleportLabels(), debug::teleportCount());
+#endif
         gBottomReady = true;
         p3ds::GameSnapshot snap;
         snap.cellName = status;
+        snap.status = status;
         gBottom.update(snap);
         gBottom.forceRedraw();
     }
@@ -517,6 +299,11 @@ namespace omw3ds
         }
     }
 
+    void closeAsFromHomeMenu()
+    {
+        closeRequested(false);
+    }
+
     void setViewer(osgViewer::Viewer* viewer)
     {
         // The settings that matter for performance, as actually loaded (the SD card may hold an older
@@ -527,6 +314,7 @@ namespace omw3ds
             int(Settings::lua().mGcStepsPerFrame),
             double(Settings::camera().mViewingDistance), Settings::cells().mPreloadEnabled ? "on" : "off",
             double(Settings::game().mActorsProcessingRange));
+#ifdef OPENMW3DS_DEBUG
         gViewer = viewer;
         osg::Stats* stats = viewer->getViewerStats();
         stats->collectStats("engine", true); // OMW::ScopedProfile in Engine::frame
@@ -542,6 +330,7 @@ namespace omw3ds
         gTimings.push_back(Timing{ "update", "Update traversal time taken", false });
         gTimings.push_back(Timing{ "cull", "Cull traversal time taken", true });
         gTimings.push_back(Timing{ "draw", "Draw traversal time taken", true });
+#endif
     }
 
     void onLoadingTick()
@@ -571,215 +360,26 @@ namespace omw3ds
         lastTick = now;
         const float ms = frameSeconds * 1000.f;
         gTimer.addFrame(ms);
+        ++gStats.frameIndex;
+#ifdef OPENMW3DS_DEBUG
         accumulateTimings();
-        if (++gStats.frameIndex == 100)
-            lazyStringSelfCheck();
+        if (gStats.frameIndex == 100)
+            debug::lazyStringSelfCheck();
+        debug::runAutorun(gStats.frameIndex);
+#endif
 
-        // Automated runs, sdmc:/openmw/autorun.txt: "quit:N" quits after N game frames (tests shutdown),
-        // "shot:N,M,..." saves the top screen at those frames (sdmc:/openmw/shot_top_N.bmp).
-        struct Autorun
-        {
-            unsigned mQuitAt = 0;
-            unsigned mCloseAt = 0; // "close:N": like closing from the HOME Menu after N frames
-            std::vector<unsigned> mShots;
-            float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
-            std::vector<ScriptedInput> mInputs;
-            std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
-            unsigned mLuaProfileAt = 0; // "luaprof:F": write the Lua profiler table (needs "lua profiler = true")
-            unsigned mPosAt = 0; // "pos:F,X,Y,Z": put the player at X Y Z (same worldspace) at frame F
-            osg::Vec3f mPos;
-            // "weather:F,N": at frame F, the player's region changes to weather N (0 clear, 1 cloudy, 2 foggy,
-            // 3 overcast, 4 rain, 5 thunder, 6 ash, 7 blight, 8 snow, 9 blizzard), like the ChangeWeather
-            // command: it transitions over a few seconds.
-            unsigned mWeatherAt = 0;
-            int mWeather = 0;
-            // "view:F,X,Y,Z,YAW,PITCH,POV,CELL": at frame F, the player at X Y Z facing YAW, looking PITCH degrees
-            // down, in first (1) or third (3) person, in CELL ("ext" or an interior, '_' for spaces): the token a
-            // screenshot's "view" log line starts with (describeView).
-            unsigned mViewAt = 0;
-            float mView[5] = {};
-            int mViewPov = 1;
-            std::string mViewCell;
-            unsigned mHourAt = 0; // "hour:F,H": at frame F, the game time is H o'clock
-            float mHour = 0;
-        };
-        static const Autorun autorun = [] {
-            Autorun result;
-            if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
-            {
-                char buf[4096] = {};
-                std::fread(buf, 1, sizeof(buf) - 1, f);
-                std::fclose(f);
-                if (const char* q = std::strstr(buf, "quit:"))
-                    result.mQuitAt = unsigned(std::strtoul(q + 5, nullptr, 10));
-                if (const char* q = std::strstr(buf, "close:"))
-                    result.mCloseAt = unsigned(std::strtoul(q + 6, nullptr, 10));
-                if (const char* q = std::strstr(buf, "turn:"))
-                    result.mTurnDegrees = std::strtof(q + 5, nullptr);
-                parseScriptedInput(buf, result.mInputs);
-                if (const char* q = std::strstr(buf, "luaprof:"))
-                    result.mLuaProfileAt = unsigned(std::strtoul(q + 8, nullptr, 10));
-                if (const char* q = std::strstr(buf, "weather:"))
-                {
-                    char* end = nullptr;
-                    result.mWeatherAt = unsigned(std::strtoul(q + 8, &end, 10));
-                    if (*end == ',')
-                        result.mWeather = int(std::strtol(end + 1, nullptr, 10));
-                }
-                if (const char* q = std::strstr(buf, "hour:"))
-                {
-                    char* end = nullptr;
-                    result.mHourAt = unsigned(std::strtoul(q + 5, &end, 10));
-                    if (*end == ',')
-                        result.mHour = std::strtof(end + 1, nullptr);
-                    else
-                        result.mHourAt = 0;
-                }
-                if (const char* q = std::strstr(buf, "view:"))
-                {
-                    char* end = nullptr;
-                    result.mViewAt = unsigned(std::strtoul(q + 5, &end, 10));
-                    int fields = 0;
-                    for (; fields < 5 && *end == ','; ++fields)
-                        result.mView[fields] = std::strtof(end + 1, &end);
-                    if (fields == 5 && *end == ',')
-                        result.mViewPov = int(std::strtol(end + 1, &end, 10));
-                    if (fields == 5 && *end == ',')
-                    {
-                        const char* cell = end + 1;
-                        const char* cellEnd = cell;
-                        while (*cellEnd != '\0' && !std::isspace(static_cast<unsigned char>(*cellEnd)))
-                            ++cellEnd;
-                        result.mViewCell.assign(cell, cellEnd);
-                        std::replace(result.mViewCell.begin(), result.mViewCell.end(), '_', ' ');
-                    }
-                    if (result.mViewCell.empty())
-                    {
-                        P3DS_LOGW("autorun: can't parse the view: token");
-                        result.mViewAt = 0;
-                    }
-                }
-                if (const char* q = std::strstr(buf, "pos:"))
-                {
-                    char* end = nullptr;
-                    result.mPosAt = unsigned(std::strtoul(q + 4, &end, 10));
-                    for (int i = 0; i < 3 && *end == ','; ++i)
-                        result.mPos[i] = std::strtof(end + 1, &end);
-                }
-                if (const char* q = std::strstr(buf, "door:"))
-                {
-                    char* end = const_cast<char*>(q + 5);
-                    do
-                        result.mDoors.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
-                    while (*end == ',');
-                }
-                if (const char* q = std::strstr(buf, "shot:"))
-                {
-                    char* end = const_cast<char*>(q + 5);
-                    do
-                        result.mShots.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
-                    while (*end == ',');
-                }
-            }
-            return result;
-        }();
-        if (autorun.mQuitAt != 0 && gStats.frameIndex == autorun.mQuitAt)
-        {
-            P3DS_LOGI("autorun: quitting after %u frames", autorun.mQuitAt);
-            MWBase::Environment::get().getStateManager()->requestQuit();
-        }
-        if (autorun.mLuaProfileAt != 0 && gStats.frameIndex == autorun.mLuaProfileAt)
-        {
-            const std::string table = MWBase::Environment::get().getLuaManager()->formatResourceUsageStats();
-            if (std::FILE* f = std::fopen("sdmc:/openmw/lua_profile.txt", "w"))
-            {
-                std::fwrite(table.data(), 1, table.size(), f);
-                std::fclose(f);
-            }
-            P3DS_LOGI("autorun: Lua profile written to sdmc:/openmw/lua_profile.txt (%zu bytes)", table.size());
-        }
-        if (autorun.mCloseAt != 0 && gStats.frameIndex == autorun.mCloseAt)
-        {
-            P3DS_LOGI("autorun: closing as if from the HOME Menu after %u frames", autorun.mCloseAt);
-            closeRequested(false);
-        }
-        for (unsigned door : autorun.mDoors)
-            if (door == gStats.frameIndex)
-                activateNearestDoor();
-        if (autorun.mWeatherAt != 0 && gStats.frameIndex == autorun.mWeatherAt)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            const MWWorld::Ptr player = world->getPlayerPtr();
-            const ESM::RefId region = player.isInCell() ? player.getCell()->getCell()->getRegion() : ESM::RefId();
-            if (region.empty())
-                P3DS_LOGW("autorun: weather: the player is in no region (an interior?)");
-            else
-            {
-                world->changeWeather(region, ESM::Weather::indexToRefId(autorun.mWeather));
-                P3DS_LOGI("autorun: weather %d in %s", autorun.mWeather, region.toDebugString().c_str());
-            }
-        }
-        if (autorun.mPosAt != 0 && gStats.frameIndex == autorun.mPosAt)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            world->moveObject(world->getPlayerPtr(), autorun.mPos);
-            P3DS_LOGI("autorun: player moved to %.0f %.0f %.0f", double(autorun.mPos.x()), double(autorun.mPos.y()),
-                double(autorun.mPos.z()));
-        }
-        if (autorun.mHourAt != 0 && gStats.frameIndex == autorun.mHourAt)
-        {
-            MWBase::Environment::get().getWorld()->setGlobalFloat(MWWorld::Globals::sGameHour, autorun.mHour);
-            P3DS_LOGI("autorun: game hour %.2f", double(autorun.mHour));
-        }
-        if (autorun.mViewAt != 0 && gStats.frameIndex == autorun.mViewAt)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            ESM::Position position{};
-            for (int i = 0; i < 3; ++i)
-                position.pos[i] = autorun.mView[i];
-            position.rot[0] = osg::DegreesToRadians(autorun.mView[4]);
-            position.rot[2] = osg::DegreesToRadians(autorun.mView[3]);
-            if (autorun.mViewCell == "ext")
-            {
-                const ESM::ExteriorCellLocation index
-                    = ESM::positionToExteriorCellLocation(position.pos[0], position.pos[1]);
-                world->changeToCell(ESM::RefId::esm3ExteriorCell(index.mX, index.mY), position, true);
-            }
-            else
-                world->changeToInteriorCell(autorun.mViewCell, position, true);
-            if ((autorun.mViewPov == 3) == world->isFirstPerson())
-                world->togglePOV(true);
-            P3DS_LOGI("autorun: view set: %.0f %.0f %.0f yaw %.1f pitch %.1f, %s person, cell %s",
-                double(position.pos[0]), double(position.pos[1]), double(position.pos[2]), double(autorun.mView[3]),
-                double(autorun.mView[4]), autorun.mViewPov == 3 ? "third" : "first", autorun.mViewCell.c_str());
-        }
-        for (unsigned shot : autorun.mShots)
-            if (shot == gStats.frameIndex)
-            {
-                const std::string path = "sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp";
-                Render3DS::requestCapture(path.c_str());
-                P3DS_LOGI("screenshot %s: %s", path.c_str(), describeView(gStats.frameIndex).c_str());
-            }
         // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
         // so scan once per frame here. All buttons are game controls (bindingsmanager.cpp); debug
         // functions are on the touch screen.
         hidScanInput();
-        applyScriptedInput(autorun.mInputs, gStats.frameIndex);
+#ifdef OPENMW3DS_DEBUG
+        debug::applyScriptedInput(gStats.frameIndex);
+#endif
         if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
         {
             touchPosition touch;
             hidTouchRead(&touch);
             gBottom.onTouch(p3ds::TouchEvent{ touch.px, touch.py, true });
-        }
-        const float turn = gStats.frameIndex == 30 ? autorun.mTurnDegrees : 0.f;
-        if (turn != 0)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-            const MWWorld::Ptr player = world->getPlayerPtr();
-            osg::Vec3f rot = player.getRefData().getPosition().asRotationVec3();
-            rot.z() += osg::DegreesToRadians(turn);
-            world->rotateObject(player, rot, MWBase::RotationFlag_none);
-            P3DS_LOGI("debug: player turned to %.0f degrees", double(osg::RadiansToDegrees(rot.z())));
         }
         if (gBottomReady && gBottom.consumeScreenshotRequest())
         {
@@ -789,14 +389,24 @@ namespace omw3ds
             char path[64];
             std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count++);
             Render3DS::requestCapture(path);
-            P3DS_LOGI("screenshot %s: %s", path, describeView(gStats.frameIndex).c_str());
+#ifdef OPENMW3DS_DEBUG
+            P3DS_LOGI("screenshot %s: %s", path, debug::describeView(gStats.frameIndex).c_str());
+#else
+            P3DS_LOGI("screenshot %s", path);
+#endif
         }
+#ifdef OPENMW3DS_DEBUG
+        if (gBottomReady)
+            if (const int target = gBottom.consumeTeleportRequest(); target >= 0)
+                debug::teleport(target);
+#endif
 
         const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
         gStats.drawCalls = render.mDraws;
         gStats.triangles = render.mTriangles;
         gStats.cpuMs = render.mEmitMs;
         gStats.gpuMs = render.mGpuMs;
+#ifdef OPENMW3DS_DEBUG
         gRender.mDraws += render.mDraws;
         gRender.mTriangles += render.mTriangles;
         gRender.mLeaves += render.mLeaves;
@@ -812,6 +422,7 @@ namespace omw3ds
             gRender.mShaderRuns[i] += render.mShaderRuns[i];
         gRender.mProgramSwitches += render.mProgramSwitches;
         gRender.mParticleVertices += render.mParticleVertices;
+#endif
 
         gLogAccum += frameSeconds;
         ++gLogFrames;
@@ -824,6 +435,7 @@ namespace omw3ds
                 gLogFrames, gLogAccum, gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst,
                 gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]),
                 double(osg::RadiansToDegrees(gRot[2])), double(osg::RadiansToDegrees(gRot[0])));
+#ifdef OPENMW3DS_DEBUG
             logTimings();
             if (Render3DS::isActive())
             {
@@ -842,6 +454,7 @@ namespace omw3ds
                     runs[7] / n, runs[8] / n, gRender.mParticleVertices / n, gRender.mProgramSwitches / n);
             }
             gRender = RenderSums{};
+#endif
             gLogAccum = 0;
             gLogFrames = 0;
             gLogWorst = 0;
@@ -860,10 +473,12 @@ namespace omw3ds
         snap.cellName = gCellName.c_str();
         for (int i = 0; i < 3; ++i)
             snap.playerPos[i] = gPos[i];
-        snap.player = gPlayerLine;
+        snap.yaw = osg::RadiansToDegrees(gRot[2]);
+        snap.pitch = osg::RadiansToDegrees(gRot[0]);
+        snap.lookingAt = gLooking;
         snap.state = gStateLine;
         snap.stateAlert = gStateAlert;
-        snap.status = Render3DS::isActive() ? "citro3d"
+        snap.status = Render3DS::isActive() ? ""
             : Render3DS::failure()          ? Render3DS::failure()
                                             : "headless (renderer failed to start)";
         gBottom.update(snap);

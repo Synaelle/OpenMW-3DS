@@ -27,8 +27,12 @@ extern "C"
     extern u32 __ctru_heap_size;
     extern u32 __ctru_linear_heap_size;
 
+    // System tick when the process ran its first instruction of ours (libctru calls this before anything else).
+    u64 p3ds_firstCodeTick = 0;
+
     void __system_allocateHeaps(void)
     {
+        p3ds_firstCodeTick = svcGetSystemTick();
         constexpr u32 kMB = 1024 * 1024;
         constexpr u32 kHeapWindow = OS_HEAP_AREA_END - OS_HEAP_AREA_BEGIN - kMB; // keep a guard MB
         constexpr u32 kLinearMin = 24 * kMB;
@@ -267,8 +271,13 @@ namespace p3ds
 
     PlatformInfo init(const InitOptions& options)
     {
+        const u64 mainTick = svcGetSystemTick();
         paintMainStack();
         mkdir(kBaseDir, 0777);
+        // The package ships the folder: creating one costs ~1.5 s on hardware, a stat ~5 ms.
+        struct stat logDir;
+        if (stat(kLogDir, &logDir) != 0)
+            mkdir(kLogDir, 0777);
         remove(kAutorunDonePath);
 
         textfb::setupBottomScreen();
@@ -304,6 +313,10 @@ namespace p3ds
 
         const mem::Stats ms = mem::queryExact();
         P3DS_LOGI("build %s", p3ds_build_id);
+        // The system tick counts from before the process exists: the time stamps of the first log lines are the
+        // launch (HOME Menu tap to our first instruction), then libctru's setup and static initialisation.
+        P3DS_LOGI("startup: our first instruction at %.2f s, main() at %.2f s (system tick)",
+            double(p3ds_firstCodeTick) / SYSCLOCK_ARM11, double(mainTick) / SYSCLOCK_ARM11);
         P3DS_LOGI("platform3ds: %s, %s (title %016llX), speedup %s, syscore limit %d%%, autorun %s",
             isNew ? "New 3DS" : "Old 3DS", gInfo.launchedAsCia ? "cia" : "3dsx", (unsigned long long)gInfo.programId,
             gInfo.speedupEnabled ? "on" : "off", gInfo.syscoreLimit, gInfo.autorun ? "yes" : "no");

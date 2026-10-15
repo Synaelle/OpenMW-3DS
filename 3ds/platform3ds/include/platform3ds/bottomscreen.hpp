@@ -26,8 +26,10 @@ namespace p3ds
         const FrameStats* frame = nullptr;
         const char* cellName = nullptr;
         float playerPos[3] = { 0.f, 0.f, 0.f };
-        const char* status = nullptr; // free-form one-liner
-        const char* player = nullptr; // player vitals one-liner
+        float yaw = 0.f; // degrees, 0 = north, clockwise
+        float pitch = 0.f; // degrees, + = looking down
+        const char* lookingAt = nullptr; // the object in reach under the crosshair
+        const char* status = nullptr; // free-form one-liner (renderer failure, test app status)
         const char* state = nullptr; // stance, view, open menu, death
         bool stateAlert = false; // the state needs the player's attention (a menu we can't draw yet, death)
     };

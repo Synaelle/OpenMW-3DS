@@ -1,10 +1,9 @@
 #include <platform3ds/debugscreen.hpp>
-#include <platform3ds/log.hpp>
-#include <platform3ds/memstats.hpp>
 #include <platform3ds/platform.hpp>
 #include <platform3ds/textfb.hpp>
 #include <platform3ds/timing.hpp>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -38,33 +37,24 @@ namespace p3ds
 
     namespace
     {
-        constexpr int kLogFirstRow = 12;
-        // Touch button bar above the watchdog heartbeat row (crash.cpp): rows 26-28, 24 px tall.
+        // Rows (8 px each, 30 in all; the last one is the watchdog's alive line, crash.cpp).
+        constexpr int kTeleportLabelRow = 7;
+        constexpr int kTeleportFirstRow = 8; // buttons: 3 rows tall, every 4 rows, two columns
+        constexpr int kTeleportPitch = 4;
+        constexpr int kTeleportNoteRow = 24;
+        // Screenshot button above the alive line: rows 26-28, 24 px tall.
         constexpr int kButtonRow = textfb::kRows - 4;
         constexpr int kButtonRows = 3;
-
-        uint16_t levelColor(log::Level level)
-        {
-            switch (level)
-            {
-                case log::Level::Error:
-                    return textfb::color::red;
-                case log::Level::Warning:
-                    return textfb::color::yellow;
-                case log::Level::Info:
-                    return textfb::color::white;
-                default:
-                    return textfb::color::grey;
-            }
-        }
 
         // Shadow of what is on screen, so a redraw only touches characters that changed.
         char gShadow[textfb::kRows][textfb::kCols];
         uint16_t gShadowFg[textfb::kRows][textfb::kCols];
+        bool gStaticDrawn = false;
 
         void invalidateShadow()
         {
             memset(gShadow, 0, sizeof(gShadow));
+            gStaticDrawn = false;
         }
 
         void row(int r, uint16_t fg, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
@@ -88,6 +78,20 @@ namespace p3ds
                 gShadowFg[r][c] = fg;
                 textfb::drawText(c, r, buf + c, fg, textfb::color::black, 1);
             }
+        }
+
+        // A filled box of `rows` rows from column col, with the label centered on its middle row.
+        void button(int col, int firstRow, int width, int rows, const char* label)
+        {
+            char line[textfb::kCols + 1];
+            const int n = std::min<int>(width, int(sizeof(line)) - 1);
+            memset(line, ' ', size_t(n));
+            line[n] = '\0';
+            for (int r = 0; r < rows; ++r)
+                textfb::drawText(col, firstRow + r, line, textfb::color::white, textfb::color::header);
+            const int len = std::min<int>(int(strlen(label)), width);
+            textfb::drawText(col + (width - len) / 2, firstRow + rows / 2, label, textfb::color::white,
+                textfb::color::header, len);
         }
     }
 
@@ -122,20 +126,37 @@ namespace p3ds
         mSnapshot.frame = &mFrameCopy;
         strncpy(mCell, snapshot.cellName ? snapshot.cellName : "-", sizeof(mCell) - 1);
         strncpy(mStatus, snapshot.status ? snapshot.status : "", sizeof(mStatus) - 1);
-        strncpy(mPlayer, snapshot.player ? snapshot.player : "", sizeof(mPlayer) - 1);
+        strncpy(mLooking, snapshot.lookingAt ? snapshot.lookingAt : "", sizeof(mLooking) - 1);
         strncpy(mState, snapshot.state ? snapshot.state : "", sizeof(mState) - 1);
         mSnapshot.cellName = mCell;
         mSnapshot.status = mStatus;
-        mSnapshot.player = mPlayer;
+        mSnapshot.lookingAt = mLooking;
         mSnapshot.state = mState;
+    }
+
+    void DebugBottomScreen::setTeleportTargets(const char* const* labels, int count)
+    {
+        mTeleportLabels = labels;
+        mTeleportCount = std::min(count, kMaxTeleports);
+        mNeedsClear = true;
     }
 
     void DebugBottomScreen::onTouch(const TouchEvent& event)
     {
         if (!mVisible || !event.down)
             return;
-        if (event.y >= kButtonRow * 8 && event.y < (kButtonRow + kButtonRows) * 8)
+        const int r = event.y / 8;
+        if (r >= kButtonRow && r < kButtonRow + kButtonRows)
             mScreenshotRequested = true;
+        else if (mTeleportCount > 0 && r >= kTeleportFirstRow && r < kTeleportFirstRow + kMaxTeleports / 2 * kTeleportPitch)
+        {
+            const int index = (r - kTeleportFirstRow) / kTeleportPitch * 2 + (event.x < textfb::kWidth / 2 ? 0 : 1);
+            if (index < mTeleportCount)
+            {
+                mTeleportRequest = index;
+                snprintf(mTeleportNote, sizeof(mTeleportNote), "-> %s", mTeleportLabels[index]);
+            }
+        }
     }
 
     bool DebugBottomScreen::consumeScreenshotRequest()
@@ -143,6 +164,13 @@ namespace p3ds
         const bool requested = mScreenshotRequested;
         mScreenshotRequested = false;
         return requested;
+    }
+
+    int DebugBottomScreen::consumeTeleportRequest()
+    {
+        const int request = mTeleportRequest;
+        mTeleportRequest = -1;
+        return request;
     }
 
     void DebugBottomScreen::render()
@@ -179,14 +207,11 @@ namespace p3ds
         render();
     }
 
-    void DebugBottomScreen::redraw()
+    // Header and buttons: drawn once per clear.
+    void DebugBottomScreen::drawStatic()
     {
         using namespace textfb;
-        const FrameStats& f = mFrameCopy;
-        const mem::Stats m = mem::query();
-        const bool budgetOk = mem::checkBudget(m);
         const PlatformInfo& pi = info();
-
         char title[kCols + 1];
         // The build stamp ("YYYYMMDD-HHMMSS rev", UTC): "build 1014-2112" shows at a glance which CIA is installed
         // (the package README names the one it contains).
@@ -195,42 +220,39 @@ namespace p3ds
             snprintf(stamp, sizeof(stamp), "%.4s-%.4s", p3ds_build_id + 4, p3ds_build_id + 9);
         snprintf(title, sizeof(title), " OpenMW3DS  %s %s  build %s", pi.isNew3DS ? "N3DS" : "O3DS",
             pi.speedupEnabled ? "804MHz" : "268MHz", stamp);
-        if (gShadow[0][0] == 0) // header and buttons are static: draw once per clear
+        fillRows(0, 1, color::header);
+        drawText(0, 0, title, color::cyan, color::header);
+        fillRows(kButtonRow, kButtonRows, color::header);
+        static const char kButton[] = "[ tap: SCREENSHOT ]";
+        drawText((kCols - int(sizeof(kButton) - 1)) / 2, kButtonRow + 1, kButton, color::white, color::header);
+        if (mTeleportCount > 0)
         {
-            fillRows(0, 1, color::header);
-            drawText(0, 0, title, color::cyan, color::header);
-            fillRows(kButtonRow, kButtonRows, color::header);
-            static const char kButton[] = "[ tap: SCREENSHOT ]";
-            drawText((kCols - int(sizeof(kButton) - 1)) / 2, kButtonRow + 1, kButton, color::white, color::header);
-            gShadow[0][0] = 1;
+            drawText(1, kTeleportLabelRow, "teleport (coc):", color::grey, color::black);
+            for (int i = 0; i < mTeleportCount; ++i)
+                button(i % 2 == 0 ? 1 : kCols / 2 + 1, kTeleportFirstRow + i / 2 * kTeleportPitch, kCols / 2 - 2, 3,
+                    mTeleportLabels[i]);
         }
+        gStaticDrawn = true;
+    }
 
+    void DebugBottomScreen::redraw()
+    {
+        using namespace textfb;
+        if (!gStaticDrawn)
+            drawStatic();
+
+#ifdef OPENMW3DS_DEBUG
+        const FrameStats& f = mFrameCopy;
         const uint16_t fpsColor = f.fps >= 25.f ? color::green : (f.fps >= 15.f ? color::yellow : color::red);
         row(1, fpsColor, "FPS %5.1f  low %5.1f  frame %6.2f ms", f.fps, f.fpsLow, f.frameMs);
-        row(2, color::white, "CPU %6.2f ms  GPU %6.2f ms  dbg %.2f", f.cpuMs, f.gpuMs, mLastRedrawMs);
-        row(3, color::white, "draws %5lu  tris %7lu  frame #%lu", (unsigned long)f.drawCalls,
-            (unsigned long)f.triangles, (unsigned long)f.frameIndex);
-        row(4, budgetOk ? color::white : color::red, "heap %6.1f / %6.1f MB (budget %.1f)", mem::toMB(m.heapUsed),
-            mem::toMB(m.heapTotal), mem::toMB(mem::heapBudget(m)));
-        row(5, color::white, "linear free %5.1f / %5.1f MB", mem::toMB(m.linearFree), mem::toMB(m.linearTotal));
-        row(6, color::white, "vram free %4.2f MB  image %5.2f MB", mem::toMB(m.vramFree), mem::toMB(m.imageSize));
-        row(7, color::white, "region %5.1f / %5.1f MB (hw %lu)", mem::toMB(m.regionUsed), mem::toMB(m.regionTotal),
-            (unsigned long)(mem::expectedRegion() >> 20));
-        row(8, color::cyan, "cell %.34s", mSnapshot.cellName);
-        row(9, color::cyan, "pos %.0f %.0f %.0f  %.16s", mSnapshot.playerPos[0], mSnapshot.playerPos[1],
-            mSnapshot.playerPos[2], mSnapshot.status);
-        row(10, color::green, "%s", mPlayer);
-        row(11, mSnapshot.stateAlert ? color::yellow : color::cyan, "%s", mState);
-
-        constexpr int kLogRows = kButtonRow - kLogFirstRow;
-        log::Line lines[kLogRows];
-        const size_t n = log::copyLastLines(lines, kLogRows);
-        for (int i = 0; i < kLogRows; ++i)
-        {
-            if (size_t(i) < n)
-                row(kLogFirstRow + i, levelColor(lines[i].level), "%c %s", log::levelChar(lines[i].level), lines[i].text);
-            else
-                row(kLogFirstRow + i, color::black, " ");
-        }
+        row(2, color::cyan, "cell %.34s", mSnapshot.cellName);
+        row(3, color::cyan, "pos %.0f %.0f %.0f  yaw %.0f pitch %.0f", mSnapshot.playerPos[0],
+            mSnapshot.playerPos[1], mSnapshot.playerPos[2], mSnapshot.yaw, mSnapshot.pitch);
+        row(4, color::cyan, "look %.34s", mLooking[0] ? mLooking : "-");
+#endif
+        row(5, mSnapshot.stateAlert ? color::yellow : color::cyan, "%s", mState);
+        row(6, color::grey, "%s", mStatus);
+        if (mTeleportCount > 0)
+            row(kTeleportNoteRow, color::cyan, " %s", mTeleportNote);
     }
 }

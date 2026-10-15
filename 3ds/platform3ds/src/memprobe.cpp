@@ -55,6 +55,7 @@ namespace p3ds::memprobe
     }
 }
 
+#ifdef OPENMW3DS_DEBUG
 namespace p3ds::perf
 {
     namespace
@@ -180,6 +181,7 @@ namespace p3ds::perf::detail
         tDetailCount = 0;
     }
 }
+#endif
 
 namespace p3ds::memprobe
 {

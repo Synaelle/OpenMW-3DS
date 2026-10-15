@@ -108,6 +108,12 @@ namespace MWMechanics
         }
         else
         {
+#ifdef OPENMW_PLATFORM_3DS
+            // Outside the hydration radius (n3ds/hydration.cpp) the object isn't in the scene, but its script
+            // still runs: Balmora's banners asked for their animation every frame, ~3000 log lines a minute.
+            if (ptr.getRefData().getBaseNode() == nullptr)
+                return false;
+#endif
             Log(Debug::Warning) << "Warning: Objects::playAnimationGroup: Unable to find "
                                 << ptr.getCellRef().getRefId();
             return false;

@@ -42,7 +42,7 @@ namespace p3ds::crash
         alignas(8) u8 gHandlerStack[kHandlerStackSize];
         char gReport[kReportSize];
         size_t gReportLen = 0;
-        char gPath[96] = "/openmw/openmw3ds-crash.log"; // set by install()
+        char gPath[96] = "/openmw/logs/openmw3ds-crash.log"; // set by install()
         volatile bool gWaitForInput = true;
         int gInCrash = 0; // accessed with __atomic builtins
         const char* const* gContext = nullptr;

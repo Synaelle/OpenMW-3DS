@@ -2593,7 +2593,9 @@ namespace Render3DS
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
-            gSampleEmit = gFrame % 8 == 0;
+#ifdef OPENMW3DS_DEBUG
+            gSampleEmit = gFrame % 8 == 0; // the perf log's emit.* phases
+#endif
             gEmitProfile = EmitProfile{};
             drawBin(stage);
             if (gSampleEmit)
@@ -2747,6 +2749,7 @@ namespace Render3DS
             (unsigned long)(gLinearBasePa + __ctru_linear_heap_size), (unsigned long)(__ctru_linear_heap_size / 1024),
             (unsigned long)gBufferBase);
 
+#ifdef OPENMW3DS_DEBUG
         if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
         {
             char buf[256] = {};
@@ -2754,6 +2757,7 @@ namespace Render3DS
             std::fclose(f);
             gSimulateHang = std::strstr(buf, "fakehang") != nullptr;
         }
+#endif
 
         gResolved.resize(256);
         osgUtil::gRenderStageDrawHook3DS = &drawStageHook;

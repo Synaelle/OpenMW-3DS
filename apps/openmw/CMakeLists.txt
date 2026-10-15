@@ -123,7 +123,10 @@ if (OPENMW_PLATFORM_3DS)
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
     list(APPEND OPENMW_FILES n3ds/nullsound.hpp n3ds/videowidget_null.cpp n3ds/main3ds.cpp n3ds/frame3ds.cpp
-        n3ds/hidinject.cpp n3ds/hydration.cpp)
+        n3ds/hydration.cpp)
+    if (OPENMW3DS_DEBUG) # debug tools: autorun scripts, scripted input, teleport buttons
+        list(APPEND OPENMW_FILES n3ds/debugtools.cpp n3ds/hidinject.cpp)
+    endif()
     # Per-frame hot code at -O2 (the rest stays -Os: image size is memory): animation, physics, AI.
     set(OMW3DS_HOT_FILES ${OPENMW_FILES})
     list(FILTER OMW3DS_HOT_FILES INCLUDE REGEX "/(mwrender|mwphysics|mwmechanics)/[^/]*\\.cpp$")
@@ -176,9 +179,11 @@ if(BUILD_OPENMW)
             PRODUCT_CODE "CTR-P-OMW3"
             UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp
             SYSTEM_MODE_EXT 178MB)
-        # Scripted input for automated emulator runs (n3ds/hidinject.cpp).
-        target_link_options(openmw PRIVATE
-            "LINKER:--wrap=hidKeysDown,--wrap=hidKeysUp,--wrap=hidKeysHeld,--wrap=hidCircleRead,--wrap=irrstCstickRead")
+        # Scripted input for automated emulator runs (n3ds/hidinject.cpp, debug tools).
+        if (OPENMW3DS_DEBUG)
+            target_link_options(openmw PRIVATE
+                "LINKER:--wrap=hidKeysDown,--wrap=hidKeysUp,--wrap=hidKeysHeld,--wrap=hidCircleRead,--wrap=irrstCstickRead")
+        endif()
     endif()
 
     # Workaround necessary to ensure osgAnimation::MatrixLinearSampler dynamic casts work under Clang

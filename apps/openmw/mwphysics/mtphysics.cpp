@@ -44,6 +44,8 @@
 
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
+#ifdef OPENMW3DS_DEBUG
 // Diagnostic: convex sweeps counted in trace.cpp.
 extern uint64_t gSweepTicks;
 extern unsigned gSweepCount;
@@ -242,7 +244,7 @@ namespace
             }
         };
 
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         // Diagnostic: movement cost per actor (physics worker thread only), the costliest logged every 150 frames.
         struct ActorCost
         {
@@ -287,11 +289,11 @@ namespace
             const MWPhysics::WorldFrameData& mWorldFrameData;
             void operator()(const LockedActorSimulation& sim) const
             {
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
                 const uint64_t start = p3ds::memprobe::ticks();
 #endif
                 MWPhysics::MovementSolver::move(sim.second, mPhysicsDt, mCollisionWorld, mWorldFrameData);
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
                 ActorCost& cost = gActorCosts[sim.first.get()];
                 if (cost.mName.empty())
                     cost.mName = sim.first->getPtr().getCellRef().getRefId().toDebugString();
@@ -886,7 +888,7 @@ namespace MWPhysics
 #endif
             refreshLOSCache();
         }
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         Visitors::reportActorCosts();
 #endif
         mPostSimBarrier->wait([this] { afterPostSim(); });

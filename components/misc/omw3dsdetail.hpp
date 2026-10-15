@@ -2,8 +2,9 @@
 #define OPENMW_COMPONENTS_MISC_OMW3DSDETAIL_H
 
 // 3DS: OMW3DS_DETAIL("label") times the rest of the enclosing scope into the open detail capture (see
-// platform3ds/memprobe.hpp), e.g. the steps of one slow object insertion. Expands to nothing elsewhere.
-#ifdef OPENMW_PLATFORM_3DS
+// platform3ds/memprobe.hpp), e.g. the steps of one slow object insertion. Expands to nothing without the 3DS
+// debug tools (OPENMW3DS_DEBUG) and on other platforms.
+#ifdef OPENMW3DS_DEBUG
 #include <platform3ds/memprobe.hpp>
 #define OMW3DS_DETAIL_CAT2(a, b) a##b
 #define OMW3DS_DETAIL_CAT(a, b) OMW3DS_DETAIL_CAT2(a, b)

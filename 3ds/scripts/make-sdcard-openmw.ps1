@@ -1,5 +1,5 @@
 # Builds out\sdcard-openmw\: an OpenMW hardware test package to copy onto the root of the 3DS SD card.
-#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"] [-BulletDouble]
+#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"] [-BulletDouble] [-NoDebug]
 # Morrowind's data files are NOT included: the tester copies Morrowind.esm and Morrowind.bsa from
 # their own installation into sdmc:/openmw/data/ (see the README in the package).
 param(
@@ -8,11 +8,13 @@ param(
     # the walls, so --start dropped the player into the void (OpenMW behaviour, see PORTING_NOTES).
     [string]$Start = "Seyda Neen, Arrille's Tradehouse",
     # Double-precision Bullet (upstream) instead of single precision: see build-openmw.ps1.
-    [switch]$BulletDouble
+    [switch]$BulletDouble,
+    # Release build: no debug tools (see build-openmw.ps1).
+    [switch]$NoDebug
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" -BulletDouble:$BulletDouble | Out-Host }
+if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" -BulletDouble:$BulletDouble -NoDebug:$NoDebug | Out-Host }
 
 $out = Join-Path $RepoRoot 'out'
 $sd = Join-Path $out 'sdcard-openmw'
@@ -55,6 +57,10 @@ What this tests (hardware test #23, several changes at once):
   e. CAMERA LOG: every screenshot now logs exactly where you stand and look and what is under the
      crosshair, so I can recreate your view in the emulator. Take a screenshot whenever something
      looks wrong.
+  f. BOTTOM SCREEN trimmed (FPS, cell, position, what you look at, game state) and TELEPORT buttons
+     (like the console's "coc"): Seyda Neen, Balmora, Ald-ruhn, Vivec, Caldera, Pelagiad, Sadrith Mora,
+     and the Council Club in Balmora (an interior).
+  g. LOGS moved to sdmc:/openmw/logs/ (all three, including OpenMW's own openmw.log).
 OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
 menus/HUD (M8), sound (M7).
 
@@ -67,15 +73,14 @@ menus/HUD (M8), sound (M7).
      Morrowind.bsa   (~310 MB)
    (Nothing else is needed. The files are only read, never modified.)
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
-4. While loading, the top screen is black (dark) and the bottom screen shows the debug display:
-   "(loading)" and log lines, then FPS, draw calls and triangles once the game runs. Loading takes ~1 min
-   (a little longer the very first time: it writes a cache file).
+4. While loading, the top screen is black (dark) and the bottom screen shows "(loading)", then FPS,
+   cell, position and so on once the game runs. Loading takes under a minute.
    ALIVE INDICATOR = the last line of the bottom screen, redrawn every second:
      |   245s counting refs   idle   0s  53.0MB
      ^spinner ^uptime ^current step  ^seconds without progress  ^memory
    - spinner turning + uptime counting = the console is NOT frozen, just working.
-   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes openmw3ds-crash.log and
-     returns to HOME by itself.
+   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes logs/openmw3ds-crash.log
+     and returns to HOME by itself.
    - the spinner/uptime stop moving = real freeze (then force the power off).
    HOME works during loading too (Close exits immediately).
    The first two game frames are drawn slowly on purpose: the renderer submits each object separately
@@ -90,29 +95,32 @@ menus/HUD (M8), sound (M7).
      D-pad up     journal                               D-pad down  rest / wait
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
-   Touch the bar at the bottom of the bottom screen ("tap: SCREENSHOT") to save a screenshot of the top
-   screen to sdmc:/openmw/screenshots/ (under a second).
-   Bottom screen: HP/MP/FT, then a state line: "weapon ready / sneaking / 3rd person", or in yellow
+   Bottom screen, top to bottom: build, FPS, cell, position and view direction, "look" (the object in
+   reach under the crosshair), then a state line: "weapon ready / sneaking / 3rd person", or in yellow
    "menu: inventory - not drawn, B closes" when the game opened a menu you can't see yet, or "DEAD".
-   Game messages ("Saving...", "You stole...") appear in the log lines below.
    Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
+   TELEPORT buttons: tap one to go there (a normal cell load).
+   Touch the bar near the bottom ("tap: SCREENSHOT") to save a screenshot of the top screen to
+   sdmc:/openmw/screenshots/ (under a second).
    Things to try, in one session:
    - Inside Arrille's: look around the room, at the people and at lit areas (lighting compared with
      test #22). Screenshot.
    - Go out of the front door (A). Walk around Seyda Neen; note the FPS in the middle of town.
    - If it rains (or later in the session): look at the rain over the water from the docks. Screenshot.
    - Go into one or two houses and back out. Walk out of town a bit.
+   - Try two or three teleport buttons (Balmora, Vivec, the Council Club): FPS in town, lighting indoors.
    - HOME -> Close, then launch again; note the startup time if you can.
    Note anything that looks wrong (missing objects, wrong colours or lighting, things popping in too
    close) and take a screenshot of it: the log now says where it was.
-6. Send back these logs:
-     sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
-     sdmc:/openmw/config/openmw.log      OpenMW's own log
-     sdmc:/openmw/openmw3ds-crash.log    only if there is one
-     sdmc:/openmw/screenshots/*.bmp      your screenshots
-   (Older test builds wrote sdmc:/openmw/openmw.log and crash.log: those files can be deleted.)
+6. Send back the logs folder and your screenshots:
+     sdmc:/openmw/logs/openmw3ds.log         the 3DS port log (timings, memory, platform)
+     sdmc:/openmw/logs/openmw.log            OpenMW's own log
+     sdmc:/openmw/logs/openmw3ds-crash.log   only if there is one
+     sdmc:/openmw/screenshots/*.bmp          your screenshots
+   (Older builds wrote sdmc:/openmw/openmw3ds.log, openmw3ds-crash.log, openmw.log, crash.log and
+   sdmc:/openmw/config/openmw.log: those files can be deleted.)
 
-If you have to force the power off anyway, still send openmw3ds.log.
+If you have to force the power off anyway, still send logs/openmw3ds.log.
 "@ | Set-Content "$sd\README.txt"
 
 Write-Host "Package: $sd"

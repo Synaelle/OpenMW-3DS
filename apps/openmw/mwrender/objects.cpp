@@ -23,7 +23,7 @@
 
 namespace MWRender
 {
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
     namespace
     {
         // The perf log's "cull.cells" phase: the cull traversal of the objects of the loaded cells.
@@ -71,7 +71,7 @@ namespace MWRender
         {
             cellnode = new osg::Group;
             cellnode->setName("Cell Root");
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
             cellnode->addCullCallback(new CellCullPhase);
 #endif
             mRootNode->addChild(cellnode);

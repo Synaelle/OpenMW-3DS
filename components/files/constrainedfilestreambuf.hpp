@@ -14,7 +14,8 @@ namespace Files
 {
 #ifdef OPENMW_PLATFORM_3DS
     struct SharedArchiveFile;
-
+#endif
+#ifdef OPENMW3DS_DEBUG
     // Logs the SD reads made through ConstrainedFileStreamBuf since the last call, by request size (count,
     // data, time, MB/s: which read size the card is fastest at), then resets the counts.
     void logReadStats(std::string_view what);

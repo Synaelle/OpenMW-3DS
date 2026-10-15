@@ -19,7 +19,7 @@
 #include <components/nifosg/nifloader.hpp>
 
 #include <components/debug/debuglog.hpp>
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
 #endif
 
@@ -94,7 +94,7 @@
 
 namespace
 {
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
     // Times the cull traversal of one top-level subtree: the perf log's "cull.N" phases, named in the log at
     // startup.
     class CullPhaseCallback : public osg::NodeCallback
@@ -458,7 +458,7 @@ namespace MWRender
 
         mViewer->getCamera()->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         // Perf log: the cull traversal by top-level subtree.
         static const char* const labels[]
             = { "cull.0", "cull.1", "cull.2", "cull.3", "cull.4", "cull.5", "cull.6", "cull.7", "cull.8", "cull.9" };

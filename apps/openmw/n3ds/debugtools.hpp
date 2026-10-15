@@ -1,0 +1,36 @@
+#ifndef OPENMW_APPS_OPENMW_N3DS_DEBUGTOOLS_H
+#define OPENMW_APPS_OPENMW_N3DS_DEBUGTOOLS_H
+
+// 3DS debug tools (debug builds only: OPENMW3DS_DEBUG, platform3ds/CMakeLists.txt; this file and
+// debugtools.cpp aren't compiled without it): the autorun script of automated emulator runs and its scripted
+// input, replayable view lines for screenshots, and the debug bottom screen's teleport buttons.
+#ifndef OPENMW3DS_DEBUG
+#error "debugtools.hpp is only for builds with the 3DS debug tools (OPENMW3DS_DEBUG)"
+#endif
+
+#include <string>
+
+namespace omw3ds::debug
+{
+    // Once per engine frame, before input is scanned: what sdmc:/openmw/autorun.txt asks for at this frame
+    // (quit, doors, screenshots, weather, hour, view, ...).
+    void runAutorun(unsigned frame);
+
+    // Right after hidScanInput(): the autorun script's buttons and sticks for this frame (n3ds/hidinject.cpp).
+    void applyScriptedInput(unsigned frame);
+
+    // Where the player is and what the camera looks at, starting with autorun tokens that put the player back
+    // there ("view:F,... hour:F,H weather:F,N"): logged with every screenshot.
+    std::string describeView(unsigned frame);
+
+    // The bottom screen's teleport buttons: like the console's "coc <cell>".
+    const char* const* teleportLabels();
+    int teleportCount();
+    void teleport(int index);
+
+    // Once, a few frames in: reads a few texts ESM::LazyString left in the content file (offset and code page
+    // check in a headless run).
+    void lazyStringSelfCheck();
+}
+
+#endif

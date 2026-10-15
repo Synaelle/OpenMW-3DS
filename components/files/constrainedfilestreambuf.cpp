@@ -12,6 +12,7 @@
 #include <string>
 
 #include <components/debug/debuglog.hpp>
+#include <platform3ds/memprobe.hpp> // ticks
 #endif
 
 #include <components/misc/omw3dsdetail.hpp>
@@ -40,6 +41,7 @@ namespace Files
         // times in Morrowind.esm, ~760 small reads.
         constexpr std::size_t kKeep = 64 * 1024;
 
+#ifdef OPENMW3DS_DEBUG
         struct ReadBucket
         {
             std::atomic<uint64_t> mBytes{ 0 };
@@ -64,6 +66,7 @@ namespace Files
             gReadBuckets[i].mTicks += ticks;
             ++gReadBuckets[i].mCount;
         }
+#endif
 
         // Archives stay open for the session (a handful of BSAs).
         std::shared_ptr<SharedArchiveFile> openSharedArchive(const std::filesystem::path& fname)
@@ -82,6 +85,7 @@ namespace Files
         }
     }
 
+#ifdef OPENMW3DS_DEBUG
     void logReadStats(std::string_view what)
     {
         std::string line;
@@ -102,6 +106,7 @@ namespace Files
                          << " back by " << gBackBytes.exchange(0) / 1024 << " KB, " << gLongJumps.exchange(0)
                          << " forward past 256 KB by " << gJumpBytes.exchange(0) / 1024 << " KB)" << line;
     }
+#endif
 
     ConstrainedFileStreamBuf::ConstrainedFileStreamBuf(
         const std::filesystem::path& fname, std::size_t start, std::size_t length)
@@ -138,7 +143,9 @@ namespace Files
             File::seek(mShared->mHandle, mOrigin + pos);
             got = File::read(mShared->mHandle, data, size);
             ticks = p3ds::memprobe::ticks() - start;
+#ifdef OPENMW3DS_DEBUG
             ++gSeeks;
+#endif
         }
         else
         {
@@ -146,12 +153,18 @@ namespace Files
             if (pos != mFilePos)
             {
                 File::seek(mFile, mOrigin + pos);
+#ifdef OPENMW3DS_DEBUG
                 ++gSeeks;
+#endif
             }
             got = File::read(mFile, data, size);
             ticks = p3ds::memprobe::ticks() - start;
         }
+#ifdef OPENMW3DS_DEBUG
         countRead(size, got, ticks);
+#else
+        static_cast<void>(ticks);
+#endif
         return got;
     }
 
@@ -198,6 +211,7 @@ namespace Files
         if (newPos < mBufferPos || newPos - bufferEnd > kMaxChunk)
         {
             mChunk = std::min(mCapacity, kMinChunk);
+#ifdef OPENMW3DS_DEBUG
             if (newPos < mBufferPos)
             {
                 ++gBackSeeks;
@@ -208,6 +222,7 @@ namespace Files
                 ++gLongJumps;
                 gJumpBytes += newPos - bufferEnd;
             }
+#endif
         }
         mBufferPos = newPos;
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get());

@@ -31,6 +31,10 @@ New-Item -ItemType Directory -Force $SdOpenmw | Out-Null
 Get-ChildItem $SdOpenmw -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^(openmw3ds\.log|openmw3ds-crash\.log|openmw\.log|crash\.log|probe\.txt|autorun\.(txt|done)|shot_.*\.bmp|perf.*\.csv)$' } |
     Remove-Item -Force
+# Logs live in openmw\logs (port log, crash report, OpenMW's openmw.log).
+$SdLogs = Join-Path $SdOpenmw 'logs'
+New-Item -ItemType Directory -Force $SdLogs | Out-Null
+Get-ChildItem $SdLogs -File -Filter '*.log' -ErrorAction SilentlyContinue | Remove-Item -Force
 $memFlag = Join-Path $SdOpenmw 'memprofile'
 if ($MemProfile) { Set-Content -Path $memFlag -Value '' } elseif (Test-Path $memFlag) { Remove-Item $memFlag -Force }
 if ($Autorun) {
@@ -111,7 +115,7 @@ while ((Get-Date) -lt $deadline) {
         $nextCapture = $nextCapture.AddSeconds($CaptureEverySec)
     }
     if (Test-Path (Join-Path $SdOpenmw 'autorun.done')) { $result = 'done'; break }
-    if (Test-Path (Join-Path $SdOpenmw 'openmw3ds-crash.log')) { Start-Sleep -Seconds 3; $result = 'crash'; break }
+    if (Test-Path (Join-Path $SdLogs 'openmw3ds-crash.log')) { Start-Sleep -Seconds 3; $result = 'crash'; break }
     if ($proc.HasExited) { $result = 'emulator-exited'; break }
     Start-Sleep -Milliseconds 500
 }
@@ -131,10 +135,8 @@ Remove-Item (Join-Path $SdOpenmw 'autorun.txt') -ErrorAction SilentlyContinue
 
 # Collect.
 Get-ChildItem $SdOpenmw -File | Where-Object { $_.Name -match '\.(log|txt|csv|done)$' } | Copy-Item -Destination $runDir
+Get-ChildItem $SdLogs -File -Filter '*.log' | Copy-Item -Destination $runDir # port log, crash report, openmw.log
 if (Test-Path $azLog) { Copy-Item $azLog (Join-Path $runDir 'azahar_log.txt') }
-# OpenMW's own log (Debug::Log), next to its user config.
-$omwLog = Join-Path $SdOpenmw 'config\openmw.log'
-if (Test-Path $omwLog) { Copy-Item $omwLog $runDir }
 
 Get-ChildItem $SdOpenmw -Filter 'shot_*.bmp' | ForEach-Object {
     $img = [System.Drawing.Image]::FromFile($_.FullName)

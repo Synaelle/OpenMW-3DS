@@ -9,7 +9,7 @@
 #include "actorconvexcallback.hpp"
 #include "collisiontype.hpp"
 
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
 #include <3ds.h>
 // Diagnostic (physics worker thread): convex sweeps, reported with the actor costs (mtphysics.cpp).
 uint64_t gSweepTicks = 0;
@@ -40,11 +40,11 @@ namespace MWPhysics
         if (actorFilter)
             traceCallback.m_collisionFilterMask &= ~CollisionType_Actor;
 
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         const uint64_t sweepStart = svcGetSystemTick();
 #endif
         world->convexSweepTest(static_cast<const btConvexShape*>(shape), transFrom, transTo, traceCallback);
-#ifdef OPENMW_PLATFORM_3DS
+#ifdef OPENMW3DS_DEBUG
         gSweepTicks += svcGetSystemTick() - sweepStart;
         ++gSweepCount;
 #endif

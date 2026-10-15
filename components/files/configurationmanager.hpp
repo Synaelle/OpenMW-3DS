@@ -53,7 +53,16 @@ namespace Files
 
         const std::filesystem::path& getCachePath() const;
 
+#ifdef OPENMW_PLATFORM_3DS
+        // 3DS: with the port's logs (platform3ds kLogDir), not next to the user config.
+        const std::filesystem::path& getLogPath() const
+        {
+            static const std::filesystem::path logPath("/openmw/logs");
+            return logPath;
+        }
+#else
         const std::filesystem::path& getLogPath() const { return getUserConfigPath(); }
+#endif
         const std::filesystem::path& getScreenshotPath() const;
 
         static void addCommonOptions(boost::program_options::options_description& description);

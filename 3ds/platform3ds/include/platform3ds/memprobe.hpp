@@ -35,6 +35,9 @@ namespace p3ds::memprobe
     class Scope;
 }
 
+// Frame phase timing and detail captures are debug tools (OPENMW3DS_DEBUG, platform3ds/CMakeLists.txt): without
+// it they compile to nothing.
+#ifdef OPENMW3DS_DEBUG
 // Frame phase timing: time spent in named parts of the frame, summed (thread-safe, any thread) and
 // logged per frame as a "perf/more" line by the game's frame hook. Label: a string literal (keyed by
 // pointer). Cost: two system tick reads and an uncontended lock per phase.
@@ -98,6 +101,45 @@ namespace p3ds::perf::detail
         uint64_t mStart;
     };
 }
+#else
+namespace p3ds::perf
+{
+    inline void add(const char*, uint64_t) {}
+    inline void logAndReset(unsigned) {}
+
+    class Phase
+    {
+    public:
+        explicit Phase(const char*) {}
+    };
+}
+
+namespace p3ds::perf::detail
+{
+    inline void begin() {}
+    inline void end(char* out, unsigned size)
+    {
+        if (size > 0)
+            out[0] = '\0';
+    }
+    inline bool active()
+    {
+        return false;
+    }
+    inline void add(const char*, uint64_t) {}
+    inline void setLogMisses(bool) {}
+    inline bool logMisses()
+    {
+        return false;
+    }
+
+    class Scope
+    {
+    public:
+        explicit Scope(const char*) {}
+    };
+}
+#endif
 
 namespace p3ds::memprobe
 {
