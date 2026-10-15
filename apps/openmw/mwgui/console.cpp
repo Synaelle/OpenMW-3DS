@@ -209,6 +209,10 @@ namespace MWGui
 
     void Console::print(const std::string& msg, std::string_view color)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // The console isn't drawn until M8: its output (startup script, --script-run) goes to openmw.log.
+        Log(Debug::Info) << "console: " << std::string_view(msg).substr(0, msg.find_last_not_of('\n') + 1);
+#endif
         mHistory->addText(std::string(color) + MyGUI::TextIterator::toTagsString(msg));
     }
 

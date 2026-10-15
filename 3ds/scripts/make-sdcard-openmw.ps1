@@ -27,13 +27,23 @@ New-Item -ItemType Directory -Force "$sd\cias" | Out-Null
 & "$PSScriptRoot\stage-sd.ps1" -SdRoot $sd -DataMode none | Out-Null
 Copy-Item "$app\openmw.cia" "$sd\cias\openmw3ds.cia"
 # One argument per line (the cell name contains spaces).
-[IO.File]::WriteAllLines("$sd\openmw\args.txt", [string[]]@('--skip-menu', '--start', $Start))
+$startArgs = @('--skip-menu', '--start', $Start)
+if (-not $NoDebug) {
+    # Test builds: a console script run once at startup gives the new character gold and skills at 50
+    # (packaging/test-start.txt; the console's output goes to openmw.log).
+    Copy-Item (Join-Path $RepoRoot 'packaging\test-start.txt') "$sd\openmw\test-start.txt"
+    $startArgs += @('--script-run', 'sdmc:/openmw/test-start.txt')
+}
+[IO.File]::WriteAllLines("$sd\openmw\args.txt", [string[]]$startArgs)
 
 # The matching .elf (with debug info, ~1.8 GB) stays on the PC for crash symbolization.
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-# The build stamp compiled into the CIA (p3ds_build_id, UTC), shown on the bottom screen as "build MMDD-HHMM".
+# The build stamp compiled into the CIA (p3ds_build_id, Paris time), shown on the bottom screen as
+# "build DD/MM HH:MM".
 $buildId = (Select-String -Path "$app\openmw.cia" -Pattern '20\d{6}-\d{6} [0-9a-f]{7}' -List).Matches[0].Value
-$shortBuild = if ($buildId) { $buildId.Substring(4, 4) + '-' + $buildId.Substring(9, 4) } else { '?' }
+$shortBuild = if ($buildId) {
+    '{0}/{1} {2}:{3}' -f $buildId.Substring(6, 2), $buildId.Substring(4, 2), $buildId.Substring(9, 2), $buildId.Substring(11, 2)
+} else { '?' }
 New-Item -ItemType Directory -Force "$out\elf-archive" | Out-Null
 $elf = Get-Item (Join-Path $RepoRoot 'build\openmw\openmw.elf')
 $archived = Join-Path "$out\elf-archive" ('openmw-' + $elf.LastWriteTime.ToString('yyyyMMdd-HHmmss') + '.elf')
@@ -44,25 +54,24 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
 If the bottom screen shows another build, the new CIA is not the one installed.
-What this tests (hardware test #23, several changes at once):
-  a. RAIN: no more dark streaks over water. The rain is also lighter: Morrowind's own density (~650
-     drops instead of ~2000; it cost ~8 ms of every frame).
-  b. LIGHTING / GPU: each object's lighting now only computes the lights that reach it (most have none
-     or one). Towns were limited by the GPU. Watch for lighting that looks different from test #22:
-     objects too dark or too bright, light popping on/off, especially indoors near torches and candles.
-  c. CPU: off-screen objects are skipped faster; enchanted items no longer cause a pause (~0.1 s) when
-     they appear.
-  d. STARTUP: Morrowind.esm is read in 80 big reads instead of ~1600 small ones: startup should be
-     ~10 s shorter.
-  e. CAMERA LOG: every screenshot now logs exactly where you stand and look and what is under the
-     crosshair, so I can recreate your view in the emulator. Take a screenshot whenever something
-     looks wrong.
-  f. BOTTOM SCREEN trimmed (FPS, cell, position, what you look at, game state) and TELEPORT buttons
-     (like the console's "coc"): Seyda Neen, Balmora, Ald-ruhn, Vivec, Caldera, Pelagiad, Sadrith Mora,
-     and the Council Club in Balmora (an interior).
-  g. LOGS moved to sdmc:/openmw/logs/ (all three, including OpenMW's own openmw.log).
+What this tests (hardware test #24, M6 started: the game's MENUS, on the bottom screen):
+  The game's windows (talking, inventory, trading, books, containers, resting, journal, the START
+  menu...) now appear on the BOTTOM screen as text with touch buttons. The top screen keeps the game
+  picture (paused while a menu is open). The real graphical menus come with M8; this is the playable
+  version for now. How a menu looks:
+     TITLE (yellow)
+     text: touch its upper half to scroll back, its lower half to scroll on (^ / v show there is more)
+     [<]   options 1-10 of 23   [>]    (only when there are more than 10: touch left/right side)
+     buttons, two per row: the name, and below it a detail (price, count, weight, "equipped"...)
+  Touch a button to choose it. B still closes most menus (and opens the inventory).
+  TEST CHARACTER: every new game now starts with 5000 gold, all attributes at 75, all skills at 50, a
+  steel axe (equipped: X readies it) and two fire spells, Fire Bite (touch) and Fireball (thrown): select
+  one on the inventory's [Magic] page, then Y readies magic and ZR casts. (A console script run once at
+  startup, openmw/test-start.txt; only in test builds.)
+  Also: the TELEPORT buttons are gone (travel by silt strider or on foot now), and the build stamp at
+  the top of the bottom screen is now Paris time, day/month first.
 OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
-menus/HUD (M8), sound (M7).
+the HUD and graphical menus (M8), sound (M7).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
@@ -90,28 +99,30 @@ menus/HUD (M8), sound (M7).
      ZR           attack / cast                         ZL        jump
      L (hold)     sneak                                 R         1st / 3rd person
      A            activate (talk, pick up, open doors)  B         inventory, and closes any menu
-     X            ready weapon (fists if none)          Y         ready magic (needs a selected spell:
-                                                                  none yet, so it does nothing for now)
+     X            ready weapon (fists if none)          Y         ready magic (select a spell first:
+                                                                  B, then [Magic])
      D-pad up     journal                               D-pad down  rest / wait
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
    Bottom screen, top to bottom: build, FPS, cell, position and view direction, "look" (the object in
-   reach under the crosshair), then a state line: "weapon ready / sneaking / 3rd person", or in yellow
-   "menu: inventory - not drawn, B closes" when the game opened a menu you can't see yet, or "DEAD".
-   Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
-   TELEPORT buttons: tap one to go there (a normal cell load).
+   reach under the crosshair), then a state line: "weapon ready / sneaking / 3rd person", "menu: ..."
+   or "DEAD". While a menu is open it takes the middle of the bottom screen (see above).
    Touch the bar near the bottom ("tap: SCREENSHOT") to save a screenshot of the top screen to
    sdmc:/openmw/screenshots/ (under a second).
-   Things to try, in one session:
-   - Inside Arrille's: look around the room, at the people and at lit areas (lighting compared with
-     test #22). Screenshot.
-   - Go out of the front door (A). Walk around Seyda Neen; note the FPS in the middle of town.
-   - If it rains (or later in the session): look at the rain over the water from the docks. Screenshot.
-   - Go into one or two houses and back out. Walk out of town a bit.
-   - Try two or three teleport buttons (Balmora, Vivec, the Council Club): FPS in town, lighting indoors.
-   - HOME -> Close, then launch again; note the startup time if you can.
-   Note anything that looks wrong (missing objects, wrong colours or lighting, things popping in too
-   close) and take a screenshot of it: the log now says where it was.
+   Things to try, in one session (save first with START -> Save game, so you can load if things go wrong):
+   - Talk to Arrille (A): read his answers, try a few topics, then Barter: buy something cheap, sell
+     something, Offer. Goodbye.
+   - Inventory (B): open an item, Equip / Unequip, Drop one. [Magic]: select Fireball, close, then Y
+     and ZR to cast it (at a wall, or at a mudcrab outside). X, then ZR swings the axe.
+   - Pick up and read a book or a scroll (A on it): scroll the text, Take.
+   - D-pad down: wait 1 hour. D-pad up: the journal. START: Save game, then Load game (pick your save).
+   - Open a container nobody watches (taking things in front of people is a crime: the guard can kill a
+     level-1 character; if you die, the bottom screen offers Load game). Take one item, then Take All.
+   - Outside: walk to the silt strider by the docks, talk to the caravaner (Darvame Hleran) and Travel to
+     Balmora. In Balmora: talk to a few people, try a trainer or a shop if you find one.
+   - Any window with only a "Close" button is one I don't handle yet: note its title.
+   Note anything unreadable, cut off, or buttons that don't react or do the wrong thing, and take a
+   screenshot of the top screen when something looks wrong (the log says what the bottom screen showed).
 6. Send back the logs folder and your screenshots:
      sdmc:/openmw/logs/openmw3ds.log         the 3DS port log (timings, memory, platform)
      sdmc:/openmw/logs/openmw.log            OpenMW's own log

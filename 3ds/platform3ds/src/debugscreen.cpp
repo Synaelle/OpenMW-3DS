@@ -288,12 +288,13 @@ namespace p3ds
         using namespace textfb;
         const PlatformInfo& pi = info();
         char title[kCols + 1];
-        // The build stamp ("YYYYMMDD-HHMMSS rev", UTC): "build 1014-2112" shows at a glance which CIA is installed
-        // (the package README names the one it contains).
-        char stamp[10] = "?";
+        // The build stamp ("YYYYMMDD-HHMMSS rev", Paris time): "build 14/10 21:12" (day/month) shows at a glance
+        // which CIA is installed (the package README names the one it contains). The row is exactly 40 columns.
+        char stamp[12] = "?";
         if (strlen(p3ds_build_id) >= 13)
-            snprintf(stamp, sizeof(stamp), "%.4s-%.4s", p3ds_build_id + 4, p3ds_build_id + 9);
-        snprintf(title, sizeof(title), " OpenMW3DS  %s %s  build %s", pi.isNew3DS ? "N3DS" : "O3DS",
+            snprintf(stamp, sizeof(stamp), "%.2s/%.2s %.2s:%.2s", p3ds_build_id + 6, p3ds_build_id + 4,
+                p3ds_build_id + 9, p3ds_build_id + 11);
+        snprintf(title, sizeof(title), " OpenMW3DS %s %s build %s", pi.isNew3DS ? "N3DS" : "O3DS",
             pi.speedupEnabled ? "804MHz" : "268MHz", stamp);
         cells(0, 0, title, kCols, color::cyan, color::header);
         for (int r = kButtonRow; r < kButtonRow + kButtonRows; ++r)
@@ -319,7 +320,7 @@ namespace p3ds
         }
         const int count = int(mMenu.mOptions.size());
         const int pages = (count + kMenuOptionsPerPage - 1) / kMenuOptionsPerPage;
-        char pager[kCols + 1] = "";
+        char pager[64] = ""; // cells() cuts it at kCols
         if (pages > 1)
             snprintf(pager, sizeof(pager), "%s      options %d-%d of %d      %s", mMenuPage > 0 ? "[<]" : "   ",
                 mMenuPage * kMenuOptionsPerPage + 1, std::min(count, (mMenuPage + 1) * kMenuOptionsPerPage), count,
