@@ -42,18 +42,19 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
 If the bottom screen shows another build, the new CIA is not the one installed.
-What this tests (hardware test #22, several changes at once):
-  a. WATER: rebuilt as a small grid that follows the camera (tests #19-#21: cut along a straight line).
-  b. PEOPLE APPEARING: should no longer pause the game (models now load in the background first).
-  c. LOADING: shorter cell loads; from the SECOND launch on, startup skips the "counting refs" step
-     (~12 s; the first launch writes sdmc:/openmw/cache/refinfo.bin).
-  d. PHYSICS at 30 steps per second instead of 60, and in single precision instead of double (much
-     lighter on the CPU): walking, running, jumping, stairs, swimming and NPCs walking around should
-     feel the same as before. Watch for anything odd: falling through floors, getting stuck, jitter.
-  e. RENDERING fixes: enchanted items and objects with glow/dark maps no longer translucent; cut-out
-     textures (hair, plants, leaf edges) use their real alpha test; textures re-cooked so transparent
-     edges no longer turn dark (RAIN was drawn as dark streaks, mostly visible over water).
-  f. Screenshots now save in under a second.
+What this tests (hardware test #23, several changes at once):
+  a. RAIN: no more dark streaks over water. The rain is also lighter: Morrowind's own density (~650
+     drops instead of ~2000; it cost ~8 ms of every frame).
+  b. LIGHTING / GPU: each object's lighting now only computes the lights that reach it (most have none
+     or one). Towns were limited by the GPU. Watch for lighting that looks different from test #22:
+     objects too dark or too bright, light popping on/off, especially indoors near torches and candles.
+  c. CPU: off-screen objects are skipped faster; enchanted items no longer cause a pause (~0.1 s) when
+     they appear.
+  d. STARTUP: Morrowind.esm is read in 80 big reads instead of ~1600 small ones: startup should be
+     ~10 s shorter.
+  e. CAMERA LOG: every screenshot now logs exactly where you stand and look and what is under the
+     crosshair, so I can recreate your view in the emulator. Take a screenshot whenever something
+     looks wrong.
 OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
 menus/HUD (M8), sound (M7).
 
@@ -96,15 +97,14 @@ menus/HUD (M8), sound (M7).
    Game messages ("Saving...", "You stole...") appear in the log lines below.
    Menus: the top-screen picture keeps running, but the game is paused behind an invisible menu: press B.
    Things to try, in one session:
-   - Inside Arrille's: look at the enchanted dagger on display and the people (hair). Screenshot.
-   - Go out of the front door (A). Walk around Seyda Neen and past the people there: does the game
-     still pause when someone appears? Jump, run, climb some stairs, walk into a wall.
-   - Go to the shore where you swam last time: look at the water from the beach, then wade/swim in and
-     look around, up and down. Is it still cut along a straight line, or flashing? Screenshots.
+   - Inside Arrille's: look around the room, at the people and at lit areas (lighting compared with
+     test #22). Screenshot.
+   - Go out of the front door (A). Walk around Seyda Neen; note the FPS in the middle of town.
+   - If it rains (or later in the session): look at the rain over the water from the docks. Screenshot.
    - Go into one or two houses and back out. Walk out of town a bit.
-   - HOME -> Close, then launch again: the second start should be shorter (note both times if you can).
-   Note anything that looks wrong (missing objects, wrong colours, things popping in too close) and
-   the FPS on the bottom screen.
+   - HOME -> Close, then launch again; note the startup time if you can.
+   Note anything that looks wrong (missing objects, wrong colours or lighting, things popping in too
+   close) and take a screenshot of it: the log now says where it was.
 6. Send back these logs:
      sdmc:/openmw/openmw3ds.log          the 3DS port log (timings, memory, platform)
      sdmc:/openmw/config/openmw.log      OpenMW's own log
