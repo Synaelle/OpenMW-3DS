@@ -1,6 +1,7 @@
 #include "worldimp.hpp"
 
 #ifdef OPENMW_PLATFORM_3DS
+#include <components/files/constrainedfilestreambuf.hpp>
 #include <platform3ds/memprobe.hpp>
 #define OMW3DS_STAGE(label) p3ds::memprobe::stage(label) // timestamped log line (startup profiling)
 #else
@@ -233,6 +234,7 @@ namespace MWWorld
             char detail[300];
             p3ds::perf::detail::end(detail, sizeof(detail));
             Log(Debug::Info) << "3ds content files (ms/calls):" << detail;
+            Files::logReadStats("content files");
         }
 #endif
         OMW3DS_STAGE("loadData: content files");
@@ -253,6 +255,7 @@ namespace MWWorld
             char detail[300];
             p3ds::perf::detail::end(detail, sizeof(detail));
             Log(Debug::Info) << "3ds validate + ref count (ms/calls):" << detail;
+            Files::logReadStats("validate + ref count");
         }
 #endif
         OMW3DS_STAGE("loadData: validate + ref count");

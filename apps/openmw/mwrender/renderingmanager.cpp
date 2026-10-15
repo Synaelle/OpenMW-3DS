@@ -19,6 +19,9 @@
 #include <components/nifosg/nifloader.hpp>
 
 #include <components/debug/debuglog.hpp>
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
+#endif
 
 #include <components/stereo/multiview.hpp>
 #include <components/stereo/stereomanager.hpp>
@@ -91,6 +94,28 @@
 
 namespace
 {
+#ifdef OPENMW_PLATFORM_3DS
+    // Times the cull traversal of one top-level subtree: the perf log's "cull.N" phases, named in the log at
+    // startup.
+    class CullPhaseCallback : public osg::NodeCallback
+    {
+    public:
+        explicit CullPhaseCallback(const char* label)
+            : mLabel(label)
+        {
+        }
+
+        void operator()(osg::Node* node, osg::NodeVisitor* nv) override
+        {
+            p3ds::perf::Phase phase(mLabel);
+            traverse(node, nv);
+        }
+
+    private:
+        const char* mLabel;
+    };
+#endif
+
     class LightManagerUpdateVisitor : public osg::NodeVisitor
     {
     public:
@@ -432,6 +457,26 @@ namespace MWRender
         updateProjectionMatrix();
 
         mViewer->getCamera()->setClearMask(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+#ifdef OPENMW_PLATFORM_3DS
+        // Perf log: the cull traversal by top-level subtree.
+        static const char* const labels[]
+            = { "cull.0", "cull.1", "cull.2", "cull.3", "cull.4", "cull.5", "cull.6", "cull.7", "cull.8", "cull.9" };
+        std::size_t phases = 0;
+        for (osg::Group* group : { mRootNode.get(), static_cast<osg::Group*>(mSceneRoot.get()) })
+            for (unsigned i = 0; i < group->getNumChildren() && phases < std::size(labels); ++i)
+            {
+                osg::Node* child = group->getChild(i);
+                if (child == mSceneRoot.get())
+                    continue;
+                child->addCullCallback(new CullPhaseCallback(labels[phases]));
+                Log(Debug::Info) << "3ds perf: " << labels[phases] << " = " << child->className() << " '"
+                                 << child->getName() << "' under " << (group == mRootNode.get() ? "root" : "scene")
+                                 << ", " << (child->asGroup() ? child->asGroup()->getNumChildren() : 0)
+                                 << " children, mask " << std::hex << child->getNodeMask() << std::dec;
+                ++phases;
+            }
+#endif
     }
 
     RenderingManager::~RenderingManager()

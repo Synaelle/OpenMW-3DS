@@ -79,6 +79,12 @@ namespace Render3DS
         shaderProgram_s gProgram;
         shaderProgram_s gProbeProgram; // the M0 test app's shader (self-test baseline)
         shaderProgram_s gFlatProgram; // minimal shader on the scene vertex layout (self-test)
+        // gProgram's variants that evaluate fewer point lights (scene1.v.pica: slot 0 only; scene0.v.pica: none).
+        // Same code upload and uniform layout as gProgram (one DVLB, gen_scene_shader.py); off if the layouts
+        // don't match.
+        shaderProgram_s gProgram1;
+        shaderProgram_s gProgram0;
+        bool gVariants = false;
 
         // Set when the GPU hung: the GPU core was reset and nothing is drawn for the rest of the run, so the game
         // keeps running (headless) and HOME closes it normally instead of a frozen console.
@@ -1254,6 +1260,7 @@ namespace Render3DS
 
         struct Bound
         {
+            const shaderProgram_s* mProgram = nullptr;
             const osg::RefMatrix* mProjection = nullptr;
             const osg::RefMatrix* mModelView = nullptr;
             const osg::Uniform* mLightBuffer = nullptr;
@@ -1394,6 +1401,8 @@ namespace Render3DS
 
         // The shader's lights are unrolled (scene.v.pica): every slot is evaluated and the sum doesn't depend on
         // the order, so lights stay in their slot from one draw to the next and only differences are uploaded.
+        // Draws with one light use the variant that only evaluates slot 0, draws without any the one that
+        // evaluates none (nothing to upload: the slots keep what they hold).
         // Objects near each other share most lights (in different orders, OpenMW sorts per object), and a full
         // 8-light upload per draw was ~20% of the GPU command buffer on hardware (test #13). A light is recognized
         // by its data, which is identical within a frame for every list containing it (same light, same view).
@@ -1433,6 +1442,19 @@ namespace Render3DS
                 out[2] = FVec4_New(0.f, 0.f, 0.f, 0.f);
                 out[3] = FVec4_New(1.f, 0.f, 0.f, 0.f);
             }
+        }
+
+        // The one light of a draw drawn with gProgram1 goes to slot 0. false: slot 0 already held it.
+        bool writeSlot0(const float* m)
+        {
+            LightSlot& slot = gLightSlots[0];
+            if (slot.mKnown && slot.mLit && std::memcmp(slot.mData, m, sizeof(LightSlot::mData)) == 0)
+                return false;
+            writeSlot(0, m);
+            std::memcpy(slot.mData, m, sizeof(LightSlot::mData));
+            slot.mLit = true;
+            slot.mKnown = true;
+            return true;
         }
 
         void writeLights(const float* data, int count)
@@ -1481,7 +1503,11 @@ namespace Render3DS
                 }
         }
 
-        void uploadLighting(const ResolvedState& rs)
+        int gDrawLights = 0; // point lights of the current draw (stats)
+
+        // pointLights false: the draw ignores point lights (sky passes, OpenMW's "simpleLighting" weather
+        // particles: lighting_vertex_impl.glsl), whatever the light manager attached.
+        void uploadLighting(const ResolvedState& rs, bool pointLights)
         {
             // Sun: shared by everything under the light manager; its values change once per frame.
             const Slot<osg::Uniform>* sun[3] = { &rs.mSunPosition, &rs.mSunDiffuse, &rs.mSunAmbient };
@@ -1517,20 +1543,37 @@ namespace Render3DS
             // Point lights: one LightBuffer uniform per light list (OpenMW's per-object lighting).
             const osg::Uniform* buffer = rs.mLightBuffer.mValue;
             int count = 0;
-            if (rs.mPointLightCount.mValue)
+            if (pointLights && rs.mPointLightCount.mValue)
                 rs.mPointLightCount.mValue->get(count);
             count = std::clamp(count, 0, kMaxLights);
             if (buffer == nullptr || buffer->getFloatArray() == nullptr)
                 count = 0;
+            if (count > 0)
+                count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
+            gDrawLights = count;
+
+            const shaderProgram_s* program = !gVariants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
+            if (program != gBound.mProgram)
+            {
+                C3D_BindProgram(const_cast<shaderProgram_s*>(program));
+                gBound.mProgram = program;
+                ++gStats.mProgramSwitches;
+            }
+            if (program == &gProgram0)
+                return;
+            if (program == &gProgram1)
+            {
+                if (writeSlot0(&(*buffer->getFloatArray())[0]))
+                    gBound.mLightCount = -1; // slot 0 changed under the 8-light cache below
+                return;
+            }
+
             const unsigned modified = buffer ? buffer->getModifiedCount() : 0;
             if (buffer == gBound.mLightBuffer && modified == gBound.mLightBufferModified && count == gBound.mLightCount)
                 return;
             gBound.mLightBuffer = buffer;
             gBound.mLightBufferModified = modified;
             gBound.mLightCount = count;
-
-            if (count > 0)
-                count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
             writeLights(count > 0 ? &(*buffer->getFloatArray())[0] : nullptr, count);
         }
 
@@ -1788,7 +1831,7 @@ namespace Render3DS
                 (unsigned long)gpu.mVboSize, (unsigned long)gpu.mVertexCount, (unsigned long)physical(gpu.mIbo),
                 (unsigned long)gpu.mIboSize, (unsigned long)(tex ? physical(tex->data) : 0), tex ? int(tex->fmt) : -1,
                 tex ? unsigned(tex->width) : 0u, tex ? unsigned(tex->height) : 0u, tex ? unsigned(tex->maxLevel) + 1 : 0u,
-                (unsigned long)(tex ? tex->param : 0), (unsigned long)gBufferBase, gBound.mLightCount,
+                (unsigned long)(tex ? tex->param : 0), (unsigned long)gBufferBase, gDrawLights,
                 geometry.getName().c_str(),
                 parent ? parent->getName().c_str() : "");
         }
@@ -2130,7 +2173,22 @@ namespace Render3DS
                 C3D_DepthTest(true, GPU_LESS, GPU_WRITE_ALL);
                 C3D_CullFace(GPU_CULL_BACK_CCW);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-                return selfTestStep("L14 + depth test and back-face culling");
+                if (!selfTestStep("L14 + depth test and back-face culling"))
+                    return false;
+                if (!gVariants)
+                    return true;
+
+                C3D_BindProgram(&gProgram1);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L15 + 1-light shader variant"))
+                    return false;
+
+                C3D_BindProgram(&gProgram0);
+                C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                if (!selfTestStep("L16 + sun-only shader variant"))
+                    return false;
+                C3D_BindProgram(&gProgram);
+                return true;
             };
             if (!run())
                 return; // GPU reset, rendering off: leave the buffers (the GPU state is unknown)
@@ -2175,7 +2233,7 @@ namespace Render3DS
 
         // Vertices built on the CPU every frame (particle quads). When beginFrame returns, the GPU has finished the
         // previous frame, so the buffer is refilled from the start each frame.
-        constexpr uint32_t kTransientVertices = 4096; // 682 particles, 144 KB
+        constexpr uint32_t kTransientVertices = 16384; // 2730 particles, 576 KB (rain alone: ~1400-1900 drops)
         Vertex* gTransient = nullptr; // linear memory (init)
         uint32_t gTransientUsed = 0;
         bool gWarnedTransient = false;
@@ -2371,7 +2429,10 @@ namespace Render3DS
                 C3D_FVec* rows = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mModelView, 3);
                 setRows(rows, *leaf->_modelview, 3);
             }
-            uploadLighting(rs);
+            bool simpleLighting = false;
+            if (particles)
+                particles->getUserValue("simpleLighting", simpleLighting);
+            uploadLighting(rs, sky == Sky_None && !simpleLighting);
             uploadMaterial(rs, sky);
             uploadTexMat(rs, sky);
             uploadFog(rs, sky);
@@ -2385,6 +2446,8 @@ namespace Render3DS
                 C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(particleFirst), static_cast<int>(particleCount));
                 ++gStats.mDraws;
                 gStats.mTriangles += particleCount / 3;
+                gStats.mShaderRuns[gDrawLights] += particleCount;
+                gStats.mParticleVertices += particleCount;
                 lap(gEmitProfile.mDraw);
                 return;
             }
@@ -2403,6 +2466,7 @@ namespace Render3DS
                         static_cast<uint8_t*>(gpu->mIbo) + prim.mFirst);
                 ++gStats.mDraws;
                 gStats.mTriangles += prim.mTriangles;
+                gStats.mShaderRuns[gDrawLights] += prim.mCount;
                 if (verify)
                 {
                     verifyDraw(*gpu, prim, *geometry);
@@ -2525,6 +2589,7 @@ namespace Render3DS
                     return;
             }
             C3D_BindProgram(&gProgram);
+            gBound.mProgram = &gProgram;
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
@@ -2629,6 +2694,14 @@ namespace Render3DS
         shaderProgramSetVsh(&gProbeProgram, &gDvlb->DVLE[1]);
         shaderProgramInit(&gFlatProgram);
         shaderProgramSetVsh(&gFlatProgram, &gDvlb->DVLE[2]);
+        shaderProgramInit(&gProgram1);
+        shaderProgramInit(&gProgram0);
+        if (gDvlb->numDVLE >= 5)
+        {
+            shaderProgramSetVsh(&gProgram1, &gDvlb->DVLE[3]);
+            shaderProgramSetVsh(&gProgram0, &gDvlb->DVLE[4]);
+            gVariants = true;
+        }
         C3D_BindProgram(&gProgram);
         auto loc = [](const char* name) {
             const int location = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
@@ -2649,6 +2722,22 @@ namespace Render3DS
         gLoc.mMatEmission = loc("matEmission");
         gLoc.mColorSel = loc("colorSel");
         gLoc.mLights = loc("lights");
+        for (shaderProgram_s* variant : { &gProgram1, &gProgram0 })
+        {
+            if (!gVariants)
+                break;
+            for (const char* name : { "projection", "modelView", "texMat", "texMat1", "lighting", "sunDir",
+                     "sunDiffuse", "sunAmbient", "matDiffuse", "matAmbient", "matEmission", "colorSel", "lights" })
+                if (shaderInstanceGetUniformLocation(variant->vertexShader, name)
+                    != shaderInstanceGetUniformLocation(gProgram.vertexShader, name))
+                {
+                    P3DS_LOGE("render3ds: shader variant uniform %s moved; variants off (8 lights everywhere)", name);
+                    gVariants = false;
+                    break;
+                }
+        }
+        P3DS_LOGI("render3ds: shaders: %lu instructions in %d programs (max 512), light variants %s",
+            (unsigned long)gDvlb->DVLP.codeSize, int(gDvlb->numDVLE), gVariants ? "0/1/8" : "off");
 
         gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
         if (gLinearBasePa + __ctru_linear_heap_size > 0x28000000)
@@ -2693,6 +2782,8 @@ namespace Render3DS
         shaderProgramFree(&gProgram);
         shaderProgramFree(&gProbeProgram);
         shaderProgramFree(&gFlatProgram);
+        shaderProgramFree(&gProgram1);
+        shaderProgramFree(&gProgram0);
         DVLB_Free(gDvlb);
         C3D_RenderTargetDelete(gTarget);
         if (gUnusedTex1Ready)

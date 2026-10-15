@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Generates scene.v.pica (committed): the scene vertex shader with its point lights unrolled.
+"""Generates the scene vertex shaders (committed) with their point lights unrolled:
+scene.v.pica (8 lights), scene1.v.pica (1 light, slot 0) and scene0.v.pica (sun only).
 
     python openmw/components/render3ds/gen_scene_shader.py
 
 No flow control on purpose. Hardware test #12 hung the GPU at the first draw using the previous version, whose
 light loop (LOOP with aL-relative uniform access) ran fine in every emulator, while the M0 test app's shader
 (straight-line code) runs on hardware. Unused lights are uploaded far away with a zero radius, so they cost
-instructions but contribute nothing.
+instructions but contribute nothing. The vertex shader is what limits the GPU (hardware test #22: ~0.8 ms per
+1000 triangles, ~260 instructions per vertex, 8 of them light blocks), and most vertices have no point light or
+one, so the backend picks the variant with the fewest light blocks that covers the draw's lights. The three share
+one DVLB (one code upload; under the PICA's 512 instructions with the self-test shaders) and the same uniform
+layout: every variant declares all 8 lights, so a switch doesn't move a register.
 """
 
 import os
@@ -41,7 +46,8 @@ HEADER = """; OpenMW 3DS port: scene vertex shader (citro3d backend, components/
 .fvec matDiffuse, matAmbient, matEmission
 .fvec colorSel      ; x/y/z: diffuse/ambient/emission come from the vertex color (0 or 1); w: alpha multiplier
 .fvec lighting      ; x: 1 = lit, 0 = unlit (only E); y: 1 = E fades to matAmbient as the vertex alpha drops (clouds)
-.fvec lights[{uniforms}]    ; {lights} point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
+.fvec lights[{uniforms}]    ; {slots} point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
+                    ; this variant evaluates the first {lights}
 
 .constf consts(0.0, 1.0, 0.00392156863, 3.0)
 .constf limits(1000000.0, 0.0, 0.0, 0.0)
@@ -59,7 +65,7 @@ HEADER = """; OpenMW 3DS port: scene vertex shader (citro3d backend, components/
 .alias zeros consts.xxxx
 .alias ones  consts.yyyy
 
-.proc main
+{entry}.proc {proc}
 	; r0 = view-space position
 	mov r1.xyz, inpos
 	mov r1.w, ones
@@ -172,16 +178,25 @@ FOOTER = """
 """
 
 
+VARIANTS = [  # (lights evaluated, file, entry point); scene.v.pica's entry stays "main"
+    (LIGHTS, "scene.v.pica", "main"),
+    (1, "scene1.v.pica", "scene1_main"),
+    (0, "scene0.v.pica", "scene0_main"),
+]
+
+
 def main():
-    text = HEADER.format(lights=LIGHTS, uniforms=LIGHTS * 4)
-    for i in range(LIGHTS):
-        base = i * 4
-        text += LIGHT.format(index=i, p=base, d=base + 1, m=base + 2, a=base + 3)
-    text += FOOTER
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene.v.pica")
-    with open(out, "w", newline="\n") as f:
-        f.write(text)
-    print("wrote", out)
+    for lights, name, proc in VARIANTS:
+        entry = "" if proc == "main" else f".entry {proc}\n"
+        text = HEADER.format(lights=lights, slots=LIGHTS, uniforms=LIGHTS * 4, entry=entry, proc=proc)
+        for i in range(lights):
+            base = i * 4
+            text += LIGHT.format(index=i, p=base, d=base + 1, m=base + 2, a=base + 3)
+        text += FOOTER
+        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+        with open(out, "w", newline="\n") as f:
+            f.write(text)
+        print("wrote", out)
 
 
 if __name__ == "__main__":

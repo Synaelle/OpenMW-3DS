@@ -41,6 +41,15 @@
 
 namespace
 {
+#ifdef OPENMW_PLATFORM_3DS
+    // A third of upstream's raindrops: ~2000 drops alive -> ~650, vanilla's own "Max Raindrops" for rain. In
+    // Azahar the rain cost ~4 ms of particle updates (in the cull traversal) and several ms building its quads
+    // per frame, out of ~48.
+    constexpr float sRainDensity = 1.f / 3.f;
+#else
+    constexpr float sRainDensity = 1.f;
+#endif
+
     class WrapAroundOperator : public osgParticle::Operator
     {
     public:
@@ -395,7 +404,17 @@ namespace MWRender
 
         stateset->setTextureAttribute(0, raindropTex);
         stateset->setNestRenderBins(false);
+#ifdef OPENMW_PLATFORM_3DS
+        // After the water (and every other depth-sorted drawable), without writing depth. Sorted with the water,
+        // the eye-following water plane and the camera-following rain swapped places with the view, and drops
+        // drawn first kept the water from covering what lies under it: dark streaks over water (hardware test #22).
+        stateset->setRenderBinDetails(RenderBin_DepthSorted + 1, "RenderBin");
+        osg::ref_ptr<osg::Depth> rainDepth = new SceneUtil::AutoDepth;
+        rainDepth->setWriteMask(false);
+        stateset->setAttributeAndModes(rainDepth);
+#else
         stateset->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+#endif
         stateset->setMode(GL_CULL_FACE, osg::StateAttribute::OFF);
         stateset->setMode(GL_BLEND, osg::StateAttribute::ON);
 
@@ -425,7 +444,7 @@ namespace MWRender
         // (near 1-2). Since the rain is a regular geometry, it produces water ripples, also in theory it can be removed
         // if collides with something.
         osg::ref_ptr<RainCounter> counter = new RainCounter;
-        counter->setNumberOfParticlesPerSecondToCreate(mRainMaxRaindrops / mRainEntranceSpeed * 20);
+        counter->setNumberOfParticlesPerSecondToCreate(mRainMaxRaindrops / mRainEntranceSpeed * 20 * sRainDensity);
         emitter->setCounter(counter);
         mCounter = counter;
 
@@ -616,7 +635,8 @@ namespace MWRender
             mPlacer->setYRange(-rainRange.y() / 2, rainRange.y() / 2);
             mPlacer->setZRange(-rainRange.z() / 2, rainRange.z() / 2);
 
-            mCounter->setNumberOfParticlesPerSecondToCreate(mRainMaxRaindrops / mRainEntranceSpeed * 20);
+            mCounter->setNumberOfParticlesPerSecondToCreate(
+                mRainMaxRaindrops / mRainEntranceSpeed * 20 * sRainDensity);
             mPrecipitationOccluder->updateRange(rainRange);
         }
     }

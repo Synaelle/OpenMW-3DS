@@ -14,17 +14,23 @@
 #include "../mwgui/mode.hpp"
 #include "../mwmechanics/creaturestats.hpp"
 #include "../mwmechanics/drawstate.hpp"
+#include "../mwphysics/raycasting.hpp"
+#include "../mwrender/camera.hpp"
 #include "../mwbase/luamanager.hpp"
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
+#include "../mwworld/globals.hpp"
+#include "../mwworld/timestamp.hpp"
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/refdata.hpp"
 
 #include "../profile.hpp"
 
 #include <components/esm/position.hpp>
+#include <components/esm/refid.hpp>
+#include <components/esm/util.hpp>
 #include <components/render3ds/render3ds.hpp>
 #include <components/settings/values.hpp>
 
@@ -60,6 +66,7 @@ namespace omw3ds
         // Cell name / position / player state are refreshed a few times a second only (string work).
         std::string gCellName = "-";
         float gPos[3] = {};
+        float gRot[3] = {}; // player rotation (radians): x pitch, z yaw
         char gPlayerLine[48] = "";
         char gStateLine[48] = "";
         bool gStateAlert = false;
@@ -78,6 +85,9 @@ namespace omw3ds
             float mCmdBufPeak = 0;
             unsigned mVerified = 0;
             double mLightSlots = 0;
+            double mShaderRuns[9] = {};
+            double mProgramSwitches = 0;
+            double mParticleVertices = 0;
         } gRender;
 
         // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
@@ -212,7 +222,10 @@ namespace omw3ds
             gCellName = player.getCell()->getCell()->getDescription();
             const ESM::Position& pos = player.getRefData().getPosition();
             for (int i = 0; i < 3; ++i)
+            {
                 gPos[i] = pos.pos[i];
+                gRot[i] = pos.rot[i];
+            }
 
             // No HUD and no menus are drawn until M8: say what the game is waiting for.
             const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
@@ -254,6 +267,60 @@ namespace omw3ds
 
     namespace
     {
+        // Where the player is and what the camera looks at, starting with autorun tokens that put the player
+        // back there: "view:F,X,Y,Z,YAW,PITCH,POV,CELL" (degrees; POV 1 or 3 = first/third person; CELL "ext"
+        // for exteriors, else the interior's name with '_' for spaces), "hour:F,H" and, outdoors, "weather:F,N".
+        // Logged with every screenshot, so a view seen on the console can be recreated in the emulator. The
+        // crosshair ray costs a few ms: screenshots only.
+        std::string describeView(unsigned frame)
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            if (world == nullptr)
+                return "(no world yet)";
+            const MWWorld::Ptr player = world->getPlayerPtr();
+            if (player.isEmpty() || !player.isInCell())
+                return "(no player yet)";
+            const ESM::Position& p = player.getRefData().getPosition();
+            const MWWorld::Cell& cell = *player.getCell()->getCell();
+            std::string cellField = "ext";
+            if (!cell.isExterior())
+            {
+                cellField = std::string(cell.getNameId());
+                std::replace(cellField.begin(), cellField.end(), ' ', '_');
+            }
+            const bool firstPerson = world->isFirstPerson();
+            char weather[32] = "";
+            if (cell.isExterior()) // applied after the view (it needs the player in the region)
+                std::snprintf(weather, sizeof(weather), " weather:%u,%d", frame + 30, world->getCurrentWeatherScriptId());
+            char buf[768];
+            int len = std::snprintf(buf, sizeof(buf), "view:%u,%.0f,%.0f,%.0f,%.1f,%.1f,%d,%s hour:%u,%.2f%s [%s]",
+                frame, double(p.pos[0]), double(p.pos[1]), double(p.pos[2]), double(osg::RadiansToDegrees(p.rot[2])),
+                double(osg::RadiansToDegrees(p.rot[0])), firstPerson ? 1 : 3, cellField.c_str(), frame,
+                double(world->getTimeStamp().getHour()), weather, std::string(cell.getDescription()).c_str());
+            if (const MWRender::Camera* camera = world->getCamera(); camera != nullptr && len > 0)
+            {
+                const osg::Vec3f eye = camera->getPosition();
+                const osg::Vec3f forward = camera->getOrient() * osg::Vec3f(0, 1, 0);
+                const osg::Vec3f end = eye + forward * 8192.f;
+                MWPhysics::RayCastingResult hit;
+                std::string target = "nothing within 8192 units";
+                if (world->castRenderingRay(hit, eye, end, true, false, false))
+                {
+                    char at[48];
+                    std::snprintf(at, sizeof(at), " at %.0f units", double((hit.mHitPos - eye).length()));
+                    target = hit.mHitObject.isEmpty() ? std::string("terrain") + at
+                                                      : hit.mHitObject.getCellRef().getRefId().toDebugString() + " ("
+                            + std::string(hit.mHitObject.getTypeDescription()) + ")" + at;
+                }
+                std::snprintf(buf + len, sizeof(buf) - len,
+                    " | %s person, eye %.0f %.0f %.0f, camera yaw %.1f pitch %.1f, crosshair: %s",
+                    firstPerson ? "first" : "third", double(eye.x()), double(eye.y()), double(eye.z()),
+                    double(osg::RadiansToDegrees(-camera->getYaw())),
+                    double(osg::RadiansToDegrees(-camera->getPitch())), target.c_str()); // the player's conventions
+            }
+            return buf;
+        }
+
         // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3);
         // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward).
         struct ScriptedInput
@@ -526,6 +593,15 @@ namespace omw3ds
             // command: it transitions over a few seconds.
             unsigned mWeatherAt = 0;
             int mWeather = 0;
+            // "view:F,X,Y,Z,YAW,PITCH,POV,CELL": at frame F, the player at X Y Z facing YAW, looking PITCH degrees
+            // down, in first (1) or third (3) person, in CELL ("ext" or an interior, '_' for spaces): the token a
+            // screenshot's "view" log line starts with (describeView).
+            unsigned mViewAt = 0;
+            float mView[5] = {};
+            int mViewPov = 1;
+            std::string mViewCell;
+            unsigned mHourAt = 0; // "hour:F,H": at frame F, the game time is H o'clock
+            float mHour = 0;
         };
         static const Autorun autorun = [] {
             Autorun result;
@@ -549,6 +625,39 @@ namespace omw3ds
                     result.mWeatherAt = unsigned(std::strtoul(q + 8, &end, 10));
                     if (*end == ',')
                         result.mWeather = int(std::strtol(end + 1, nullptr, 10));
+                }
+                if (const char* q = std::strstr(buf, "hour:"))
+                {
+                    char* end = nullptr;
+                    result.mHourAt = unsigned(std::strtoul(q + 5, &end, 10));
+                    if (*end == ',')
+                        result.mHour = std::strtof(end + 1, nullptr);
+                    else
+                        result.mHourAt = 0;
+                }
+                if (const char* q = std::strstr(buf, "view:"))
+                {
+                    char* end = nullptr;
+                    result.mViewAt = unsigned(std::strtoul(q + 5, &end, 10));
+                    int fields = 0;
+                    for (; fields < 5 && *end == ','; ++fields)
+                        result.mView[fields] = std::strtof(end + 1, &end);
+                    if (fields == 5 && *end == ',')
+                        result.mViewPov = int(std::strtol(end + 1, &end, 10));
+                    if (fields == 5 && *end == ',')
+                    {
+                        const char* cell = end + 1;
+                        const char* cellEnd = cell;
+                        while (*cellEnd != '\0' && !std::isspace(static_cast<unsigned char>(*cellEnd)))
+                            ++cellEnd;
+                        result.mViewCell.assign(cell, cellEnd);
+                        std::replace(result.mViewCell.begin(), result.mViewCell.end(), '_', ' ');
+                    }
+                    if (result.mViewCell.empty())
+                    {
+                        P3DS_LOGW("autorun: can't parse the view: token");
+                        result.mViewAt = 0;
+                    }
                 }
                 if (const char* q = std::strstr(buf, "pos:"))
                 {
@@ -617,9 +726,40 @@ namespace omw3ds
             P3DS_LOGI("autorun: player moved to %.0f %.0f %.0f", double(autorun.mPos.x()), double(autorun.mPos.y()),
                 double(autorun.mPos.z()));
         }
+        if (autorun.mHourAt != 0 && gStats.frameIndex == autorun.mHourAt)
+        {
+            MWBase::Environment::get().getWorld()->setGlobalFloat(MWWorld::Globals::sGameHour, autorun.mHour);
+            P3DS_LOGI("autorun: game hour %.2f", double(autorun.mHour));
+        }
+        if (autorun.mViewAt != 0 && gStats.frameIndex == autorun.mViewAt)
+        {
+            MWBase::World* world = MWBase::Environment::get().getWorld();
+            ESM::Position position{};
+            for (int i = 0; i < 3; ++i)
+                position.pos[i] = autorun.mView[i];
+            position.rot[0] = osg::DegreesToRadians(autorun.mView[4]);
+            position.rot[2] = osg::DegreesToRadians(autorun.mView[3]);
+            if (autorun.mViewCell == "ext")
+            {
+                const ESM::ExteriorCellLocation index
+                    = ESM::positionToExteriorCellLocation(position.pos[0], position.pos[1]);
+                world->changeToCell(ESM::RefId::esm3ExteriorCell(index.mX, index.mY), position, true);
+            }
+            else
+                world->changeToInteriorCell(autorun.mViewCell, position, true);
+            if ((autorun.mViewPov == 3) == world->isFirstPerson())
+                world->togglePOV(true);
+            P3DS_LOGI("autorun: view set: %.0f %.0f %.0f yaw %.1f pitch %.1f, %s person, cell %s",
+                double(position.pos[0]), double(position.pos[1]), double(position.pos[2]), double(autorun.mView[3]),
+                double(autorun.mView[4]), autorun.mViewPov == 3 ? "third" : "first", autorun.mViewCell.c_str());
+        }
         for (unsigned shot : autorun.mShots)
             if (shot == gStats.frameIndex)
-                Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp").c_str());
+            {
+                const std::string path = "sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp";
+                Render3DS::requestCapture(path.c_str());
+                P3DS_LOGI("screenshot %s: %s", path.c_str(), describeView(gStats.frameIndex).c_str());
+            }
         // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
         // so scan once per frame here. All buttons are game controls (bindingsmanager.cpp); debug
         // functions are on the touch screen.
@@ -649,6 +789,7 @@ namespace omw3ds
             char path[64];
             std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count++);
             Render3DS::requestCapture(path);
+            P3DS_LOGI("screenshot %s: %s", path, describeView(gStats.frameIndex).c_str());
         }
 
         const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
@@ -667,6 +808,10 @@ namespace omw3ds
         gRender.mCmdBufPeak = std::max(gRender.mCmdBufPeak, render.mCmdBufUsage);
         gRender.mVerified += render.mVerified;
         gRender.mLightSlots += render.mLightSlotWrites;
+        for (int i = 0; i < 9; ++i)
+            gRender.mShaderRuns[i] += render.mShaderRuns[i];
+        gRender.mProgramSwitches += render.mProgramSwitches;
+        gRender.mParticleVertices += render.mParticleVertices;
 
         gLogAccum += frameSeconds;
         ++gLogFrames;
@@ -674,9 +819,11 @@ namespace omw3ds
             gLogWorst = ms;
         if (gLogAccum >= 5.0)
         {
-            P3DS_LOGI("perf: %u frames in %.1f s, %.1f fps, avg %.1f ms, worst %.1f ms [%s] pos %.0f %.0f %.0f",
+            P3DS_LOGI("perf: %u frames in %.1f s, %.1f fps, avg %.1f ms, worst %.1f ms [%s] pos %.0f %.0f %.0f "
+                      "yaw %.0f pitch %.0f",
                 gLogFrames, gLogAccum, gLogFrames / gLogAccum, gLogAccum * 1000.0 / gLogFrames, gLogWorst,
-                gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]));
+                gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]),
+                double(osg::RadiansToDegrees(gRot[2])), double(osg::RadiansToDegrees(gRot[0])));
             logTimings();
             if (Render3DS::isActive())
             {
@@ -688,6 +835,11 @@ namespace omw3ds
                     gRender.mEmitMs / n, gRender.mGpuMs / n, double(gRender.mGpuWorst), gRender.mUploadKb / n,
                     (unsigned long)render.mGeometries, (unsigned long)render.mLinearFreeKb,
                     double(gRender.mCmdBufPeak) * 100.0, gRender.mVerified, gRender.mLightSlots / n);
+                const double* runs = gRender.mShaderRuns;
+                P3DS_LOGI("gpu/vs: vertex shader runs per frame by point lights: 0: %.0f 1: %.0f 2: %.0f 3: %.0f "
+                          "4: %.0f 5: %.0f 6: %.0f 7: %.0f 8: %.0f (particles %.0f); %.0f shader switches/frame",
+                    runs[0] / n, runs[1] / n, runs[2] / n, runs[3] / n, runs[4] / n, runs[5] / n, runs[6] / n,
+                    runs[7] / n, runs[8] / n, gRender.mParticleVertices / n, gRender.mProgramSwitches / n);
             }
             gRender = RenderSums{};
             gLogAccum = 0;

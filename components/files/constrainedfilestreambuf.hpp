@@ -4,6 +4,9 @@
 #include <filesystem>
 #include <memory>
 #include <streambuf>
+#ifdef OPENMW_PLATFORM_3DS
+#include <string_view>
+#endif
 
 #include <components/platform/file.hpp>
 
@@ -11,6 +14,10 @@ namespace Files
 {
 #ifdef OPENMW_PLATFORM_3DS
     struct SharedArchiveFile;
+
+    // Logs the SD reads made through ConstrainedFileStreamBuf since the last call, by request size (count,
+    // data, time, MB/s: which read size the card is fastest at), then resets the counts.
+    void logReadStats(std::string_view what);
 #endif
 
     /// A file streambuf constrained to a specific region in the file, specified by the 'start' and 'length' parameters.
@@ -32,12 +39,14 @@ namespace Files
 #ifdef OPENMW_PLATFORM_3DS
         // Every SD request is expensive (ms), so: tellg() and seeks inside the buffer don't touch the file
         // (upstream discards the buffer on any seek, and ESMReader::skip/tellg are frequent), and the read
-        // size grows from 32 KB to 256 KB while reads stay sequential. Entries of up to 256 KB are read at once.
+        // size grows from 32 KB while reads stay sequential, up to 1 MB for whole files (content files) and
+        // 256 KB for archive entries. Entries of up to 256 KB are read at once.
         // Archive entries (a constrained region) read through one handle per archive, kept open: opening a
         // file on the SD card costs 15-25 ms, and every model and animation in a BSA reopened it.
         std::shared_ptr<SharedArchiveFile> mShared;
         std::unique_ptr<char[]> mBuffer;
-        std::size_t mCapacity = 0;
+        std::size_t mCapacity = 0; // largest read
+        std::size_t mKeep = 0; // bytes of the previous fill kept in front of a sequential refill (whole files)
         std::size_t mChunk = 0; // current read size
         std::size_t mBufferPos = 0; // stream position (relative to mOrigin) of mBuffer[0]
         std::size_t mFilePos = 0; // stream position the file handle is at

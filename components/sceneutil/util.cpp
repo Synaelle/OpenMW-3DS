@@ -203,6 +203,22 @@ namespace SceneUtil
         const osg::Vec4f& glowColor, float glowDuration)
     {
         OMW3DS_DETAIL("glow");
+#ifdef OPENMW_PLATFORM_3DS
+        // One frame of the animation, loaded once and shared by every glow: the citro3d backend draws no
+        // environment map (the glow isn't shown), and loading the 32 frames cost ~130 ms per enchanted item on
+        // hardware (test #22) whenever the image cache had dropped them. Never freed (no GPU texture to release
+        // after the renderer shuts down).
+        static const std::vector<osg::ref_ptr<osg::Texture2D>>& textures
+            = *new std::vector<osg::ref_ptr<osg::Texture2D>>([&] {
+                  osg::ref_ptr<osg::Image> image
+                      = resourceSystem->getImageManager()->getImage(glowTextureNames.front());
+                  osg::ref_ptr<osg::Texture2D> tex(new osg::Texture2D(image));
+                  tex->setWrap(osg::Texture::WRAP_S, osg::Texture2D::REPEAT);
+                  tex->setWrap(osg::Texture::WRAP_T, osg::Texture2D::REPEAT);
+                  resourceSystem->getSceneManager()->applyFilterSettings(tex);
+                  return std::vector<osg::ref_ptr<osg::Texture2D>>{ tex };
+              }());
+#else
         std::vector<osg::ref_ptr<osg::Texture2D>> textures;
         for (const VFS::Path::Normalized& name : glowTextureNames)
         {
@@ -213,6 +229,7 @@ namespace SceneUtil
             resourceSystem->getSceneManager()->applyFilterSettings(tex);
             textures.push_back(tex);
         }
+#endif
 
         FindLowestUnusedTexUnitVisitor findLowestUnusedTexUnitVisitor;
         node->accept(findLowestUnusedTexUnitVisitor);

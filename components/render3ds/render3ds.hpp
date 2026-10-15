@@ -48,6 +48,9 @@ namespace Render3DS
         float mGpuMs = 0; // PICA time of the previous frame
         float mCmdBufUsage = 0; // fraction of the GPU command buffer used
         uint32_t mLightSlotWrites = 0; // light slots uploaded (4 vectors each)
+        uint32_t mShaderRuns[9] = {}; // vertex shader runs (vertices/indices drawn) by active point-light count
+        uint32_t mProgramSwitches = 0; // shader variant changes between draws
+        uint32_t mParticleVertices = 0; // particle quads built on the CPU this frame (6 vertices each)
     };
     const FrameStats& getLastFrameStats();
 

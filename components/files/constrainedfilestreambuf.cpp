@@ -4,9 +4,14 @@
 #include <filesystem>
 #include <limits>
 #ifdef OPENMW_PLATFORM_3DS
+#include <atomic>
+#include <cstdio>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
+
+#include <components/debug/debuglog.hpp>
 #endif
 
 #include <components/misc/omw3dsdetail.hpp>
@@ -26,6 +31,39 @@ namespace Files
     {
         constexpr std::size_t kMinChunk = 32 * 1024;
         constexpr std::size_t kMaxChunk = 256 * 1024;
+        // Whole files (content files): Morrowind.esm took 20 s at ~4 MB/s on hardware (test #22, ~50 KB per
+        // read on average) while the ref count's reads of up to 256 KB ran at ~9 MB/s.
+        constexpr std::size_t kMaxFileChunk = 1024 * 1024;
+        // Whole files keep the end of the previous fill in front of the next one: loading a cell, OpenMW reads
+        // ahead for moved references and seeks back a few KB (Store<ESM::Cell>::handleMovedCellRefs). When the
+        // read-ahead had crossed into a new fill, the seek back dropped it and the reads restarted at 32 KB: ~340
+        // times in Morrowind.esm, ~760 small reads.
+        constexpr std::size_t kKeep = 64 * 1024;
+
+        struct ReadBucket
+        {
+            std::atomic<uint64_t> mBytes{ 0 };
+            std::atomic<uint64_t> mTicks{ 0 };
+            std::atomic<uint32_t> mCount{ 0 };
+        };
+        constexpr std::size_t kBucketLimits[] = { 16 * 1024, 32 * 1024, 64 * 1024, 128 * 1024, 256 * 1024,
+            512 * 1024, kMaxFileChunk };
+        constexpr const char* kBucketNames[] = { "16K", "32K", "64K", "128K", "256K", "512K", "1M" };
+        ReadBucket gReadBuckets[std::size(kBucketLimits)];
+        std::atomic<uint32_t> gSeeks{ 0 };
+        // Seeks out of the buffer that drop it: backward, and forward past more than kMaxChunk.
+        std::atomic<uint32_t> gBackSeeks{ 0 }, gLongJumps{ 0 };
+        std::atomic<uint64_t> gBackBytes{ 0 }, gJumpBytes{ 0 };
+
+        void countRead(std::size_t size, std::size_t got, uint64_t ticks)
+        {
+            std::size_t i = 0;
+            while (i + 1 < std::size(kBucketLimits) && size > kBucketLimits[i])
+                ++i;
+            gReadBuckets[i].mBytes += got;
+            gReadBuckets[i].mTicks += ticks;
+            ++gReadBuckets[i].mCount;
+        }
 
         // Archives stay open for the session (a handful of BSAs).
         std::shared_ptr<SharedArchiveFile> openSharedArchive(const std::filesystem::path& fname)
@@ -44,6 +82,27 @@ namespace Files
         }
     }
 
+    void logReadStats(std::string_view what)
+    {
+        std::string line;
+        char entry[96];
+        for (std::size_t i = 0; i < std::size(gReadBuckets); ++i)
+        {
+            ReadBucket& bucket = gReadBuckets[i];
+            const uint32_t count = bucket.mCount.exchange(0);
+            const uint64_t bytes = bucket.mBytes.exchange(0);
+            const double ms = double(bucket.mTicks.exchange(0)) / 268111.856; // ticks: SYSCLOCK_ARM11 Hz
+            if (count == 0)
+                continue;
+            std::snprintf(entry, sizeof(entry), " | <=%s: %u reads %.1f MB %.0f ms %.1f MB/s", kBucketNames[i],
+                unsigned(count), bytes / 1048576.0, ms, ms > 0 ? bytes / 1048.576 / ms : 0.0);
+            line += entry;
+        }
+        Log(Debug::Info) << "3ds reads (" << what << "), " << gSeeks.exchange(0) << " seeks (" << gBackSeeks.exchange(0)
+                         << " back by " << gBackBytes.exchange(0) / 1024 << " KB, " << gLongJumps.exchange(0)
+                         << " forward past 256 KB by " << gJumpBytes.exchange(0) / 1024 << " KB)" << line;
+    }
+
     ConstrainedFileStreamBuf::ConstrainedFileStreamBuf(
         const std::filesystem::path& fname, std::size_t start, std::size_t length)
         : mOrigin(start)
@@ -60,8 +119,9 @@ namespace Files
             mSize = File::size(mFile) - start;
             File::seek(mFile, start);
         }
-        mCapacity = std::max<std::size_t>(1, std::min(mSize, kMaxChunk));
-        mBuffer.reset(new char[mCapacity]); // not value-initialized
+        mCapacity = std::max<std::size_t>(1, std::min(mSize, mShared != nullptr ? kMaxChunk : kMaxFileChunk));
+        mKeep = mShared == nullptr && mSize > mCapacity ? kKeep : 0;
+        mBuffer.reset(new char[mKeep + mCapacity]); // not value-initialized
         mChunk = mSize <= kMaxChunk ? mCapacity : kMinChunk;
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
     }
@@ -69,15 +129,30 @@ namespace Files
     std::size_t ConstrainedFileStreamBuf::readAt(std::size_t pos, char* data, std::size_t size)
     {
         OMW3DS_DETAIL("io.read");
+        std::size_t got;
+        uint64_t ticks;
         if (mShared != nullptr)
         {
             const std::lock_guard lock(mShared->mMutex);
+            const uint64_t start = p3ds::memprobe::ticks();
             File::seek(mShared->mHandle, mOrigin + pos);
-            return File::read(mShared->mHandle, data, size);
+            got = File::read(mShared->mHandle, data, size);
+            ticks = p3ds::memprobe::ticks() - start;
+            ++gSeeks;
         }
-        if (pos != mFilePos)
-            File::seek(mFile, mOrigin + pos);
-        return File::read(mFile, data, size);
+        else
+        {
+            const uint64_t start = p3ds::memprobe::ticks();
+            if (pos != mFilePos)
+            {
+                File::seek(mFile, mOrigin + pos);
+                ++gSeeks;
+            }
+            got = File::read(mFile, data, size);
+            ticks = p3ds::memprobe::ticks() - start;
+        }
+        countRead(size, got, ticks);
+        return got;
     }
 
     std::streambuf::int_type ConstrainedFileStreamBuf::underflow()
@@ -88,13 +163,20 @@ namespace Files
         if (pos >= mSize)
             return traits_type::eof();
         // Consumed a whole fill without seeking away: sequential reading, read bigger chunks.
-        if (pos == mFilePos && egptr() != eback())
+        const bool sequential = pos == mFilePos && egptr() != eback();
+        if (sequential)
             mChunk = std::min(mChunk * 2, mCapacity);
+        std::size_t keep = 0;
+        if (sequential && mKeep > 0)
+        {
+            keep = std::min<std::size_t>(mKeep, egptr() - eback());
+            std::memmove(mBuffer.get(), egptr() - keep, keep);
+        }
         const std::size_t toRead = std::min(mChunk, mSize - pos);
-        const std::size_t got = readAt(pos, mBuffer.get(), toRead);
+        const std::size_t got = readAt(pos, mBuffer.get() + keep, toRead);
         mFilePos = pos + got;
-        mBufferPos = pos;
-        setg(mBuffer.get(), mBuffer.get(), mBuffer.get() + got);
+        mBufferPos = pos - keep;
+        setg(mBuffer.get(), mBuffer.get() + keep, mBuffer.get() + keep + got);
         if (got == 0)
             return traits_type::eof();
         return traits_type::to_int_type(*gptr());
@@ -114,7 +196,19 @@ namespace Files
         // Outside: drop the buffer, the next underflow() seeks. Short forward skips keep the chunk size
         // (still a sequential scan, e.g. ESMReader skipping subrecords).
         if (newPos < mBufferPos || newPos - bufferEnd > kMaxChunk)
+        {
             mChunk = std::min(mCapacity, kMinChunk);
+            if (newPos < mBufferPos)
+            {
+                ++gBackSeeks;
+                gBackBytes += mBufferPos - newPos;
+            }
+            else
+            {
+                ++gLongJumps;
+                gJumpBytes += newPos - bufferEnd;
+            }
+        }
         mBufferPos = newPos;
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
         return newPos;
