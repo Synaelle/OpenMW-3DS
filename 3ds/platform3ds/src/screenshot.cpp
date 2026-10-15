@@ -82,6 +82,8 @@ namespace p3ds::screenshot
 
     bool saveBottomScreen(const char* path)
     {
+        // The GPU may have written it (M8's GUI): drop stale cache lines first.
+        GSPGPU_InvalidateDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
         return saveRotatedFramebuffer(path, textfb::framebuffer(), textfb::kWidth, textfb::kHeight, Format::RGB565);
     }
 }

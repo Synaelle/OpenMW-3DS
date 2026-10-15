@@ -2643,6 +2643,10 @@ namespace Render3DS
             for (const GuiBatch& batch : gGuiBatches)
             {
                 C3D_Tex* texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
+                // A texture the GPU can't show (the local map's render-to-texture tiles until M8 step 5): left out
+                // rather than drawn as a plain white quad.
+                if (batch.mTexture != nullptr && texture == nullptr)
+                    continue;
                 float scaleU = 1.f, scaleV = 1.f;
                 const osg::Image* image
                     = batch.mTexture != nullptr && batch.mTexture->getNumImages() > 0 ? batch.mTexture->getImage(0) : nullptr;

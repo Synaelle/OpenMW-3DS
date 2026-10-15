@@ -5,6 +5,7 @@
 #include "menus.hpp"
 
 #include <platform3ds/log.hpp>
+#include <platform3ds/screenshot.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/luamanager.hpp"
@@ -571,6 +572,10 @@ namespace omw3ds::debug
                 const std::string path = "sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp";
                 Render3DS::requestCapture(path.c_str());
                 P3DS_LOGI("screenshot %s: %s", path.c_str(), describeView(frame).c_str());
+                // The bottom screen too (its framebuffer holds the last frame drawn there: M8's GUI or the text
+                // display).
+                const std::string bottom = "sdmc:/openmw/shot_bottom_" + std::to_string(shot) + ".bmp";
+                p3ds::screenshot::saveBottomScreen(bottom.c_str());
             }
         const float turn = frame == 30 ? autorun.mTurnDegrees : 0.f;
         if (turn != 0)

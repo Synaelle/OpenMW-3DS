@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Nintendo 3DS HUD (M8, docs/M8_UI_IDEAS.md). Replaces OpenMW's openmw_hud.layout through the ui3ds data directory.
+  MyGUI's canvas has the console's shape (components/render3ds/render3ds.hpp): the top screen is 400x240 at (0, 0),
+  the bottom screen 320x240 at (40, 240). Widget names are the ones mwgui/hud.cpp looks for.
+
+  Top screen: only the crosshair, the cell name when it changes, and the breath bar (underwater).
+  Bottom screen, in Morrowind's dialog frame: health/magicka/fatigue, the weapon, spell and sneak boxes, the
+  minimap, active effects, the target panel (the crosshair's tooltip, placed by mwgui/tooltips.cpp) and the quick keys
+  (n3ds/hud3ds.cpp).
+-->
+<MyGUI type="Layout">
+    <Widget type="Widget" layer="HUD" position="0 0 400 480" name="_Main" align="Stretch">
+
+        <!-- ================================================================ top screen -->
+
+        <!-- Crosshair: the top screen's centre -->
+        <Widget type="ImageBox" skin="HUD_Crosshair" position="187 107 27 27" align="Left Top" name="Crosshair"/>
+
+        <!-- Cell name display when the cell changes: lower right of the top screen, as in Morrowind -->
+        <Widget type="TextBox" skin="SandText" position="100 208 292 24" name="CellName" align="Left Top">
+            <Property key="Visible" value="false"/>
+            <Property key="TextAlign" value="Right"/>
+            <Property key="TextShadow" value="true"/>
+            <Property key="TextShadowColour" value="0 0 0"/>
+            <Property key="NeedMouse" value="false"/>
+        </Widget>
+
+        <!-- ================================================================ bottom screen -->
+
+        <Widget type="Widget" skin="MW_DialogNoTransp" position="40 240 320 240" align="Left Top" name="Bottom3DS">
+
+            <!-- Energy bars -->
+            <Widget type="Button" skin="" position="6 6 104 12" align="Left Top" name="HealthFrame">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\k\health.dds"/>
+                <Widget type="ProgressBar" skin="MW_EnergyBar_Red" position="0 0 104 12" align="Left Top" name="Health">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+            <Widget type="Button" skin="" position="6 21 104 12" align="Left Top" name="MagickaFrame">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\k\magicka.dds"/>
+                <Widget type="ProgressBar" skin="MW_EnergyBar_Blue" position="0 0 104 12" align="Left Top" name="Magicka">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+            <Widget type="Button" skin="" position="6 36 104 12" align="Left Top" name="FatigueFrame">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\k\fatigue.dds"/>
+                <Widget type="ProgressBar" skin="MW_EnergyBar_Green" position="0 0 104 12" align="Left Top" name="Stamina">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+            <!-- The current enemy's health, under the player's -->
+            <Widget type="ProgressBar" skin="MW_EnergyBar_Yellow" position="6 52 104 12" align="Left Top" name="EnemyHealth">
+                <Property key="Visible" value="false"/>
+            </Widget>
+
+            <!-- Equipped weapon box -->
+            <Widget type="Button" skin="" position="118 6 36 42" align="Left Top" name="WeapBox">
+                <Widget type="Widget" skin="HUD_Box" position="0 0 36 36">
+                    <Property key="NeedMouse" value="false"/>
+                    <Widget type="Widget" skin="" position="2 2 32 32">
+                        <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-5 -5 42 42" align="Left Top" name="WeapImage"/>
+                    </Widget>
+                </Widget>
+                <Widget type="ProgressBar" skin="MW_EnergyBar_Weapon" position="0 36 36 6" align="Left Top" name="WeapStatus">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+
+            <!-- Selected spell box -->
+            <Widget type="Button" position="158 6 36 42" align="Left Top" name="SpellBox">
+                <Widget type="Widget" skin="HUD_Box" position="0 0 36 36">
+                    <Widget type="Widget" skin="" position="2 2 32 32">
+                        <Widget type="SpellWidget" skin="MW_ItemIconNoShadow" position="-5 -5 42 42" align="Left Top" name="SpellImage"/>
+                    </Widget>
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+                <Widget type="ProgressBar" skin="MW_EnergyBar_Magic" position="0 36 36 6" align="Left Top" name="SpellStatus">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+
+            <!-- Sneak indicator box -->
+            <Widget type="Button" skin="" position="198 6 36 36" align="Left Top" name="SneakBox">
+                <Property key="Visible" value="false"/>
+                <Widget type="Widget" skin="HUD_Box" position="0 0 36 36">
+                    <Property key="NeedMouse" value="false"/>
+                    <Widget type="ImageBox" skin="ImageBox" position="2 2 32 32" align="Left Top" name="SneakImage">
+                        <Property key="NeedMouse" value="false"/>
+                        <Property key="ImageTexture" value="icons\k\stealth_sneak.dds"/>
+                    </Widget>
+                </Widget>
+            </Widget>
+
+            <!-- Equipped weapon / selected spell name, for a few seconds after it changes -->
+            <Widget type="TextBox" skin="SandText" position="6 66 232 22" name="WeaponSpellName" align="Left Top">
+                <Property key="Visible" value="false"/>
+                <Property key="TextAlign" value="Left"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+
+            <!-- Map box -->
+            <Widget type="Widget" skin="" position="244 6 66 66" name="MiniMapBox" align="Left Top">
+                <Widget type="Widget" skin="HUD_Box" position="0 0 66 66" align="Center">
+                    <Widget type="ScrollView" skin="MW_MapView" position="2 2 62 62" align="Left Bottom" name="MiniMap">
+                        <Widget type="ImageBox" skin="RotatingSkin" position="0 0 32 32" align="Bottom Left" name="Compass">
+                            <Property key="ImageTexture" value="textures\compass.dds"/>
+                        </Widget>
+                        <Widget type="Button" skin="" position_real="0 0 1 1" name="MiniMapButton" align="Stretch">
+                            <Property key="Depth" value="10"/>
+                        </Widget>
+                    </Widget>
+                </Widget>
+            </Widget>
+
+            <!-- Active spell effects: right-aligned under the map (mwgui/hud.cpp grows it to the left) -->
+            <Widget type="Widget" skin="HUD_Box_Transparent" position="290 76 20 20" align="Left Top" name="EffectBox">
+            </Widget>
+
+            <!-- Quick keys 1-9 (n3ds/hud3ds.cpp): touch one to use it -->
+            <Widget type="Widget" skin="" position="3 192 306 34" align="Left Top" name="QuickKeys3DS">
+                <Widget type="Button" skin="HUD_Box" position="0 0 34 34" name="QuickKey3DS1">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon1">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="34 0 34 34" name="QuickKey3DS2">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon2">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="68 0 34 34" name="QuickKey3DS3">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon3">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="102 0 34 34" name="QuickKey3DS4">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon4">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="136 0 34 34" name="QuickKey3DS5">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon5">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="170 0 34 34" name="QuickKey3DS6">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon6">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="204 0 34 34" name="QuickKey3DS7">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon7">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="238 0 34 34" name="QuickKey3DS8">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon8">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+                <Widget type="Button" skin="HUD_Box" position="272 0 34 34" name="QuickKey3DS9">
+                    <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon9">
+                        <Property key="NeedMouse" value="false"/>
+                    </Widget>
+                </Widget>
+            </Widget>
+
+        </Widget>
+
+    </Widget>
+
+    <!-- Mouse Emulation Cursor -->
+    <Widget type="ImageBox" layer="Notification" skin="HUD_MouseEmulationCursor" position="0 0 15 15" align="Center Center" name="MouseEmulationCursor"/>
+
+    <!-- Drowning bar: top screen -->
+    <Widget type="Widget" layer="DrowningBar" position="85 0 230 100" name="DrowningBar" align="Left Top">
+        <Property key="Visible" value="false"/>
+        <Widget type="Window" skin="MW_Dialog" position="0 36 230 58" align="Left Top" name="DrowningFrame">
+            <Widget type="TextBox" skin="SandText" position="0 3 222 24" name="DrowningTitle" align="Center Top HStretch">
+                <Property key="Caption" value="#{sBreath}"/>
+                <Property key="TextAlign" value="Center"/>
+                <Property key="TextShadow" value="true"/>
+                <Property key="TextShadowColour" value="0 0 0"/>
+            </Widget>
+            <Widget type="Widget" skin="MW_Box" position="11 29 200 10" align="Stretch" name="BoundingBox"/>
+            <Widget type="ProgressBar" skin="MW_Progress_Drowning_Full" position="13 31 196 6" align="Center Top" name="Drowning">
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+            <Widget type="Widget" skin="MW_Progress_Drowning_Small" position="15 33 192 2" align="Center Top" name="Flash"/>
+        </Widget>
+    </Widget>
+
+</MyGUI>

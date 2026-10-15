@@ -1,5 +1,11 @@
 #include "tooltips.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+
+#include "../n3ds/hud3ds.hpp"
+#endif
+
 #include <format>
 #include <iomanip>
 
@@ -309,8 +315,18 @@ namespace MWGui
             {
                 MyGUI::IntSize tooltipSize = getToolTipViaPtr(mFocusObject.getCellRef().getCount(), true, checkOwned());
 
-                const int left = viewSize.width / 2 - tooltipSize.width / 2;
-                const int top = std::max(0, int(mFocusToolTipY * viewSize.height - tooltipSize.height - 20));
+                int left = viewSize.width / 2 - tooltipSize.width / 2;
+                int top = std::max(0, int(mFocusToolTipY * viewSize.height - tooltipSize.height - 20));
+#ifdef OPENMW_PLATFORM_3DS
+                // M8: in the bottom screen's target panel, not over the game.
+                if (Render3DS::drawsGui())
+                {
+                    const MyGUI::IntCoord panel = omw3ds::targetPanel3DS();
+                    left = panel.left + (panel.width - tooltipSize.width) / 2;
+                    top = panel.top + std::max(0, (panel.height - tooltipSize.height) / 2);
+                    top = std::min(top, Render3DS::kGuiCanvasHeight - 4 - tooltipSize.height);
+                }
+#endif
                 setCoord(left, top, tooltipSize.width, tooltipSize.height);
 
                 mDynamicToolTipBox->setVisible(true);

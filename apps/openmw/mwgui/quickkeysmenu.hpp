@@ -11,6 +11,8 @@
 #include "spellmodel.hpp"
 #include "windowbase.hpp"
 
+#include "../n3ds/menufriend.hpp"
+
 namespace MWGui
 {
 
@@ -21,6 +23,8 @@ namespace MWGui
 
     class QuickKeysMenu : public WindowBase
     {
+        OMW3DS_HUD_FRIEND
+
     public:
         QuickKeysMenu();
 

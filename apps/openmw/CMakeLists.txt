@@ -124,7 +124,7 @@ if (OPENMW_PLATFORM_3DS)
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
     list(APPEND OPENMW_FILES n3ds/sound3ds.hpp n3ds/ndspoutput.cpp n3ds/sounddecoder3ds.cpp n3ds/videowidget_null.cpp
-        n3ds/main3ds.cpp n3ds/frame3ds.cpp n3ds/hydration.cpp n3ds/menus.cpp)
+        n3ds/main3ds.cpp n3ds/frame3ds.cpp n3ds/hydration.cpp n3ds/menus.cpp n3ds/hud3ds.cpp)
     if (OPENMW3DS_DEBUG) # debug tools: autorun scripts, scripted input, teleport buttons
         list(APPEND OPENMW_FILES n3ds/debugtools.cpp n3ds/hidinject.cpp)
     endif()

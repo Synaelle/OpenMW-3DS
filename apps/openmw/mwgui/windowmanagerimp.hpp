@@ -126,6 +126,7 @@ namespace MWGui
     class WindowManager : public MWBase::WindowManager
     {
         OMW3DS_MENU_FRIEND
+        OMW3DS_HUD_FRIEND
     public:
         typedef std::pair<std::string, int> Faction;
         typedef std::vector<Faction> FactionList;

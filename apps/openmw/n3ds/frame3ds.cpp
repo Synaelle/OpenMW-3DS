@@ -1,4 +1,5 @@
 #include "frame3ds.hpp"
+#include "hud3ds.hpp"
 #include "menus.hpp"
 #include "sound3ds.hpp"
 #ifdef OPENMW3DS_DEBUG
@@ -378,6 +379,8 @@ namespace omw3ds
                     gBottom.redrawAll();
             }
         }
+        if (Render3DS::drawsGui())
+            updateHud3DS();
         if (Render3DS::guiOwnsBottomScreen())
             injectTouchToGui();
         else if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
