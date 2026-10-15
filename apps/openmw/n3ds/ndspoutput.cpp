@@ -72,6 +72,7 @@ namespace MWSound
         size_t gEffectBytes = 0; // in linear memory
         unsigned gSkipped = 0;
         std::atomic<uint64_t> gDecodeTicks{ 0 }; // sound thread
+        std::atomic<unsigned> gUnderruns{ 0 }; // sound thread: a stream played out before it was refilled
     }
 
     SoundStats3DS takeSoundStats3DS()
@@ -83,6 +84,7 @@ namespace MWSound
         stats.mBufferBytes = gEffectBytes;
         stats.mDecodeMs = ticksToMs(gDecodeTicks.exchange(0));
         stats.mSkipped = gSkipped;
+        stats.mUnderruns = gUnderruns.exchange(0);
         gSkipped = 0;
         return stats;
     }
@@ -178,6 +180,8 @@ namespace MWSound
         bool process()
         {
             const size_t bufferBytes = size_t(mBufferFrames) * size_t(mChannels) * 2;
+            if (mDecodedFrames > 0 && !std::any_of(mWave.begin(), mWave.end(), isQueued))
+                ++gUnderruns; // everything decoded so far has played: a gap was heard
             while (!isQueued(mWave[mNext]))
             {
                 size_t got = 0;

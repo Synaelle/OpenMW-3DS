@@ -54,29 +54,25 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
 If the bottom screen shows another build, the new CIA is not the one installed.
-What this tests (hardware test #24, M6 started: the game's MENUS, on the bottom screen):
-  The game's windows (talking, inventory, trading, books, containers, resting, journal, the START
-  menu...) now appear on the BOTTOM screen as text with touch buttons. The top screen keeps the game
-  picture (paused while a menu is open). The real graphical menus come with M8; this is the playable
-  version for now. How a menu looks:
-     TITLE (yellow)
-     text: touch its upper half to scroll back, its lower half to scroll on (^ / v show there is more)
-     [<]   options 1-10 of 23   [>]    (only when there are more than 10: touch left/right side)
-     buttons, two per row: the name, and below it a detail (price, count, weight, "equipped"...)
-  Touch a button to choose it. B still closes most menus (and opens the inventory).
-  TEST CHARACTER: every new game now starts with 5000 gold, all attributes at 75, all skills at 50, a
-  steel axe (equipped: X readies it) and two fire spells, Fire Bite (touch) and Fireball (thrown): select
-  one on the inventory's [Magic] page, then Y readies magic and ZR casts. (A console script run once at
-  startup, openmw/test-start.txt; only in test builds.)
-  Also: the TELEPORT buttons are gone (travel by silt strider or on foot now), and the build stamp at
-  the top of the bottom screen is now Paris time, day/month first.
+What this tests (hardware test #25, M7 started: SOUND):
+  Music, sound effects (footsteps, ambience, combat, spells, creatures) and NPC voices now play, in 3D
+  (left/right follows where things are; muffled underwater).
+  SOUND NEEDS THE 3DS'S DSP FIRMWARE: the file sdmc:/3ds/dspfirm.cdc. If you have ever played homebrew
+  with sound, you most likely have it. If it's missing, run the DSP1 homebrew once (it creates that
+  file). Without it the game runs silent and the log says why.
+  Morrowind's Sound and Music folders are in the package, packed into one file:
+  openmw/data/sound3ds.bsa (~240 MB, made from your own game files). Do NOT copy the loose Sound and
+  Music folders to the SD card: they'd override it and slow every startup by several seconds.
+  The bottom-screen menus (test #24) and the test character (5000 gold, attributes 75, skills 50, steel
+  axe, Fire Bite and Fireball) are unchanged.
 OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
-the HUD and graphical menus (M8), sound (M7).
+the HUD and graphical menus (M8).
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
-   sdmc:/openmw/data/ are not in the package, so they stay. openmw/cooked/textures.o3tp (~70 MB) is the
-   biggest file. (out\sdcard-openmw-update still lists only the changed files, if ever needed.)
+   sdmc:/openmw/data/ are not in the package, so they stay. The biggest files: openmw/data/sound3ds.bsa
+   (~240 MB) and openmw/cooked/textures.o3tp (~70 MB). (out\sdcard-openmw-update still lists only the
+   changed files, if ever needed.)
 2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
      Morrowind.esm   (~79 MB)
      Morrowind.bsa   (~310 MB)
@@ -106,23 +102,25 @@ the HUD and graphical menus (M8), sound (M7).
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
    Bottom screen, top to bottom: build, FPS, cell, position and view direction, "look" (the object in
    reach under the crosshair), then a state line: "weapon ready / sneaking / 3rd person", "menu: ..."
-   or "DEAD". While a menu is open it takes the middle of the bottom screen (see above).
+   or "DEAD". While a menu is open it takes the middle of the bottom screen: touch a button to choose,
+   touch the text to scroll, [<] [>] for more options.
    Touch the bar near the bottom ("tap: SCREENSHOT") to save a screenshot of the top screen to
    sdmc:/openmw/screenshots/ (under a second).
-   Things to try, in one session (save first with START -> Save game, so you can load if things go wrong):
-   - Talk to Arrille (A): read his answers, try a few topics, then Barter: buy something cheap, sell
-     something, Offer. Goodbye.
-   - Inventory (B): open an item, Equip / Unequip, Drop one. [Magic]: select Fireball, close, then Y
-     and ZR to cast it (at a wall, or at a mudcrab outside). X, then ZR swings the axe.
-   - Pick up and read a book or a scroll (A on it): scroll the text, Take.
-   - D-pad down: wait 1 hour. D-pad up: the journal. START: Save game, then Load game (pick your save).
-   - Open a container nobody watches (taking things in front of people is a crime: the guard can kill a
-     level-1 character; if you die, the bottom screen offers Load game). Take one item, then Take All.
-   - Outside: walk to the silt strider by the docks, talk to the caravaner (Darvame Hleran) and Travel to
-     Balmora. In Balmora: talk to a few people, try a trainer or a shop if you find one.
-   - Any window with only a "Close" button is one I don't handle yet: note its title.
-   Note anything unreadable, cut off, or buttons that don't react or do the wrong thing, and take a
-   screenshot of the top screen when something looks wrong (the log says what the bottom screen showed).
+   Things to try, in one session (listen with headphones if you can; the volume slider works as usual):
+   - Inside Arrille's: the music should start within a few seconds. Talk to Arrille, walk around
+     (footsteps), open the door.
+   - Outside in Seyda Neen: waves and wind, the docks creaking, the silt strider's calls, people greeting
+     you as you walk past. Turn around slowly: sounds should move from one ear to the other.
+   - Combat: X then ZR swings the axe (whoosh, hits); fight a mudcrab on the shore; cast Fireball (select
+     it with B -> [Magic], then Y and ZR): casting and explosion sounds.
+   - Swim in the sea and dive (ZL to jump in, look down and walk): sounds should get muffled underwater.
+   - Travel to Balmora with the silt strider: music and town ambience there; walk around town.
+   - START: the music keeps playing in the game menu; save and load once.
+   - HOME menu and back: the sound should stop and come back.
+   Note: crackles or pops, music that stutters or stops (especially while the game loads a new area), sounds
+   that come too late, are too loud or too quiet (voices vs music vs effects), or come from the wrong
+   side. A new sound may start a fraction of a second late the very first time it plays (it's read from
+   the SD card): that's expected, but tell me if it's noticeable.
 6. Send back the logs folder and your screenshots:
      sdmc:/openmw/logs/openmw3ds.log         the 3DS port log (timings, memory, platform)
      sdmc:/openmw/logs/openmw.log            OpenMW's own log

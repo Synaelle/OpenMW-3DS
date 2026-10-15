@@ -395,10 +395,10 @@ namespace omw3ds
                 gCellName.c_str(), double(gPos[0]), double(gPos[1]), double(gPos[2]),
                 double(osg::RadiansToDegrees(gRot[2])), double(osg::RadiansToDegrees(gRot[0])));
             if (const MWSound::SoundStats3DS sound = MWSound::takeSoundStats3DS(); sound.mActive)
-                P3DS_LOGI("sound: %d sounds, %d streams, effects %zu KB, stream decoding %.1f ms/s, %u skipped "
-                          "(no free channel)",
+                P3DS_LOGI("sound: %d sounds, %d streams, effects %zu KB, stream decoding %.1f ms/s, %u underruns, "
+                          "%u skipped (no free channel)",
                     sound.mSounds, sound.mStreams, sound.mBufferBytes / 1024, sound.mDecodeMs / gLogAccum,
-                    sound.mSkipped);
+                    sound.mUnderruns, sound.mSkipped);
 #ifdef OPENMW3DS_DEBUG
             logTimings();
             if (Render3DS::isActive())

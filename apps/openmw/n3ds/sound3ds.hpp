@@ -122,6 +122,7 @@ namespace MWSound
         size_t mBufferBytes = 0;
         double mDecodeMs = 0.0;
         unsigned mSkipped = 0;
+        unsigned mUnderruns = 0;
     };
     SoundStats3DS takeSoundStats3DS();
 
