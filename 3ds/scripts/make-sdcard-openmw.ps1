@@ -52,19 +52,26 @@ if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per
 @"
 OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
-This package's build: "build $shortBuild" at the top of the bottom screen (log: $buildId).
-If the bottom screen shows another build, the new CIA is not the one installed.
-What this tests (hardware test #25, M7 started: SOUND):
-  Music, sound effects (footsteps, ambience, combat, spells, creatures) and NPC voices now play, in 3D
-  (left/right follows where things are; muffled underwater).
-  Sound needs the 3DS's DSP firmware: see step 2.
-  Morrowind's Sound and Music folders are in the package, packed into one file:
-  openmw/data/sound3ds.bsa (~240 MB, made from your own game files). Do NOT copy the loose Sound and
-  Music folders to the SD card: they'd override it and slow every startup by several seconds.
-  The bottom-screen menus (test #24) and the test character (5000 gold, attributes 75, skills 50, steel
-  axe, Fire Bite and Fireball) are unchanged.
-OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen. Still missing:
-the HUD and graphical menus (M8).
+This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
+the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
+What this tests (hardware test #26, M8 started: THE NEW INTERFACE):
+  The bottom screen is now the game's own interface, in Morrowind's style, instead of the text display:
+  - the HUD: health, magicka and fatigue with their values, the weapon and the spell with their names,
+    active effects, the minimap (still black: maps come in a later step) and the quick keys 1-9 (touch one
+    to use it);
+  - tabs at the top, which do NOT pause the game: Inventory, Magic, Stats, and Debug (the old debug lines:
+    build, FPS, cell..., and a Screenshot button). Touch a tab to open it; the house at the left (or the
+    open tab again) goes back to the HUD. Touching the bars, the weapon or the spell in the HUD opens their
+    tab too.
+  - top screen: the crosshair, and what it's on as one small line at the very top ("Wooden Door to Seyda
+    Neen").
+  Menus that pause the game (dialogue, containers, barter, books, journal, rest, START's game menu...) still
+  use the old text menus on the bottom screen: they're the next step.
+  Also new: closing from the HOME Menu exits immediately (no wait, no crash log on exit).
+  If the new interface goes badly wrong: an empty file sdmc:/openmw/no-m8ui brings back the old bottom screen
+  (delete it afterwards). The test character (5000 gold, attributes 75, skills 50, steel axe, Fire Bite and
+  Fireball) and the sound are unchanged.
+OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen.
 
 1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
    overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
@@ -81,49 +88,44 @@ the HUD and graphical menus (M8).
    it creates the file. Without it the game runs silent and logs/openmw3ds.log says
    "sound: the DSP didn't start".
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
-4. While loading, the top screen is black (dark) and the bottom screen shows "(loading)", then FPS,
-   cell, position and so on once the game runs. Loading takes under a minute.
-   ALIVE INDICATOR = the last line of the bottom screen, redrawn every second:
+4. While the game loads at startup, the top screen is black (dark) and the bottom screen shows "(loading)"
+   and the old debug lines, then the new interface once the game runs. Loading takes under a minute.
+   ALIVE INDICATOR (startup loading only) = the last line of the bottom screen, redrawn every second:
      |   245s counting refs   idle   0s  53.0MB
      ^spinner ^uptime ^current step  ^seconds without progress  ^memory
    - spinner turning + uptime counting = the console is NOT frozen, just working.
    - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes logs/openmw3ds-crash.log
      and returns to HOME by itself.
    - the spinner/uptime stop moving = real freeze (then force the power off).
-   HOME works during loading too (Close exits immediately).
-   The first two game frames are drawn slowly on purpose: the renderer submits each object separately
-   and waits for the GPU, so that a GPU problem is written to the log instead of freezing the console.
-5. Controls (all buttons are game controls now; the old D-pad turn and SELECT screenshot are gone):
+   HOME works during loading too (Close exits immediately). Later loads (doors, travel) show a "Loading"
+   box on the bottom screen.
+5. Controls (unchanged, except B):
      circle pad   walk (push past halfway to run)      C-stick   look
      ZR           attack / cast                         ZL        jump
      L (hold)     sneak                                 R         1st / 3rd person
-     A            activate (talk, pick up, open doors)  B         inventory, and closes any menu
-     X            ready weapon (fists if none)          Y         ready magic (select a spell first:
-                                                                  B, then [Magic])
+     A            activate (talk, pick up, open doors)  B         Inventory tab (open / close), and closes
+                                                                  any menu
+     X            ready weapon (fists if none)          Y         ready magic (pick the spell in the Magic
+                                                                  tab first)
      D-pad up     journal                               D-pad down  rest / wait
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
-   Bottom screen, top to bottom: build, FPS, cell, position and view direction, "look" (the object in
-   reach under the crosshair), then a state line: "weapon ready / sneaking / 3rd person", "menu: ..."
-   or "DEAD". While a menu is open it takes the middle of the bottom screen: touch a button to choose,
-   touch the text to scroll, [<] [>] for more options.
-   Touch the bar near the bottom ("tap: SCREENSHOT") to save a screenshot of the top screen to
-   sdmc:/openmw/screenshots/ (under a second).
-   Things to try, in one session (listen with headphones if you can; the volume slider works as usual):
-   - Inside Arrille's: the music should start within a few seconds. Talk to Arrille, walk around
-     (footsteps), open the door.
-   - Outside in Seyda Neen: waves and wind, the docks creaking, the silt strider's calls, people greeting
-     you as you walk past. Turn around slowly: sounds should move from one ear to the other.
-   - Combat: X then ZR swings the axe (whoosh, hits); fight a mudcrab on the shore; cast Fireball (select
-     it with B -> [Magic], then Y and ZR): casting and explosion sounds.
-   - Swim in the sea and dive (ZL to jump in, look down and walk): sounds should get muffled underwater.
-   - Travel to Balmora with the silt strider: music and town ambience there; walk around town.
-   - START: the music keeps playing in the game menu; save and load once.
-   - HOME menu and back: the sound should stop and come back.
-   Note: crackles or pops, music that stutters or stops (especially while the game loads a new area), sounds
-   that come too late, are too loud or too quiet (voices vs music vs effects), or come from the wrong
-   side. A new sound may start a fraction of a second late the very first time it plays (it's read from
-   the SD card): that's expected, but tell me if it's noticeable.
+   Screenshots: Debug tab -> [Screenshot] saves the top screen to sdmc:/openmw/screenshots/.
+   Things to try, in one session:
+   - The HUD: do the bars, names and icons look right and read well? Is anything too small or cut off?
+   - Inventory tab: the filters (All, Weapon, Apparel, Magic, Misc); touch an item: its name, weight and
+     value, then Unequip/Equip, Drop (pick it up again with A), and Quick key -> a number: it shows in the
+     HUD's quick-key row; touch it there to use it.
+   - Magic tab: touch Fireball (it becomes the HUD's spell), then Y and ZR to cast. Put Fire Bite on a
+     quick key.
+   - Stats tab: scroll the skills list. Debug tab: note the FPS here and on the HUD.
+   - Walk, fight and look around with a tab open: the game keeps running.
+   - Talk to someone, open a container, START: the old text menus take the bottom screen, and the new
+     interface comes back when they close.
+   - Go outside (front door) and travel to Balmora with the silt strider.
+   - HOME -> Close at the end: it should close right away.
+   Note: anything that looks wrong or unpolished, touches that don't respond (or hit the wrong thing), the
+   FPS compared to the last test, and what you like and don't like about the layout.
 6. Send back the logs folder and your screenshots:
      sdmc:/openmw/logs/openmw3ds.log         the 3DS port log (timings, memory, platform)
      sdmc:/openmw/logs/openmw.log            OpenMW's own log
