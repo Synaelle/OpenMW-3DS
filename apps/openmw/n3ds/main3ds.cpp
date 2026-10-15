@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -102,9 +103,16 @@ int main(int, char**)
     argv.push_back(nullptr);
 
     gContext = "openmw: runApplication";
+    // Normally doesn't return: Engine::go() ends with omw3ds::exitProcess.
     const int ret = Debug::wrapApplication(&runApplication, int(args.size()), argv.data(), "OpenMW");
+    omw3ds::exitProcess(ret);
+}
 
-    P3DS_LOGI("OpenMW exited with %d", ret);
+void omw3ds::exitProcess(int code)
+{
+    std::cout.flush(); // OpenMW's log (openmw.log): its streams are never closed on this path
+    std::cerr.flush();
+    P3DS_LOGI("OpenMW exited with %d", code);
     if (p3ds::info().autorun)
         p3ds::writeSmallFile(p3ds::kAutorunDonePath, "done\n"); // run-azahar.ps1 waits for it
     // Each step is named for the watchdog: a hang here gets a crash report that says where.
@@ -115,5 +123,6 @@ int main(int, char**)
     p3ds::crash::kick("shutdown: platform");
     p3ds::shutdown();
     gfxExit();
-    return ret;
+    // No static destructors (OpenMW's objects still exist); libctru still closes its services.
+    _exit(code);
 }

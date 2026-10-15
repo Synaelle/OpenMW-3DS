@@ -1167,6 +1167,10 @@ void OMW::Engine::go()
     Settings::Manager::saveUser(mCfgMgr.getUserConfigPath() / "settings.cfg");
     Settings::ShaderManager::get().save();
     mLuaManager->savePermanentStorage(mCfgMgr.getUserConfigPath());
+#ifdef OPENMW_PLATFORM_3DS
+    MWBase::Environment::get().getInputManager()->saveBindings(); // as ~BindingsManager would
+    omw3ds::exitProcess(0);
+#endif
 }
 
 void OMW::Engine::setCompileAll(bool all)

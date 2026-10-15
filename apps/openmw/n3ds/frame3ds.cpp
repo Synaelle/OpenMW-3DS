@@ -5,6 +5,7 @@
 #include "debugtools.hpp"
 #endif
 
+#include <platform3ds/crash.hpp>
 #include <platform3ds/debugscreen.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
@@ -247,6 +248,7 @@ namespace omw3ds
             if (quitRequested)
                 return;
             quitRequested = true;
+            p3ds::crash::kick("exiting");
             Render3DS::releaseGpuForExit();
             if (!loading)
             {

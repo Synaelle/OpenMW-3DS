@@ -31,6 +31,9 @@ namespace p3ds::crash
     // which must not happen after gfxExit).
     void stopWatchdog();
     void setWatchdogTimeout(int seconds); // 0 disables (e.g. while a dialog legitimately blocks)
+    // While the app is suspended (HOME Menu, sleep: platform.cpp's APT hook) nothing runs, so nothing counts as a
+    // hang and the heartbeat doesn't draw over the system's screens. Resuming restarts the count.
+    void setWatchdogPaused(bool paused);
     // Call regularly from the main loop / long operations. `step` must point to static storage.
     void kick(const char* step = nullptr);
 }

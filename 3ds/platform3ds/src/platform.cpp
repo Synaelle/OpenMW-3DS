@@ -424,6 +424,18 @@ namespace p3ds
             P3DS_LOGW("memory region is %.1f MB larger than hardware: enforcing the hardware budget (%.1f MB heap)",
                 mem::toMB(mem::overProvision(ms)), mem::toMB(mem::heapBudget(ms)));
         checkThreadExceptions();
+        // HOME Menu / sleep: the app is suspended (the main thread waits in aptMainLoop), which isn't a hang
+        // (hardware test #25: 42 s in the HOME Menu, then closing, gave a hang report).
+        static aptHookCookie aptCookie;
+        aptHook(
+            &aptCookie,
+            [](APT_HookType hook, void*) {
+                if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP)
+                    crash::setWatchdogPaused(true);
+                else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONEXIT)
+                    crash::setWatchdogPaused(false);
+            },
+            nullptr);
         return gInfo;
     }
 

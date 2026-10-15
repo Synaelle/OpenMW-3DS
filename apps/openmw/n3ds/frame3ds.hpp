@@ -30,6 +30,11 @@ namespace omw3ds
     // Closes as if from the HOME Menu (autorun "close:N").
     void closeAsFromHomeMenu();
 
+    // Leaves the process (main3ds.cpp): logs, bottom screen, renderer, platform, then _exit. Engine::go() calls it
+    // once OpenMW has saved what it keeps (settings, Lua storage, input bindings), skipping the engine's teardown:
+    // ~16 s of freeing the world on hardware after the HOME Menu's Close (test #25). The system reclaims the memory.
+    [[noreturn]] void exitProcess(int code);
+
     // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
     // hydration they ran out of memory; the switch stays for memory experiments.
     bool exteriorsEnabled();

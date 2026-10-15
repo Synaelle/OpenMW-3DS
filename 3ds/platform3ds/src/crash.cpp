@@ -440,6 +440,7 @@ namespace p3ds::crash
             return d > 0 ? u32(d) : 0;
         }
         u32 gTimeoutMs = 0;
+        bool gWatchdogPaused = false;
         volatile bool gWatchdogRun = false;
         Thread gWatchdog = nullptr;
 
@@ -494,6 +495,8 @@ namespace p3ds::crash
             while (gWatchdogRun)
             {
                 svcSleepThread(500LL * 1000 * 1000);
+                if (__atomic_load_n(&gWatchdogPaused, __ATOMIC_RELAXED))
+                    continue;
                 // Memory profile every 5 s (the log is thread-safe). The exact heap walk (mallinfo) holds the
                 // malloc lock for ~200 ms with OpenMW's heap from this core: a freeze every 5 s in game
                 // (hardware test #15). In game it only runs when the arena grew by 1 MB (a load, which
@@ -538,6 +541,12 @@ namespace p3ds::crash
         if (step != nullptr)
             gStep = step;
         __atomic_store_n(&gLastKickMs, nowMs(), __ATOMIC_RELAXED);
+    }
+
+    void setWatchdogPaused(bool paused)
+    {
+        __atomic_store_n(&gLastKickMs, nowMs(), __ATOMIC_RELAXED);
+        __atomic_store_n(&gWatchdogPaused, paused, __ATOMIC_RELAXED);
     }
 
     void setWatchdogTimeout(int seconds)
