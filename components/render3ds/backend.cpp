@@ -3130,6 +3130,12 @@ namespace Render3DS
             }
             // A no-op after the first frame (citro3d's program stays gProgram, see useProgram); the first draw sets
             // its variant's entry point (gBound was reset).
+#ifdef OPENMW3DS_DEBUG
+            // full-program-switch: citro3d's program may already be gProgram while the GPU runs the GUI's flat
+            // shader (set by entry point): bind another one first so the whole configuration is sent again.
+            if (fullProgramSwitch())
+                C3D_BindProgram(&gProgram0);
+#endif
             C3D_BindProgram(&gProgram);
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
