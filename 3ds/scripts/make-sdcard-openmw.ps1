@@ -54,17 +54,16 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #27: test #26 again, with a fix for its corruption):
-  In test #26 the textures and both screens got corrupted after leaving the interior, and the HOME Menu was
-  black. Likely cause, now fixed: two parts of the game (graphics and sound, mostly) could take the same
-  memory at once. The log now also records what the screens are set to, so if it happens again it says why.
-  New: L + R + START + SELECT held for a second quits the game (also when it's frozen: then after 3 more
-  seconds, with a report in logs/openmw3ds-crash.log). The Screenshot button saves both screens.
-  Please take the same route as in test #26: leave Arrille's, open the tabs, 3rd person, magic ready, walk
-  around in Seyda Neen for a few minutes, then HOME -> Close. If the corruption comes back: Debug tab ->
-  Screenshot right away, then quit and play the same route once more with an empty file
-  sdmc:/openmw/no-m8ui (the old bottom screen; delete the file afterwards), to see if the new interface is
-  involved.
+What this tests (hardware test #28: the corruption hunt, round 3):
+  Test #27 corrupted again; it seems to start when a fire spell HITS something (casting always succeeds:
+  "6/100" in the Magic tab is cost 6 / chance 100). Fire Bite only hits at touch range; Fireball flies and
+  explodes. Please try exactly this, right after leaving Arrille's:
+    Magic tab -> touch Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
+  Tell me if the textures/screens break right after the explosion (or not), then Debug tab -> Screenshot.
+  The log now also checks the GPU's own settings and notes very slow GPU frames, so it should say what broke.
+  Fixed: the panic quit (L + R + START + SELECT held a second) crashed after quitting (sound wasn't stopped).
+  If anything crashes into Luma's red/black screen again, please also send the newest file in
+  sdmc:/luma/dumps/arm11/ (it says exactly where it crashed).
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless; Rosalina's screenshots are welcome.
 
