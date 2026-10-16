@@ -54,16 +54,18 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #29: the fireball corruption):
-  Test #28 showed it starts the moment a fireball explodes at your feet. This build adds two guards that may
-  fix it (the GPU can no longer draw outside the screen it's drawing to; broken particles are left out), and
-  a fuller screenshot. Please do these two runs:
-  1. As usual: leave Arrille's, Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps
-     ahead -> ZR. If the screens break: press L + D-pad LEFT (screenshot of both screens, no need to see
-     anything), then take a Rosalina screenshot too, then quit (L + R + START + SELECT held a second).
-  2. Create an empty file sdmc:/openmw/no-m8ui (the old bottom screen) and do the same fireball: there, select
-     it with B -> [Magic] -> Fireball, then B to close, Y, ZR. Does it break too? Then delete the file.
-  Send the logs, sdmc:/openmw/screenshots/ (top_, bottom_ and bottomgpu_ files) and the Rosalina shots.
+What this tests (hardware test #30: which part of the fireball breaks the GPU):
+  Test #29: the fireball breaks the screens with the old bottom screen too, so it's the 3D drawing of the
+  explosion. Three runs, each with ONE empty file in sdmc:/openmw/ that leaves one part of the explosion out
+  (make sure sdmc:/openmw/no-m8ui is gone):
+    Run A: skip-big-effects     (the blast's sphere/box meshes)
+    Run B: skip-particles       (all particles: fire, sparks, smoke)
+    Run C: skip-far-particles   (only particles very far away)
+  Each run: start, leave Arrille's, Magic tab -> Fireball -> house icon -> Y -> look at the ground a few
+  steps ahead -> ZR. Note whether the screens break, then quit (HOME -> Close, or L + R + START + SELECT).
+  Then swap the file for the next run. Don't take screenshots once it's broken (that froze the console).
+  The logs of the last three runs are all kept now: logs/openmw3ds.log (newest), openmw3ds-1.log,
+  openmw3ds-2.log (same for openmw.log and MyGUI.log). Send the whole logs folder after the three runs.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 
