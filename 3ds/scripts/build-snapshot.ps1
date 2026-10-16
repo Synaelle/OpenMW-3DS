@@ -64,29 +64,35 @@ foreach ($dir in '.deps', '.tools') {
     if (-not (Test-Path "$Wt\$dir")) { New-Item -ItemType Junction -Path "$Wt\$dir" -Target "$Main\$dir" | Out-Null }
 }
 
-# The SD folder and the title, edited in the worktree once.
-$marker = Join-Path $Wt '.snapshot-edits'
-if (-not (Test-Path $marker)) {
-    $utf8 = New-Object Text.UTF8Encoding($false)
-    function Edit([string]$path, [string]$pattern, [string]$replacement, [switch]$Optional) {
-        $text = [IO.File]::ReadAllText($path, $utf8)
-        $new = [regex]::Replace($text, $pattern, $replacement)
-        if ($new -eq $text) {
-            if ($Optional) { return }
-            throw "no match for '$pattern' in $path"
-        }
-        [IO.File]::WriteAllText($path, $new, $utf8)
-    }
-    $dirs = @("$Wt\openmw\apps\openmw", "$Wt\openmw\components", "$Wt\platform3ds")
-    Get-ChildItem $dirs -Recurse -File -Include *.cpp, *.hpp, *.h, *.c | ForEach-Object {
-        Edit $_.FullName 'sdmc:/openmw(?=[/"])' "sdmc:/$Root" -Optional
-    }
-    Edit "$Wt\openmw\components\files\threedspath.cpp" 'sRoot = "/openmw"' "sRoot = `"/$Root`""
-    Edit "$Wt\openmw\apps\openmw\CMakeLists.txt" 'UNIQUE_ID 0xF6D3E' "UNIQUE_ID $UniqueId"
-    Edit "$Wt\openmw\apps\openmw\CMakeLists.txt" 'TITLE "OpenMW"' "TITLE `"OpenMW $Name`""
-    Edit "$Wt\openmw\apps\openmw\n3ds\main3ds.cpp" 'ciaUniqueId = 0xF6D3E' "ciaUniqueId = $UniqueId"
-    Set-Content $marker "sdmc:/$Root, title ID $UniqueId"
+# The SD folder and the title, edited in the worktree (each edit only matches the original text, so re-running
+# applies what an earlier version of this script missed). Both spellings of the SD folder: "sdmc:/openmw/..." and
+# the POSIX "/openmw/..." (TMPDIR, HOME, OpenMW's log folder); the game data stays in /openmw/data (openmw.cfg).
+$utf8 = New-Object Text.UTF8Encoding($false)
+function Edit([string]$path, [string]$pattern, [string]$replacement) {
+    $text = [IO.File]::ReadAllText($path, $utf8)
+    $new = [regex]::Replace($text, $pattern, $replacement)
+    if ($new -ne $text) { [IO.File]::WriteAllText($path, $new, $utf8) }
 }
+function Expect([string]$path, [string]$literal) {
+    if (-not ([IO.File]::ReadAllText($path, $utf8)).Contains($literal)) { throw "edit missing in ${path}: $literal" }
+}
+$dirs = @("$Wt\openmw\apps\openmw", "$Wt\openmw\components", "$Wt\platform3ds")
+Get-ChildItem $dirs -Recurse -File -Include *.cpp, *.hpp, *.h, *.c | ForEach-Object {
+    Edit $_.FullName 'sdmc:/openmw(?=[/"])' "sdmc:/$Root"
+    Edit $_.FullName '"/openmw(?=[/"])' "`"/$Root"
+}
+$cmake = "$Wt\openmw\apps\openmw\CMakeLists.txt"
+$mainCpp = "$Wt\openmw\apps\openmw\n3ds\main3ds.cpp"
+Edit $cmake 'UNIQUE_ID 0xF6D3E' "UNIQUE_ID $UniqueId"
+Edit $cmake 'TITLE "OpenMW"' "TITLE `"OpenMW $Name`""
+Edit $mainCpp 'ciaUniqueId = 0xF6D3E' "ciaUniqueId = $UniqueId"
+Expect "$Wt\openmw\components\files\threedspath.cpp" "sRoot = `"/$Root`""
+Expect $cmake "UNIQUE_ID $UniqueId"
+Expect $cmake "TITLE `"OpenMW $Name`""
+Expect $mainCpp "ciaUniqueId = $UniqueId"
+$left = Get-ChildItem $dirs -Recurse -File -Include *.cpp, *.hpp, *.h, *.c |
+    Select-String -Pattern 'sdmc:/openmw[/"]|"/openmw[/"]' | Where-Object { $_.Path -notmatch '\\(launcher|opencs|components_tests)\\' }
+if ($left) { throw "paths to sdmc:/openmw left:`n$($left -join "`n")" }
 
 # Cooked data: the texture pack given (else cooked by the revision's tools), the sound archive from this checkout
 # (the package doesn't ship it: the snapshot reads sdmc:/openmw/data/sound3ds.bsa).
