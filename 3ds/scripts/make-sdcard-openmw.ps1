@@ -54,18 +54,18 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #28: the corruption hunt, round 3):
-  Test #27 corrupted again; it seems to start when a fire spell HITS something (casting always succeeds:
-  "6/100" in the Magic tab is cost 6 / chance 100). Fire Bite only hits at touch range; Fireball flies and
-  explodes. Please try exactly this, right after leaving Arrille's:
-    Magic tab -> touch Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
-  Tell me if the textures/screens break right after the explosion (or not), then Debug tab -> Screenshot.
-  The log now also checks the GPU's own settings and notes very slow GPU frames, so it should say what broke.
-  Fixed: the panic quit (L + R + START + SELECT held a second) crashed after quitting (sound wasn't stopped).
-  If anything crashes into Luma's red/black screen again, please also send the newest file in
-  sdmc:/luma/dumps/arm11/ (it says exactly where it crashed).
+What this tests (hardware test #29: the fireball corruption):
+  Test #28 showed it starts the moment a fireball explodes at your feet. This build adds two guards that may
+  fix it (the GPU can no longer draw outside the screen it's drawing to; broken particles are left out), and
+  a fuller screenshot. Please do these two runs:
+  1. As usual: leave Arrille's, Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps
+     ahead -> ZR. If the screens break: touch Debug (top right of the bottom screen) -> Screenshot, then take
+     a Rosalina screenshot too, then quit (L + R + START + SELECT held a second).
+  2. Create an empty file sdmc:/openmw/no-m8ui (the old bottom screen) and do the same fireball. Does it
+     break too? Then delete the file.
+  Send the logs, sdmc:/openmw/screenshots/ (top_, bottom_ and bottomgpu_ files) and the Rosalina shots.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
-  illegal") and quick save. That's harmless; Rosalina's screenshots are welcome.
+  illegal") and quick save. That's harmless.
 
   As in test #26, the bottom screen is the game's own interface, in Morrowind's style:
   - the HUD: health, magicka and fatigue with their values, the weapon and the spell with their names,
