@@ -2411,6 +2411,35 @@ namespace Render3DS
         }
 
 #ifdef OPENMW3DS_DEBUG
+        // Zeste (the Azahar fork used for testing) labels its strict-PICA findings with the draw that caused them: a
+        // write to GPUREG_FRAGOP_SHADOW with an empty byte mask (no effect on hardware) before each draw, and the
+        // label's text once through svcOutputDebugString. Only with sdmc:/openmw/zeste-tags.
+        void zesteTag(const osgUtil::RenderLeaf& leaf, bool particles)
+        {
+            static const bool enabled = [] {
+                struct stat st;
+                return stat("sdmc:/openmw/zeste-tags", &st) == 0;
+            }();
+            if (!enabled)
+                return;
+            const osg::Drawable* drawable = leaf._drawable.get();
+            std::string name = drawable->getName();
+            if (name.empty() && drawable->getNumParents() > 0)
+                name = drawable->getParent(0)->getName();
+            if (particles)
+                name = "particles " + name;
+            static std::unordered_map<std::string, u32> ids;
+            auto [it, added] = ids.emplace(name, static_cast<u32>(ids.size() + 1));
+            if (added)
+            {
+                const std::string text = "ZESTE:tag " + std::to_string(it->second) + " " + name;
+                svcOutputDebugString(text.c_str(), static_cast<s32>(text.size()));
+            }
+            GPUCMD_AddMaskedWrite(0x130, 0x0, it->second);
+        }
+#endif
+
+#ifdef OPENMW3DS_DEBUG
         // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
         // reaches the GPU then, logged once per drawable: draws at (near) zero scale (an effect's first frames:
         // normals of length 0, NaN once normalized in the shader) and draws whose bounds enclose the camera.
@@ -2494,6 +2523,7 @@ namespace Render3DS
             lap(gEmitProfile.mGeometry);
 #ifdef OPENMW3DS_DEBUG
             noteUnusualDraw(*leaf);
+            zesteTag(*leaf, particles != nullptr);
 #endif
             const ResolvedState& rs = resolve(leaf->_parent);
             const int sky = skyPass(rs);
