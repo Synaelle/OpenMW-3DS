@@ -54,18 +54,20 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #30: which part of the fireball breaks the GPU):
-  Test #29: the fireball breaks the screens with the old bottom screen too, so it's the 3D drawing of the
-  explosion. Three runs, each with ONE empty file in sdmc:/openmw/ that leaves one part of the explosion out
-  (make sure sdmc:/openmw/no-m8ui is gone):
-    Run A: skip-big-effects     (the blast's sphere/box meshes)
-    Run B: skip-particles       (all particles: fire, sparks, smoke)
-    Run C: skip-far-particles   (only particles very far away)
-  Each run: start, leave Arrille's, Magic tab -> Fireball -> house icon -> Y -> look at the ground a few
-  steps ahead -> ZR. Note whether the screens break, then quit (HOME -> Close, or L + R + START + SELECT).
-  Then swap the file for the next run. Don't take screenshots once it's broken (that froze the console).
-  The logs of the last three runs are all kept now: logs/openmw3ds.log (newest), openmw3ds-1.log,
-  openmw3ds-2.log (same for openmw.log and MyGUI.log). Send the whole logs folder after the three runs.
+What this tests (hardware test #31: the fireball fix):
+  Test #30: the screens broke only when the fireball's particles AND its blast meshes were both drawn. This
+  build leaves out the blast meshes while the camera is inside them (from inside they show nothing anyway).
+  First DELETE every file from test #30 in sdmc:/openmw/: skip-big-effects, skip-particles,
+  skip-far-particles (and no-m8ui if it's there). Three runs:
+    Run A: no file. The fix. Cast at your feet 3 times or more, then a few times at a wall or an NPC a few
+           steps away: does the explosion still look right there?
+    Run B: two empty files, draw-inside-effects and no-draw-check (the fix off, another theory tested).
+    Run C: two empty files, draw-inside-effects and skip-near-particles (the fix off, a third theory).
+  Runs B and C may break the screens like before: that answers the question too. If so, quit with
+  L + R + START + SELECT (or hold POWER), no screenshot.
+  Each cast: Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
+  The logs of the last three runs are kept (openmw3ds.log, -1, -2): send the whole logs folder at the end,
+  and say for each run whether the screens broke.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

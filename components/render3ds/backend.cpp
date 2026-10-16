@@ -2246,6 +2246,10 @@ namespace Render3DS
             bool mParticles = false; // skip-particles: no particles at all
             bool mFarParticles = false; // skip-far-particles: particles past the far plane
             bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
+            // Hardware test #31 (docs/FIREBALL_CORRUPTION.md):
+            bool mDrawInsideEffects = false; // draw-inside-effects: turn the fix (insideEffect) off
+            bool mNoDrawCheck = false; // no-draw-check: new objects are not checked draw by draw (verifyDraw)
+            bool mNearParticles = false; // skip-near-particles: particles reaching the near plane
         };
 
         const DebugSkips& debugSkips()
@@ -2256,9 +2260,15 @@ namespace Render3DS
                 s.mParticles = stat("sdmc:/openmw/skip-particles", &st) == 0;
                 s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
                 s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
-                if (s.mParticles || s.mFarParticles || s.mBigEffects)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s", s.mParticles ? " skip-particles" : "",
-                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "");
+                s.mDrawInsideEffects = stat("sdmc:/openmw/draw-inside-effects", &st) == 0;
+                s.mNoDrawCheck = stat("sdmc:/openmw/no-draw-check", &st) == 0;
+                s.mNearParticles = stat("sdmc:/openmw/skip-near-particles", &st) == 0;
+                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mDrawInsideEffects || s.mNoDrawCheck
+                    || s.mNearParticles)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
+                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
+                        s.mDrawInsideEffects ? " draw-inside-effects" : "", s.mNoDrawCheck ? " no-draw-check" : "",
+                        s.mNearParticles ? " skip-near-particles" : "");
                 return s;
             }();
             return skips;
@@ -2375,6 +2385,12 @@ namespace Render3DS
                     ++gStats.mDebugSkipped;
                     continue;
                 }
+                // The corners are about size * 1.5 from the centre in view space (billboards: unit view axes).
+                if (debugSkips().mNearParticles && -(pos * modelview).z() - size * 1.5f < gNear)
+                {
+                    ++gStats.mDebugSkipped;
+                    continue;
+                }
 #endif
                 const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
                 const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
@@ -2438,6 +2454,38 @@ namespace Render3DS
             GPUCMD_AddMaskedWrite(0x130, 0x0, it->second);
         }
 #endif
+
+        // The fireball corruption (docs/FIREBALL_CORRUPTION.md): a spell exploding at the player's feet broke the
+        // GPU on hardware, for the rest of the run and the console with it. It took both the hit's particles and
+        // its blast meshes (tiny models scaled x1500-x44000 by their animation, the camera inside them); leaving
+        // either out prevented it (hardware test #30), so effect meshes with the camera inside are left out. The
+        // main one, Sphere01, is a closed shell drawn with back faces culled: from inside it shows nothing anyway.
+        // The flat Box03 and a small 25-vertex mesh go missing for the half second the camera is inside them.
+        // Scale > x100: in every log only spell effects got there (scenery is x1-x3).
+        bool insideEffect(const osgUtil::RenderLeaf& leaf)
+        {
+            const osg::Matrix& mv = *leaf._modelview;
+            const float sx2 = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2();
+            if (!(sx2 > 100.f * 100.f))
+                return false;
+            const osg::BoundingSphere& bound = leaf._drawable->getBound();
+            if (!bound.valid())
+                return false;
+            const float sy2 = osg::Vec3(mv(1, 0), mv(1, 1), mv(1, 2)).length2();
+            const float sz2 = osg::Vec3(mv(2, 0), mv(2, 1), mv(2, 2)).length2();
+            const float scale = std::sqrt(std::max(sx2, std::max(sy2, sz2)));
+            // Within the near plane of the bounds' surface counts as inside: the near plane cuts it.
+            return (bound.center() * mv).length() < bound.radius() * scale + gNear;
+        }
+
+        void logInsideEffect(const osg::Drawable& drawable)
+        {
+            static std::set<std::string> logged;
+            if (logged.size() >= 32 || !logged.insert(drawable.getName()).second)
+                return;
+            P3DS_LOGI("render3ds: left out '%s': an effect mesh with the camera inside (fireball fix)",
+                drawable.getName().c_str());
+        }
 
 #ifdef OPENMW3DS_DEBUG
         // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
@@ -2511,7 +2559,16 @@ namespace Render3DS
                         return;
                     }
                 }
+                const bool skipInside = !debugSkips().mDrawInsideEffects;
+#else
+                constexpr bool skipInside = true;
 #endif
+                if (skipInside && insideEffect(*leaf))
+                {
+                    ++gStats.mInsideEffects;
+                    logInsideEffect(*geometry);
+                    return;
+                }
                 gpu = geometryFor(*geometry);
                 if (gpu == nullptr || gpu->mPrimitives.empty())
                 {
@@ -2597,7 +2654,11 @@ namespace Render3DS
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gpu->mVbo);
             setSceneBufferOffset(gpu->mVboOffset);
+#ifdef OPENMW3DS_DEBUG
+            const bool verify = gVerifyThisFrame || (!gpu->mVerified && !debugSkips().mNoDrawCheck);
+#else
             const bool verify = gVerifyThisFrame || !gpu->mVerified;
+#endif
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
                 if (gVerifyThisFrame && gVerifiedDraws < 3)
