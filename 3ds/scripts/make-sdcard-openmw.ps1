@@ -54,20 +54,20 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #31: the fireball fix):
-  Test #30: the screens broke only when the fireball's particles AND its blast meshes were both drawn. This
-  build leaves out the blast meshes while the camera is inside them (from inside they show nothing anyway).
-  First DELETE every file from test #30 in sdmc:/openmw/: skip-big-effects, skip-particles,
-  skip-far-particles (and no-m8ui if it's there). Three runs:
-    Run A: no file. The fix. Cast at your feet 3 times or more, then a few times at a wall or an NPC a few
-           steps away: does the explosion still look right there?
-    Run B: two empty files, draw-inside-effects and no-draw-check (the fix off, another theory tested).
-    Run C: two empty files, draw-inside-effects and skip-near-particles (the fix off, a third theory).
-  Runs B and C may break the screens like before: that answers the question too. If so, quit with
-  L + R + START + SELECT (or hold POWER), no screenshot.
+What this tests (hardware test #32: the fireball fix, and the flashing meshes):
+  Test #31's screenshots told what breaks: the GPU's vertex outputs get shifted by one at the explosion (the
+  picture in the top-left corner is the interface drawn at its texture coordinates). The fix stops changing the
+  GPU's shader setup in the middle of a frame. It may also fix the flashing/disappearing meshes.
+  First DELETE every test file in sdmc:/openmw/: draw-inside-effects, no-draw-check, skip-near-particles (and
+  skip-big-effects, skip-particles, skip-far-particles, no-m8ui if any is there). Two runs:
+    Run A: no file. The fix. Cast at your feet 3 times or more, then a few times at a wall or an NPC a few steps
+           away. Also walk around Seyda Neen for a minute: do any meshes flash or disappear?
+    Run B: one empty file, full-program-switch (part of the old behaviour back). Same casts, same walk.
+  If a run breaks the screens: quit with L + R + START + SELECT (or hold POWER), no screenshot.
   Each cast: Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
-  The logs of the last three runs are kept (openmw3ds.log, -1, -2): send the whole logs folder at the end,
-  and say for each run whether the screens broke.
+  The logs of the last three runs are kept (openmw3ds.log = newest, -1, -2): after both runs, send the whole logs
+  folder (run A is then openmw3ds-1.log, run B openmw3ds.log), and say for each run whether the screens broke and
+  whether meshes flashed.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

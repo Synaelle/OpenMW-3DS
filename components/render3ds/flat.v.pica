@@ -1,16 +1,18 @@
-; GPU self-test step L1 (components/render3ds/backend.cpp): the simplest shader that reads the scene vertex
-; layout (v0 position, v1 normal, v2 color as unsigned bytes 0..255, v3 texcoord0), so the vertex layout is
-; tested on its own, without the scene shader. Straight-line code like the M0 test app's shader.
+; The GUI's shader (MyGUI quads, components/render3ds/backend.cpp drawGui) and GPU self-test step L1: the
+; simplest shader that reads the scene vertex layout (v0 position, v1 normal, v2 color as unsigned bytes 0..255,
+; v3 texcoord0). Straight-line code like the M0 test app's shader. Its outputs and constant are the scene
+; shaders' (texcoord1 is unused): a frame switches to it with the entry point alone (backend.cpp useProgram).
 
 .fvec projection[4]
 .fvec modelView[4]
 
-.constf consts(0.0, 1.0, 0.00392156863, 0.0)
+.constf consts(0.0, 1.0, 0.00392156863, 3.0) ; the scene shaders' (w unused here)
 .alias ones consts.yyyy
 
 .out outpos position
 .out outclr color
 .out outtc0 texcoord0
+.out outtc1 texcoord1
 
 .entry flat_main
 .proc flat_main
@@ -29,5 +31,6 @@
 	mul r2, consts.zzzz, v2
 	mov outclr, r2
 	mov outtc0, v3
+	mov outtc1, v3
 	end
 .end

@@ -1509,6 +1509,47 @@ namespace Render3DS
 
         int gDrawLights = 0; // point lights of the current draw (stats)
 
+#ifdef OPENMW3DS_DEBUG
+        // Hardware test #32: sdmc:/openmw/full-program-switch switches the scene's shader variants through citro3d
+        // again (C3D_BindProgram: the whole shader configuration), as before the fix below.
+        bool fullProgramSwitch()
+        {
+            static const bool on = [] {
+                struct stat st;
+                const bool exists = stat("sdmc:/openmw/full-program-switch", &st) == 0;
+                if (exists)
+                    P3DS_LOGW("render3ds: debug switch: full-program-switch");
+                return exists;
+            }();
+            return on;
+        }
+#endif
+
+        // The fireball corruption (docs/FIREBALL_CORRUPTION.md): on hardware, from a big explosion on, the shader
+        // outputs came out shifted by one (positions taken from texture coordinates, colours from positions) for
+        // the rest of the run. Most likely trigger: the vertex shader reconfigured while the GPU is still busy with
+        // earlier draws. citro3d's C3D_BindProgram re-sends a program's whole configuration (output map, output
+        // counts, geometry stage) at the next draw; we switched programs ~45 times a frame (the light variants),
+        // and to a shader with 3 outputs instead of 4 for the GUI at the end of every frame, each queued behind the
+        // frame's earlier draws. Now every program a frame uses (the scene variants, the GUI's flat shader) has the
+        // same outputs and constants: citro3d keeps gProgram bound (its configuration is sent again only after the
+        // GPU self-test) and a frame switches programs with the entry point register alone.
+        void useProgram(const shaderProgram_s* program)
+        {
+            if (program == gBound.mProgram)
+                return;
+            gBound.mProgram = program;
+            ++gStats.mProgramSwitches;
+#ifdef OPENMW3DS_DEBUG
+            if (fullProgramSwitch() && program != &gFlatProgram)
+            {
+                C3D_BindProgram(const_cast<shaderProgram_s*>(program));
+                return;
+            }
+#endif
+            GPUCMD_AddWrite(GPUREG_VSH_ENTRYPOINT, 0x7FFF0000u | (program->vertexShader->dvle->mainOffset & 0xFFFF));
+        }
+
         // pointLights false: the draw ignores point lights (sky passes, OpenMW's "simpleLighting" weather
         // particles: lighting_vertex_impl.glsl), whatever the light manager attached.
         void uploadLighting(const ResolvedState& rs, bool pointLights)
@@ -1557,12 +1598,7 @@ namespace Render3DS
             gDrawLights = count;
 
             const shaderProgram_s* program = !gVariants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
-            if (program != gBound.mProgram)
-            {
-                C3D_BindProgram(const_cast<shaderProgram_s*>(program));
-                gBound.mProgram = program;
-                ++gStats.mProgramSwitches;
-            }
+            useProgram(program);
             if (program == &gProgram0)
                 return;
             if (program == &gProgram1)
@@ -2246,10 +2282,6 @@ namespace Render3DS
             bool mParticles = false; // skip-particles: no particles at all
             bool mFarParticles = false; // skip-far-particles: particles past the far plane
             bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
-            // Hardware test #31 (docs/FIREBALL_CORRUPTION.md):
-            bool mDrawInsideEffects = false; // draw-inside-effects: turn the fix (insideEffect) off
-            bool mNoDrawCheck = false; // no-draw-check: new objects are not checked draw by draw (verifyDraw)
-            bool mNearParticles = false; // skip-near-particles: particles reaching the near plane
         };
 
         const DebugSkips& debugSkips()
@@ -2260,15 +2292,9 @@ namespace Render3DS
                 s.mParticles = stat("sdmc:/openmw/skip-particles", &st) == 0;
                 s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
                 s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
-                s.mDrawInsideEffects = stat("sdmc:/openmw/draw-inside-effects", &st) == 0;
-                s.mNoDrawCheck = stat("sdmc:/openmw/no-draw-check", &st) == 0;
-                s.mNearParticles = stat("sdmc:/openmw/skip-near-particles", &st) == 0;
-                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mDrawInsideEffects || s.mNoDrawCheck
-                    || s.mNearParticles)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
-                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
-                        s.mDrawInsideEffects ? " draw-inside-effects" : "", s.mNoDrawCheck ? " no-draw-check" : "",
-                        s.mNearParticles ? " skip-near-particles" : "");
+                if (s.mParticles || s.mFarParticles || s.mBigEffects)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s", s.mParticles ? " skip-particles" : "",
+                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "");
                 return s;
             }();
             return skips;
@@ -2385,12 +2411,6 @@ namespace Render3DS
                     ++gStats.mDebugSkipped;
                     continue;
                 }
-                // The corners are about size * 1.5 from the centre in view space (billboards: unit view axes).
-                if (debugSkips().mNearParticles && -(pos * modelview).z() - size * 1.5f < gNear)
-                {
-                    ++gStats.mDebugSkipped;
-                    continue;
-                }
 #endif
                 const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
                 const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
@@ -2454,38 +2474,6 @@ namespace Render3DS
             GPUCMD_AddMaskedWrite(0x130, 0x0, it->second);
         }
 #endif
-
-        // The fireball corruption (docs/FIREBALL_CORRUPTION.md): a spell exploding at the player's feet broke the
-        // GPU on hardware, for the rest of the run and the console with it. It took both the hit's particles and
-        // its blast meshes (tiny models scaled x1500-x44000 by their animation, the camera inside them); leaving
-        // either out prevented it (hardware test #30), so effect meshes with the camera inside are left out. The
-        // main one, Sphere01, is a closed shell drawn with back faces culled: from inside it shows nothing anyway.
-        // The flat Box03 and a small 25-vertex mesh go missing for the half second the camera is inside them.
-        // Scale > x100: in every log only spell effects got there (scenery is x1-x3).
-        bool insideEffect(const osgUtil::RenderLeaf& leaf)
-        {
-            const osg::Matrix& mv = *leaf._modelview;
-            const float sx2 = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2();
-            if (!(sx2 > 100.f * 100.f))
-                return false;
-            const osg::BoundingSphere& bound = leaf._drawable->getBound();
-            if (!bound.valid())
-                return false;
-            const float sy2 = osg::Vec3(mv(1, 0), mv(1, 1), mv(1, 2)).length2();
-            const float sz2 = osg::Vec3(mv(2, 0), mv(2, 1), mv(2, 2)).length2();
-            const float scale = std::sqrt(std::max(sx2, std::max(sy2, sz2)));
-            // Within the near plane of the bounds' surface counts as inside: the near plane cuts it.
-            return (bound.center() * mv).length() < bound.radius() * scale + gNear;
-        }
-
-        void logInsideEffect(const osg::Drawable& drawable)
-        {
-            static std::set<std::string> logged;
-            if (logged.size() >= 32 || !logged.insert(drawable.getName()).second)
-                return;
-            P3DS_LOGI("render3ds: left out '%s': an effect mesh with the camera inside (fireball fix)",
-                drawable.getName().c_str());
-        }
 
 #ifdef OPENMW3DS_DEBUG
         // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
@@ -2559,16 +2547,7 @@ namespace Render3DS
                         return;
                     }
                 }
-                const bool skipInside = !debugSkips().mDrawInsideEffects;
-#else
-                constexpr bool skipInside = true;
 #endif
-                if (skipInside && insideEffect(*leaf))
-                {
-                    ++gStats.mInsideEffects;
-                    logInsideEffect(*geometry);
-                    return;
-                }
                 gpu = geometryFor(*geometry);
                 if (gpu == nullptr || gpu->mPrimitives.empty())
                 {
@@ -2654,11 +2633,7 @@ namespace Render3DS
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gpu->mVbo);
             setSceneBufferOffset(gpu->mVboOffset);
-#ifdef OPENMW3DS_DEBUG
-            const bool verify = gVerifyThisFrame || (!gpu->mVerified && !debugSkips().mNoDrawCheck);
-#else
             const bool verify = gVerifyThisFrame || !gpu->mVerified;
-#endif
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
                 if (gVerifyThisFrame && gVerifiedDraws < 3)
@@ -2784,7 +2759,7 @@ namespace Render3DS
         constexpr u32 kBottomTransferFlags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0)
             | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8)
             | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
-        constexpr uint32_t kGuiMaxVertices = 65536; // 1.5 MB of linear memory at most
+        constexpr uint32_t kGuiMaxVertices = 65536; // 2.3 MB of linear memory at most
 
         bool gDrawsGui = false;
         GuiBatchSource gGuiSource = nullptr;
@@ -2801,7 +2776,8 @@ namespace Render3DS
             float mTexCoord[2];
         };
         static_assert(sizeof(GuiVertex) == 24);
-        GuiVertex* gGuiBuffer = nullptr; // linear memory, grows on demand
+        // In the scene's layout: the GPU's vertex input configuration stays the same all frame (useProgram).
+        Vertex* gGuiBuffer = nullptr; // linear memory, grows on demand
         uint32_t gGuiCapacity = 0;
 
         struct GuiDraw
@@ -2978,7 +2954,7 @@ namespace Render3DS
                 return false;
             // The GPU finished the previous frame (beginFrame) and nothing drew from the old buffer in this one.
             gpuFree(gGuiBuffer);
-            gGuiBuffer = static_cast<GuiVertex*>(gpuAlloc(capacity * sizeof(GuiVertex)));
+            gGuiBuffer = static_cast<Vertex*>(gpuAlloc(capacity * sizeof(Vertex)));
             gGuiCapacity = gGuiBuffer != nullptr ? capacity : 0;
             if (gGuiBuffer == nullptr)
                 P3DS_LOGW("render3ds: no linear memory for %lu GUI vertices", (unsigned long)capacity);
@@ -3020,15 +2996,18 @@ namespace Render3DS
                 // Images made at runtime (MyGUI's font atlases) are uploaded with their first row at t = 0, the
                 // cooked ones (which MyGUI's v = 0 at the top expects) flipped: mirror v for the runtime ones.
                 const bool flipV = image != nullptr && cooked == nullptr;
-                GuiVertex* out = gGuiBuffer + used;
-                std::memcpy(out, batch.mVertices, batch.mCount * sizeof(GuiVertex));
-                if (scaleU != 1.f || scaleV != 1.f || flipV)
-                    for (uint32_t i = 0; i < batch.mCount; ++i)
-                    {
-                        out[i].mTexCoord[0] *= scaleU;
-                        out[i].mTexCoord[1] = flipV ? 1.f - out[i].mTexCoord[1] : out[i].mTexCoord[1] * scaleV;
-                    }
-                const auto* words = reinterpret_cast<const uint32_t*>(out);
+                Vertex* out = gGuiBuffer + used;
+                const auto* in = static_cast<const GuiVertex*>(batch.mVertices);
+                for (uint32_t i = 0; i < batch.mCount; ++i)
+                {
+                    std::memcpy(out[i].mPosition, in[i].mPosition, 12);
+                    out[i].mNormal[0] = out[i].mNormal[1] = 0.f;
+                    out[i].mNormal[2] = 1.f;
+                    std::memcpy(out[i].mColor, in[i].mColor, 4);
+                    out[i].mTexCoord[0] = in[i].mTexCoord[0] * scaleU;
+                    out[i].mTexCoord[1] = flipV ? 1.f - in[i].mTexCoord[1] : in[i].mTexCoord[1] * scaleV;
+                }
+                const auto* words = reinterpret_cast<const uint32_t*>(in);
                 for (uint32_t i = 0, n = batch.mCount * sizeof(GuiVertex) / 4; i < n; ++i)
                     mix(words[i]);
                 mix(reinterpret_cast<uintptr_t>(texture));
@@ -3037,7 +3016,7 @@ namespace Render3DS
                 gGuiDraws.push_back(GuiDraw{ used, batch.mCount, texture, batch.mBlend });
                 used += batch.mCount;
             }
-            flushToGpu(gGuiBuffer, used * sizeof(GuiVertex));
+            flushToGpu(gGuiBuffer, used * sizeof(Vertex));
             return hash | 1; // never 0 ("redraw")
         }
 
@@ -3104,16 +3083,10 @@ namespace Render3DS
             if (gGuiDraws.empty())
                 return;
 
-            C3D_BindProgram(&gFlatProgram);
-            C3D_AttrInfo* attr = C3D_GetAttrInfo();
-            AttrInfo_Init(attr);
-            AttrInfo_AddLoader(attr, Attr_Position, GPU_FLOAT, 3);
-            AttrInfo_AddLoader(attr, Attr_Color, GPU_UNSIGNED_BYTE, 4);
-            AttrInfo_AddLoader(attr, Attr_TexCoord, GPU_FLOAT, 2);
-            C3D_BufInfo* buf = C3D_GetBufInfo();
-            BufInfo_Init(buf);
-            buf->base_paddr = gBufferBase;
-            BufInfo_Add(buf, gGuiBuffer, sizeof(GuiVertex), 3, 0x210);
+            useProgram(&gFlatProgram);
+            if (gSceneBuffer == nullptr)
+                sceneBufferInfo(gGuiBuffer);
+            setSceneBufferOffset(osConvertVirtToPhys(gGuiBuffer) - gBufferBase);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
             C3D_CullFace(GPU_CULL_NONE);
@@ -3155,8 +3128,9 @@ namespace Render3DS
                 if (gFailure)
                     return;
             }
+            // A no-op after the first frame (citro3d's program stays gProgram, see useProgram); the first draw sets
+            // its variant's entry point (gBound was reset).
             C3D_BindProgram(&gProgram);
-            gBound.mProgram = &gProgram;
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
             const uint32_t drawsBefore = gStats.mDraws;
