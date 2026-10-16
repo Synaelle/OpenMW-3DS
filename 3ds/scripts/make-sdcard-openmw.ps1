@@ -59,10 +59,10 @@ What this tests (hardware test #29: the fireball corruption):
   fix it (the GPU can no longer draw outside the screen it's drawing to; broken particles are left out), and
   a fuller screenshot. Please do these two runs:
   1. As usual: leave Arrille's, Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps
-     ahead -> ZR. If the screens break: touch Debug (top right of the bottom screen) -> Screenshot, then take
-     a Rosalina screenshot too, then quit (L + R + START + SELECT held a second).
-  2. Create an empty file sdmc:/openmw/no-m8ui (the old bottom screen) and do the same fireball. Does it
-     break too? Then delete the file.
+     ahead -> ZR. If the screens break: press L + D-pad LEFT (screenshot of both screens, no need to see
+     anything), then take a Rosalina screenshot too, then quit (L + R + START + SELECT held a second).
+  2. Create an empty file sdmc:/openmw/no-m8ui (the old bottom screen) and do the same fireball: there, select
+     it with B -> [Magic] -> Fireball, then B to close, Y, ZR. Does it break too? Then delete the file.
   Send the logs, sdmc:/openmw/screenshots/ (top_, bottom_ and bottomgpu_ files) and the Rosalina shots.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
@@ -122,8 +122,8 @@ OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Ne
      D-pad up     journal                               D-pad down  rest / wait
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
-   Screenshots: Debug tab -> [Screenshot] saves both screens to sdmc:/openmw/screenshots/ (top_NNN.bmp and
-   bottom_NNN.bmp).
+   Screenshots: L + D-pad LEFT (or Debug tab -> [Screenshot]) saves both screens to sdmc:/openmw/screenshots/
+   (top_NNN.bmp, bottom_NNN.bmp and bottomgpu_NNN.bmp).
    Panic: L + R + START + SELECT held for a second quits the game.
    Things to try, in one session:
    - The HUD: do the bars, names and icons look right and read well? Is anything too small or cut off?

@@ -431,6 +431,13 @@ namespace omw3ds
 #ifdef OPENMW3DS_DEBUG
         debug::applyScriptedInput(gStats.frameIndex);
 #endif
+        // Screenshot combination, L + D-pad Left (D-pad Left does nothing in game; L alone sneaks): the same as the
+        // Debug tab's button, for when the screens can't be read (hardware test #28).
+        {
+            constexpr u32 kScreenshotKeys = KEY_L | KEY_DLEFT;
+            if ((hidKeysHeld() & kScreenshotKeys) == kScreenshotKeys && (hidKeysDown() & kScreenshotKeys) != 0)
+                gScreenshotRequested = true;
+        }
         // M8: MyGUI draws the bottom screen, except while an M6 text menu shows there (until each window has its
         // M8 version); the text display then gets the whole screen back.
         if (gBottomReady && Render3DS::drawsGui())
