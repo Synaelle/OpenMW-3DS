@@ -1,0 +1,40 @@
+diff --git a/openmw/apps/openmw/n3ds/frame3ds.cpp b/openmw/apps/openmw/n3ds/frame3ds.cpp
+index e8bc003..c8f3d75 100644
+--- a/openmw/apps/openmw/n3ds/frame3ds.cpp
++++ b/openmw/apps/openmw/n3ds/frame3ds.cpp
+@@ -13,6 +13,10 @@
+ #include "../mwbase/world.hpp"
+ #include "../mwgui/mode.hpp"
+ #include "../mwmechanics/creaturestats.hpp"
++#include "../mwmechanics/actorutil.hpp"
++#include "../mwmechanics/spells.hpp"
++#include "../mwmechanics/spellutil.hpp"
++#include "../mwworld/inventorystore.hpp"
+ #include "../mwmechanics/drawstate.hpp"
+ #include "../mwbase/luamanager.hpp"
+ #include "../mwworld/cell.hpp"
+@@ -507,6 +511,24 @@ namespace omw3ds
+         if (++gStats.frameIndex == 100)
+             lazyStringSelfCheck();
+ 
++        // Snapshot backport (scripts/snapshot-patches): this build has no menu to choose a spell. Once the test
++        // character script has added Fireball, select it, as the spell window does: Y readies it, ZR casts.
++        static bool fireballSelected = false;
++        if (!fireballSelected && gStats.frameIndex > 30)
++        {
++            const MWWorld::Ptr player = MWMechanics::getPlayer();
++            const ESM::RefId fireball = ESM::RefId::stringRefId("fireball");
++            if (!player.isEmpty() && player.getClass().getCreatureStats(player).getSpells().hasSpell(fireball))
++            {
++                MWWorld::InventoryStore& store = player.getClass().getInventoryStore(player);
++                store.setSelectedEnchantItem(store.end());
++                MWBase::Environment::get().getWindowManager()->setSelectedSpell(
++                    fireball, int(MWMechanics::getSpellSuccessChance(fireball, player)));
++                fireballSelected = true;
++                P3DS_LOGI("snapshot backport: Fireball selected (Y readies it, ZR casts)");
++            }
++        }
++
+         // Automated runs, sdmc:/openmw/autorun.txt: "quit:N" quits after N game frames (tests shutdown),
+         // "shot:N,M,..." saves the top screen at those frames (sdmc:/openmw/shot_top_N.bmp).
+         struct Autorun
