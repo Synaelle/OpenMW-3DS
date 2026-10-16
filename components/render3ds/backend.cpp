@@ -33,6 +33,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
+
+#include <sys/stat.h>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -2232,6 +2235,36 @@ namespace Render3DS
             gEmitLap = now;
         }
 
+#ifdef OPENMW3DS_DEBUG
+        // Hardware test #29: a fireball exploding at the player's feet breaks the GPU, with or without M8's UI, and
+        // not in Azahar. What reaches the GPU then (noteUnusualDraw, Azahar): the hit's particles around the camera,
+        // particles left at the world origin 71000 units away (on every cast), and the blast meshes, tiny models
+        // scaled x1500 to x44000 by their animation, enclosing the camera. Empty files in sdmc:/openmw/ leave one
+        // kind out, to find which one the hardware can't take.
+        struct DebugSkips
+        {
+            bool mParticles = false; // skip-particles: no particles at all
+            bool mFarParticles = false; // skip-far-particles: particles past the far plane
+            bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
+        };
+
+        const DebugSkips& debugSkips()
+        {
+            static const DebugSkips skips = [] {
+                DebugSkips s;
+                struct stat st;
+                s.mParticles = stat("sdmc:/openmw/skip-particles", &st) == 0;
+                s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
+                s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
+                if (s.mParticles || s.mFarParticles || s.mBigEffects)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s", s.mParticles ? " skip-particles" : "",
+                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "");
+                return s;
+            }();
+            return skips;
+        }
+#endif
+
         // Vertices built on the CPU every frame (particle quads). When beginFrame returns, the GPU has finished the
         // previous frame, so the buffer is refilled from the start each frame.
         constexpr uint32_t kTransientVertices = 16384; // 2730 particles, 576 KB (rain alone: ~1400-1900 drops)
@@ -2249,6 +2282,13 @@ namespace Render3DS
             count = 0;
             if (gTransient == nullptr || ps.numParticles() <= 0)
                 return false;
+#ifdef OPENMW3DS_DEBUG
+            if (debugSkips().mParticles)
+            {
+                gStats.mDebugSkipped += static_cast<uint32_t>(ps.numParticles());
+                return false;
+            }
+#endif
             const int detail = std::max(1, ps.getLevelOfDetail());
             const float scale = std::sqrt(static_cast<float>(detail));
             osg::Vec3 xAxis = ps.getAlignVectorX();
@@ -2329,6 +2369,13 @@ namespace Render3DS
                 const float size = particle->getCurrentSize() * scale;
                 const osg::Vec3 p1 = x * size, p2 = y * size;
                 const osg::Vec3& pos = particle->getPosition();
+#ifdef OPENMW3DS_DEBUG
+                if (debugSkips().mFarParticles && -(pos * modelview).z() > gFar)
+                {
+                    ++gStats.mDebugSkipped;
+                    continue;
+                }
+#endif
                 const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
                 const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
                 const osg::Vec3 corners[4] = { pos - p1 - p2, pos + p1 - p2, pos + p1 + p2, pos - p1 + p2 };
@@ -2363,6 +2410,41 @@ namespace Render3DS
             return true;
         }
 
+#ifdef OPENMW3DS_DEBUG
+        // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
+        // reaches the GPU then, logged once per drawable: draws at (near) zero scale (an effect's first frames:
+        // normals of length 0, NaN once normalized in the shader) and draws whose bounds enclose the camera.
+        void noteUnusualDraw(const osgUtil::RenderLeaf& leaf)
+        {
+            static std::unordered_set<const osg::Drawable*> noted;
+            if (noted.size() >= 150)
+                return;
+            const osg::Drawable* drawable = leaf._drawable.get();
+            const osg::Matrix& mv = *leaf._modelview;
+            const float sx = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length();
+            const float sy = osg::Vec3(mv(1, 0), mv(1, 1), mv(1, 2)).length();
+            const float sz = osg::Vec3(mv(2, 0), mv(2, 1), mv(2, 2)).length();
+            const float scale = std::max(sx, std::max(sy, sz));
+            const osg::BoundingSphere& bound = drawable->getBound();
+            const float distance = (bound.center() * mv).length();
+            const bool zeroScale = std::min(sx, std::min(sy, sz)) < 1e-4f;
+            const bool enclosing = bound.valid() && distance < bound.radius() * scale;
+            if (!zeroScale && !enclosing)
+                return;
+            if (!noted.insert(drawable).second)
+                return;
+            const osg::Node* parent = drawable->getNumParents() > 0 ? drawable->getParent(0) : nullptr;
+            const osg::Geometry* geometry = drawable->asGeometry();
+            P3DS_LOGI("render3ds: %s draw '%s' (parent '%s'): scale %.3g %.3g %.3g, radius %.0f, camera %.0f from "
+                      "its centre, %u vertices, %s",
+                zeroScale ? "zero-scale" : "camera-enclosing", drawable->getName().c_str(),
+                parent ? parent->getName().c_str() : "-", double(sx), double(sy), double(sz),
+                double(bound.radius() * scale), double(distance),
+                geometry && geometry->getVertexArray() ? geometry->getVertexArray()->getNumElements() : 0u,
+                geometry ? "geometry" : "particles");
+        }
+#endif
+
         void drawLeaf(osgUtil::RenderLeaf* leaf)
         {
             if (gFailure)
@@ -2390,6 +2472,17 @@ namespace Render3DS
             }
             else
             {
+#ifdef OPENMW3DS_DEBUG
+                if (debugSkips().mBigEffects)
+                {
+                    const osg::Matrix& mv = *leaf->_modelview;
+                    if (osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2() > 100.f * 100.f)
+                    {
+                        ++gStats.mDebugSkipped;
+                        return;
+                    }
+                }
+#endif
                 gpu = geometryFor(*geometry);
                 if (gpu == nullptr || gpu->mPrimitives.empty())
                 {
@@ -2399,6 +2492,9 @@ namespace Render3DS
                 }
             }
             lap(gEmitProfile.mGeometry);
+#ifdef OPENMW3DS_DEBUG
+            noteUnusualDraw(*leaf);
+#endif
             const ResolvedState& rs = resolve(leaf->_parent);
             const int sky = skyPass(rs);
             if (sky == Sky_SunflashQuery)
@@ -3034,6 +3130,13 @@ namespace Render3DS
             gStats.mGpuMs = C3D_GetDrawingTime();
             // The GPU's time for one frame (not the CPU's): explosions and big transparent effects can take long.
             // (A Rosalina or HOME Menu pause in between counts too.)
+            static uint32_t debugSkipLogged = 0;
+            if (gStats.mDebugSkipped != 0 && gFrame - debugSkipLogged >= 30)
+            {
+                P3DS_LOGI("render3ds: the debug switches left out %lu draws/particles in frame %lu",
+                    (unsigned long)gStats.mDebugSkipped, (unsigned long)gFrame);
+                debugSkipLogged = gFrame;
+            }
             static uint32_t badParticlesLogged = 0;
             if (gStats.mBadParticles != 0 && gFrame - badParticlesLogged >= 30)
             {

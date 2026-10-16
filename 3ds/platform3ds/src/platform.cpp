@@ -434,6 +434,24 @@ namespace p3ds
         fclose(f);
     }
 
+    // The previous two runs' logs stay: NAME-1.log (the last run), NAME-2.log (the one before). Several runs of a
+    // hardware test then survive until the tester copies the folder (each launch used to overwrite them).
+    static void rotateLogs()
+    {
+        static const char* const kNames[] = { "openmw3ds", "openmw", "MyGUI" };
+        for (const char* name : kNames)
+        {
+            char current[96], older[96], oldest[96];
+            snprintf(current, sizeof(current), "%s/%s.log", kLogDir, name);
+            snprintf(older, sizeof(older), "%s/%s-1.log", kLogDir, name);
+            snprintf(oldest, sizeof(oldest), "%s/%s-2.log", kLogDir, name);
+            // FAT can't rename onto an existing file.
+            remove(oldest);
+            rename(older, oldest);
+            rename(current, older);
+        }
+    }
+
     PlatformInfo init(const InitOptions& options)
     {
         const u64 mainTick = svcGetSystemTick();
@@ -444,6 +462,7 @@ namespace p3ds
         if (stat(kLogDir, &logDir) != 0)
             mkdir(kLogDir, 0777);
         remove(kAutorunDonePath);
+        rotateLogs();
 
         textfb::setupBottomScreen();
 
