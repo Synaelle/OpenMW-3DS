@@ -67,6 +67,7 @@ namespace MWSound
 
         // takeSoundStats3DS
         bool gActive = false;
+        OpenALOutput* gOutput = nullptr; // initialized (shutdownSound3DS)
         int gSounds = 0;
         int gStreams = 0;
         size_t gEffectBytes = 0; // in linear memory
@@ -421,6 +422,7 @@ namespace MWSound
         mStreamThread = std::make_unique<StreamThread>(*this);
         mInitialized = true;
         gActive = true;
+        gOutput = this;
         P3DS_LOGI("sound: NDSP ready, %d channels", kChannelCount);
         return true;
     }
@@ -437,6 +439,18 @@ namespace MWSound
         ndspExit();
         mInitialized = false;
         gActive = false;
+        gOutput = nullptr;
+    }
+
+    void OpenALOutput::shutdownForExit()
+    {
+        if (gOutput != nullptr)
+            gOutput->deinit();
+    }
+
+    void shutdownSound3DS()
+    {
+        OpenALOutput::shutdownForExit();
     }
 
     std::pair<Sound_Handle, size_t> OpenALOutput::loadSound(VFS::Path::NormalizedView fname)

@@ -2685,12 +2685,41 @@ namespace Render3DS
             logged = true;
         }
 
+        // The GPU's own framebuffer registers (GPUREG_DEPTHBUFFER_LOC, COLORBUFFER_LOC, FRAMEBUFFER_DIM: 0x11C-0x11E)
+        // against the target the last frame ended on: different values mean the GPU's state isn't what citro3d set
+        // (reset, or commands it never sent), which would draw into the wrong place or at the wrong size.
+        const C3D_RenderTarget* gLastTarget = nullptr;
+
+        void checkGpuFramebuffer()
+        {
+            if (gLastTarget == nullptr)
+                return;
+            uint32_t regs[3] = {};
+            if (R_FAILED(GSPGPU_ReadHWRegs(0x401000 + 0x11C * 4, regs, sizeof(regs))))
+                return;
+            const C3D_FrameBuf& fb = gLastTarget->frameBuf;
+            const uint32_t expected[3] = { fb.depthBuf ? osConvertVirtToPhys(fb.depthBuf) >> 3 : 0,
+                osConvertVirtToPhys(fb.colorBuf) >> 3,
+                0x01000000u | ((uint32_t(fb.height) - 1) & 0xFFF) << 12 | (fb.width & 0xFFF) };
+            static uint32_t reported[3] = {};
+            const bool same = regs[1] == expected[1] && regs[2] == expected[2]
+                && (fb.depthBuf == nullptr || regs[0] == expected[0]);
+            if (same || std::memcmp(regs, reported, sizeof(regs)) == 0)
+                return;
+            std::memcpy(reported, regs, sizeof(regs));
+            P3DS_LOGE("render3ds: GPU framebuffer registers aren't citro3d's (%s target): depth %08lx (expected %08lx), "
+                      "colour %08lx (%08lx), dimensions %08lx (%08lx)",
+                gLastTarget == gTarget ? "top" : "bottom", (unsigned long)regs[0], (unsigned long)expected[0],
+                (unsigned long)regs[1], (unsigned long)expected[1], (unsigned long)regs[2], (unsigned long)expected[2]);
+        }
+
         void checkDisplayState()
         {
             static TargetState top, bottom;
             checkTarget("top", gTarget, top);
             checkTarget("bottom", gBottomTarget, bottom);
             checkLcds();
+            checkGpuFramebuffer();
         }
 
         bool ensureGuiCapacity(uint32_t vertices)
@@ -2773,6 +2802,7 @@ namespace Render3DS
         void drawGuiOn(C3D_RenderTarget* target, float scaleX, float offsetY)
         {
             C3D_FrameDrawOn(target);
+            gLastTarget = target;
             C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
             projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
             projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
@@ -2874,6 +2904,7 @@ namespace Render3DS
                 C3D_RenderTargetClear(
                     gTarget, static_cast<C3D_ClearBits>(clearBits), toRgba8(stage->getClearColor()), 0xFFFFFF);
             C3D_FrameDrawOn(gTarget);
+            gLastTarget = gTarget;
 
             if (!gSelfTestDone)
             {
@@ -2945,6 +2976,12 @@ namespace Render3DS
             C3D_FrameEnd(GX_CMDLIST_FLUSH);
             gInFrame = false;
             gStats.mGpuMs = C3D_GetDrawingTime();
+            // The GPU's time for one frame (not the CPU's): explosions and big transparent effects can take long.
+            // (A Rosalina or HOME Menu pause in between counts too.)
+            if (gStats.mGpuMs > 500.f)
+                P3DS_LOGW("render3ds: the GPU took %.0f ms for frame %lu (%lu draws, %lu triangles)",
+                    double(gStats.mGpuMs), (unsigned long)gFrame, (unsigned long)gStats.mDraws,
+                    (unsigned long)gStats.mTriangles);
             gStats.mGeometries = static_cast<uint32_t>(gGeometries.size());
             gStats.mLinearFreeKb = static_cast<uint32_t>(linearSpaceFree() / 1024);
             gLastStats = gStats;

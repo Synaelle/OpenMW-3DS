@@ -8,6 +8,7 @@
 // (--new-game is deliberately absent: it would start character generation and the intro movie.)
 
 #include "frame3ds.hpp"
+#include "sound3ds.hpp"
 
 #include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
@@ -119,6 +120,8 @@ void omw3ds::exitProcess(int code)
     if (p3ds::info().autorun)
         p3ds::writeSmallFile(p3ds::kAutorunDonePath, "done\n"); // run-azahar.ps1 waits for it
     // Each step is named for the watchdog: a hang here gets a crash report that says where.
+    p3ds::crash::kick("shutdown: sound");
+    MWSound::shutdownSound3DS();
     p3ds::crash::kick("shutdown: bottom screen");
     omw3ds::shutdownBottomScreen();
     p3ds::crash::kick("shutdown: render3ds");

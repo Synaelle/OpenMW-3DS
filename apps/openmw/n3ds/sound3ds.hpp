@@ -41,6 +41,9 @@ namespace MWSound
         explicit OpenALOutput(SoundManager& mgr);
         ~OpenALOutput() override;
 
+        // shutdownSound3DS: deinit() of the initialized output.
+        static void shutdownForExit();
+
     private:
         // A sound effect (the Sound_Handle): read and decoded on the sound thread, then copied into linear memory
         // (the DSP reads it there) on the main thread, which alone may use libctru's linear allocator.
@@ -125,6 +128,10 @@ namespace MWSound
         unsigned mUnderruns = 0;
     };
     SoundStats3DS takeSoundStats3DS();
+
+    // The fast exit (main3ds.cpp exitProcess) skips OpenMW's teardown: the sound thread and the DSP must stop before
+    // libctru closes its services, or they use closed ones (hardware test #27: a Luma crash after the panic quit).
+    void shutdownSound3DS();
 
     // The WAV / MP3 decoder (not FFmpeg: see above). Always outputs 16-bit samples.
     class FFmpegDecoder final : public SoundDecoder
