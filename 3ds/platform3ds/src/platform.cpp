@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <malloc.h>
 #include <pthread.h>
 #include <reent.h>
 #include <stdexcept>
@@ -208,6 +209,73 @@ namespace
         if (rc != 0)
             P3DS_LOGE("threads: pthread keys unavailable (%d): exceptions on two threads at once are unsafe", rc);
 #endif
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// One lock for the linear heap (-Wl,--wrap, CMakeLists.txt).
+//
+// libctru's linear allocator (linearAlloc & co.: GPU and DSP memory) has no lock, and several threads use it: the
+// renderer and the texture pack (main thread, OpenMW's work queue), sound buffers, the caller profile, and sbrk's
+// heap extension below (from whichever thread mallocs). Two at once can hand out overlapping blocks: sound data,
+// GPU commands, textures and vertices then overwrite each other (hardware test #26: textures and both screens
+// corrupted after an exterior load). Every call goes through these wrappers under newlib's malloc lock, which is
+// recursive: the allocator allocates its bookkeeping with operator new, and sbrk calls it with that lock held, so a
+// separate lock could deadlock.
+extern "C"
+{
+    void* __real_linearAlloc(size_t size);
+    void* __real_linearMemAlign(size_t size, size_t alignment);
+    void* __real_linearRealloc(void* mem, size_t size);
+    size_t __real_linearGetSize(void* mem);
+    void __real_linearFree(void* mem);
+    u32 __real_linearSpaceFree(void);
+
+    void* __wrap_linearAlloc(size_t size)
+    {
+        __malloc_lock(_REENT);
+        void* mem = __real_linearAlloc(size);
+        __malloc_unlock(_REENT);
+        return mem;
+    }
+
+    void* __wrap_linearMemAlign(size_t size, size_t alignment)
+    {
+        __malloc_lock(_REENT);
+        void* mem = __real_linearMemAlign(size, alignment);
+        __malloc_unlock(_REENT);
+        return mem;
+    }
+
+    void* __wrap_linearRealloc(void* mem, size_t size)
+    {
+        __malloc_lock(_REENT);
+        void* result = __real_linearRealloc(mem, size);
+        __malloc_unlock(_REENT);
+        return result;
+    }
+
+    size_t __wrap_linearGetSize(void* mem)
+    {
+        __malloc_lock(_REENT);
+        const size_t size = __real_linearGetSize(mem);
+        __malloc_unlock(_REENT);
+        return size;
+    }
+
+    void __wrap_linearFree(void* mem)
+    {
+        __malloc_lock(_REENT);
+        __real_linearFree(mem);
+        __malloc_unlock(_REENT);
+    }
+
+    u32 __wrap_linearSpaceFree(void)
+    {
+        __malloc_lock(_REENT);
+        const u32 free = __real_linearSpaceFree();
+        __malloc_unlock(_REENT);
+        return free;
     }
 }
 
@@ -430,6 +498,9 @@ namespace p3ds
         aptHook(
             &aptCookie,
             [](APT_HookType hook, void*) {
+                static const char* const kNames[] = { "suspend", "restore", "sleep", "wake up", "exit" };
+                if (hook >= 0 && hook < APTHOOK_COUNT)
+                    P3DS_LOGI("apt: %s", kNames[hook]);
                 if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP)
                     crash::setWatchdogPaused(true);
                 else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONEXIT)

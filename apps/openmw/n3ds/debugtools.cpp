@@ -4,6 +4,7 @@
 #include "hidinject.hpp"
 #include "menus.hpp"
 
+#include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/screenshot.hpp>
 
@@ -166,6 +167,7 @@ namespace omw3ds::debug
                     sticks[input.mStick] = hidinject::Stick{ true, input.mX, input.mY };
             }
             hidinject::set(held, sticks[0], sticks[1], touch);
+            p3ds::crash::setScriptedButtons(held); // the panic combination's watchdog
         }
 
         // autorun "door:F": activate the nearest door that leads somewhere (an interior unless exteriors are

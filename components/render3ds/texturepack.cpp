@@ -61,16 +61,6 @@ namespace Render3DS
         FILE* gPack = nullptr;
         std::vector<PackEntry> gIndex;
 
-        LightLock& linearLock()
-        {
-            static LightLock lock = [] {
-                LightLock l;
-                LightLock_Init(&l);
-                return l;
-            }();
-            return lock;
-        }
-
         uint64_t fnv1a64(std::string_view text)
         {
             uint64_t h = 0xCBF29CE484222325ull;
@@ -121,19 +111,14 @@ namespace Render3DS
 
     void* gpuAlloc(size_t size)
     {
-        LightLock_Lock(&linearLock());
-        void* ptr = linearAlloc(size);
-        LightLock_Unlock(&linearLock());
-        return ptr;
+        return linearAlloc(size); // locked by platform3ds's wrapper
     }
 
     void gpuFree(void* ptr)
     {
         if (ptr == nullptr)
             return;
-        LightLock_Lock(&linearLock());
         linearFree(ptr);
-        LightLock_Unlock(&linearLock());
     }
 
     CookedImage::CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, uint16_t srcWidth,

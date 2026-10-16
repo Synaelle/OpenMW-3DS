@@ -442,6 +442,37 @@ namespace p3ds::crash
         }
         u32 gTimeoutMs = 0;
         bool gWatchdogPaused = false;
+        bool gPanic = false; // the combination was held: the main thread should quit
+        u32 gScriptedButtons = 0; // autorun (debug builds)
+        constexpr u32 kPanicKeys = KEY_L | KEY_R | KEY_START | KEY_SELECT;
+
+        // The buttons held now, from HID shared memory (hidScanInput's source): the main thread may be frozen and
+        // not scanning.
+        u32 rawButtonsHeld()
+        {
+            const u32 scripted = __atomic_load_n(&gScriptedButtons, __ATOMIC_RELAXED);
+            if (hidSharedMem == nullptr)
+                return scripted;
+            u32 id = hidSharedMem[4];
+            if (id > 7)
+                id = 7;
+            return hidSharedMem[10 + id * 4] | scripted;
+        }
+
+        [[noreturn]] void panicExit()
+        {
+            if (__atomic_fetch_add(&gInCrash, 1, __ATOMIC_SEQ_CST) != 0)
+                svcExitProcess();
+            beginReport("panic (L+R+START+SELECT)");
+            put("Step: ");
+            put(gStep);
+            put("\nThe main thread didn't quit within 3 s.\n");
+            appendMemAndLog();
+            writeReportFile();
+            log::flush();
+            showScreenAndExit("panic: forced quit");
+            __builtin_unreachable();
+        }
         volatile bool gWatchdogRun = false;
         Thread gWatchdog = nullptr;
 
@@ -484,6 +515,8 @@ namespace p3ds::crash
                 line[n++] = ' ';
             line[textfb::kCols] = '\0';
             const uint16_t fg = idle < 10 ? textfb::color::green : (idle < 30 ? textfb::color::yellow : textfb::color::red);
+            if (textfb::gpuOwned())
+                return; // M8's GUI draws the bottom screen: not ours to touch
             textfb::drawText(0, textfb::kRows - 1, line, fg, textfb::color::header);
             GSPGPU_FlushDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
         }
@@ -493,11 +526,24 @@ namespace p3ds::crash
             installForCurrentThread();
             int tick = 0;
             uint32_t peakHeap = 0;
+            int panicTicks = 0;
             while (gWatchdogRun)
             {
                 svcSleepThread(500LL * 1000 * 1000);
                 if (__atomic_load_n(&gWatchdogPaused, __ATOMIC_RELAXED))
                     continue;
+                // Panic combination, every 0.5 s: held for 1 s, ask the main thread; 3 s later, leave anyway.
+                if ((rawButtonsHeld() & kPanicKeys) == kPanicKeys || panicTicks >= 3)
+                    ++panicTicks;
+                else
+                    panicTicks = 0;
+                if (panicTicks == 3)
+                {
+                    P3DS_LOGW("panic: L+R+START+SELECT held, quitting");
+                    __atomic_store_n(&gPanic, true, __ATOMIC_RELEASE);
+                }
+                else if (panicTicks == 3 + 6)
+                    panicExit();
                 // Memory profile every 5 s (the log is thread-safe). The exact heap walk (mallinfo) holds the
                 // malloc lock for ~200 ms with OpenMW's heap from this core: a freeze every 5 s in game
                 // (hardware test #15). In game it only runs when the arena grew by 1 MB (a load, which
@@ -535,6 +581,16 @@ namespace p3ds::crash
                     reportHang();
             }
         }
+    }
+
+    void setScriptedButtons(uint32_t held)
+    {
+        __atomic_store_n(&gScriptedButtons, held, __ATOMIC_RELAXED);
+    }
+
+    bool panicRequested()
+    {
+        return __atomic_load_n(&gPanic, __ATOMIC_ACQUIRE);
     }
 
     void kick(const char* step)

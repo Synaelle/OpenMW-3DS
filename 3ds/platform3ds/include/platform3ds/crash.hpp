@@ -5,6 +5,9 @@
 // <crash path> with registers, a backtrace (frame-pointer walk + stack scan), memory stats and
 // the last log lines, then shows a short message on the bottom screen.
 // Resolve addresses with scripts/symbolize.ps1 <openmw3ds-crash.log> <app.elf>.
+
+#include <cstdint>
+
 namespace p3ds::crash
 {
     // Call once from the main thread, after log::init. Installs the handler for the main thread,
@@ -36,4 +39,13 @@ namespace p3ds::crash
     void setWatchdogPaused(bool paused);
     // Call regularly from the main loop / long operations. `step` must point to static storage.
     void kick(const char* step = nullptr);
+
+    // Panic combination: L + R + START + SELECT held for a second, read by the watchdog (core 1) whatever the main
+    // thread is doing. The main thread polls this and quits normally; if it doesn't within 3 s (frozen), the
+    // watchdog writes a report and leaves by itself.
+    bool panicRequested();
+
+    // Autorun's scripted buttons (debugtools.cpp): the watchdog reads the real ones from HID shared memory, which
+    // scripted input doesn't reach.
+    void setScriptedButtons(uint32_t held);
 }

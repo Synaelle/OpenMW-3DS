@@ -11,6 +11,7 @@
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/platform.hpp>
+#include <platform3ds/screenshot.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
@@ -315,16 +316,20 @@ namespace omw3ds
 
         // HOME menu / power button: SDL only services APT in its 3DS video driver, which we don't use.
         // aptMainLoop() blocks while the app is suspended and returns false when it must close.
-        void closeRequested(bool loading);
+        void closeRequested(bool loading, const char* who = "APT");
 
         void serviceApt(bool loading)
         {
             if (!aptMainLoop())
                 closeRequested(loading);
+            // The panic combination (L+R+START+SELECT, read by crash.cpp's watchdog): as if closed from the HOME
+            // Menu. If this thread is frozen, the watchdog leaves by itself.
+            else if (p3ds::crash::panicRequested())
+                closeRequested(loading, "panic");
         }
 
-        // The HOME Menu (or autorun "close:N") asked the app to close.
-        void closeRequested(bool loading)
+        // The HOME Menu (or autorun "close:N", or the panic combination) asked the app to close.
+        void closeRequested(bool loading, const char* who)
         {
             static bool quitRequested = false;
             if (quitRequested)
@@ -334,12 +339,12 @@ namespace omw3ds
             Render3DS::releaseGpuForExit();
             if (!loading)
             {
-                P3DS_LOGI("APT: close requested, quitting");
+                P3DS_LOGI("%s: close requested, quitting", who);
                 MWBase::Environment::get().getStateManager()->requestQuit();
                 return;
             }
             // OpenMW can't abort a load; the user wants out now.
-            P3DS_LOGI("APT: close requested while loading, exiting");
+            P3DS_LOGI("%s: close requested while loading, exiting", who);
             p3ds::shutdown();
             svcExitProcess();
         }
@@ -453,9 +458,13 @@ namespace omw3ds
             static unsigned count = 0;
             if (count == 0)
                 mkdir("sdmc:/openmw/screenshots", 0777); // may be missing (empty folders and FTP copies)
+            // Both screens: the top one from the render target (next frame), the bottom one as it shows now.
             char path[64];
-            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count++);
+            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count);
             Render3DS::requestCapture(path);
+            char bottomPath[64];
+            std::snprintf(bottomPath, sizeof(bottomPath), "sdmc:/openmw/screenshots/bottom_%03u.bmp", count++);
+            p3ds::screenshot::saveBottomScreen(bottomPath);
 #ifdef OPENMW3DS_DEBUG
             P3DS_LOGI("screenshot %s: %s", path, debug::describeView(gStats.frameIndex).c_str());
 #else

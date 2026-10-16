@@ -2533,6 +2533,8 @@ namespace Render3DS
                 P3DS_LOGI("render3ds: top screen saved to %s", path.c_str());
         }
 
+        void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
+
         bool beginFrame()
         {
             if (gInFrame)
@@ -2547,6 +2549,8 @@ namespace Render3DS
                 return false;
             }
             gInFrame = true;
+            if (gFrame % 60 == 0)
+                checkDisplayState();
             if (!gCapturePath.empty())
             {
                 captureTarget(gCapturePath);
@@ -2605,6 +2609,89 @@ namespace Render3DS
         };
         std::vector<GuiBatch> gGuiBatches;
         std::vector<GuiDraw> gGuiDraws;
+
+        // Hardware test #26: both screens showed the top target's depth buffer at half size, then garbage. What the
+        // render targets and the LCDs are set to, checked about once a second and logged when it changes: a target
+        // whose fields change means something overwrote citro3d's memory; an LCD format or stride other than
+        // libctru's means the display itself was reconfigured.
+        struct TargetState
+        {
+            const void* mColor = nullptr;
+            const void* mDepth = nullptr;
+            uint32_t mSize = 0; // width << 16 | height
+            uint32_t mFormats = 0; // colour << 8 | depth
+            uint32_t mFlags = 0; // transfer flags
+            bool mLinked = false;
+
+            bool operator!=(const TargetState& other) const
+            {
+                return mColor != other.mColor || mDepth != other.mDepth || mSize != other.mSize
+                    || mFormats != other.mFormats || mFlags != other.mFlags || mLinked != other.mLinked;
+            }
+        };
+
+        TargetState stateOf(const C3D_RenderTarget& target)
+        {
+            TargetState state;
+            state.mColor = target.frameBuf.colorBuf;
+            state.mDepth = target.frameBuf.depthBuf;
+            state.mSize = uint32_t(target.frameBuf.width) << 16 | target.frameBuf.height;
+            state.mFormats = uint32_t(target.frameBuf.colorFmt) << 8 | uint32_t(target.frameBuf.depthFmt);
+            state.mFlags = target.transferFlags;
+            state.mLinked = target.linked;
+            return state;
+        }
+
+        void checkTarget(const char* name, const C3D_RenderTarget* target, TargetState& known)
+        {
+            if (target == nullptr)
+                return;
+            const TargetState now = stateOf(*target);
+            if (known.mColor != nullptr && now != known)
+                P3DS_LOGE("render3ds: the %s render target changed: colour %p -> %p, depth %p -> %p, size %08lx -> "
+                          "%08lx, formats %04lx -> %04lx, transfer %08lx -> %08lx, linked %d -> %d",
+                    name, known.mColor, now.mColor, known.mDepth, now.mDepth, (unsigned long)known.mSize,
+                    (unsigned long)now.mSize, (unsigned long)known.mFormats, (unsigned long)now.mFormats,
+                    (unsigned long)known.mFlags, (unsigned long)now.mFlags, int(known.mLinked), int(now.mLinked));
+            known = now;
+        }
+
+        // The LCD framebuffer registers (3dbrew "GPU/External Registers": 0x1EF00468 top, 0x1EF00568 bottom):
+        // address A, ..., format, ..., select, ..., stride, address B.
+        void checkLcds()
+        {
+            static uint32_t known[2][2] = {}; // format, stride
+            static bool logged = false;
+            uint32_t regs[2][13] = {};
+            for (int screen = 0; screen < 2; ++screen)
+                if (R_FAILED(GSPGPU_ReadHWRegs(screen == 0 ? 0x400468 : 0x400568, regs[screen], sizeof(regs[screen]))))
+                    return;
+            const bool same = known[0][0] == regs[0][2] && known[0][1] == regs[0][10] && known[1][0] == regs[1][2]
+                && known[1][1] == regs[1][10];
+            if (logged && same)
+                return;
+            p3ds::log::writef(logged ? p3ds::log::Level::Error : p3ds::log::Level::Info,
+                "lcd%s: top format %08lx stride %lu (A %08lx B %08lx select %lu), bottom format %08lx stride %lu "
+                "(A %08lx B %08lx select %lu)",
+                logged ? " CHANGED" : "", (unsigned long)regs[0][2], (unsigned long)regs[0][10],
+                (unsigned long)regs[0][0], (unsigned long)regs[0][11], (unsigned long)regs[0][4],
+                (unsigned long)regs[1][2], (unsigned long)regs[1][10], (unsigned long)regs[1][0],
+                (unsigned long)regs[1][11], (unsigned long)regs[1][4]);
+            for (int screen = 0; screen < 2; ++screen)
+            {
+                known[screen][0] = regs[screen][2];
+                known[screen][1] = regs[screen][10];
+            }
+            logged = true;
+        }
+
+        void checkDisplayState()
+        {
+            static TargetState top, bottom;
+            checkTarget("top", gTarget, top);
+            checkTarget("bottom", gBottomTarget, bottom);
+            checkLcds();
+        }
 
         bool ensureGuiCapacity(uint32_t vertices)
         {
