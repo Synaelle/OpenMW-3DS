@@ -54,8 +54,21 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #26, M8 started: THE NEW INTERFACE):
-  The bottom screen is now the game's own interface, in Morrowind's style, instead of the text display:
+What this tests (hardware test #27: test #26 again, with a fix for its corruption):
+  In test #26 the textures and both screens got corrupted after leaving the interior, and the HOME Menu was
+  black. Likely cause, now fixed: two parts of the game (graphics and sound, mostly) could take the same
+  memory at once. The log now also records what the screens are set to, so if it happens again it says why.
+  New: L + R + START + SELECT held for a second quits the game (also when it's frozen: then after 3 more
+  seconds, with a report in logs/openmw3ds-crash.log). The Screenshot button saves both screens.
+  Please take the same route as in test #26: leave Arrille's, open the tabs, 3rd person, magic ready, walk
+  around in Seyda Neen for a few minutes, then HOME -> Close. If the corruption comes back: Debug tab ->
+  Screenshot right away, then quit and play the same route once more with an empty file
+  sdmc:/openmw/no-m8ui (the old bottom screen; delete the file afterwards), to see if the new interface is
+  involved.
+  Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
+  illegal") and quick save. That's harmless; Rosalina's screenshots are welcome.
+
+  As in test #26, the bottom screen is the game's own interface, in Morrowind's style:
   - the HUD: health, magicka and fatigue with their values, the weapon and the spell with their names,
     active effects, the minimap (still black: maps come in a later step) and the quick keys 1-9 (touch one
     to use it);
@@ -110,7 +123,9 @@ OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Ne
      D-pad up     journal                               D-pad down  rest / wait
      SELECT       quick save                            START     game menu
      hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
-   Screenshots: Debug tab -> [Screenshot] saves the top screen to sdmc:/openmw/screenshots/.
+   Screenshots: Debug tab -> [Screenshot] saves both screens to sdmc:/openmw/screenshots/ (top_NNN.bmp and
+   bottom_NNN.bmp).
+   Panic: L + R + START + SELECT held for a second quits the game.
    Things to try, in one session:
    - The HUD: do the bars, names and icons look right and read well? Is anything too small or cut off?
    - Inventory tab: the filters (All, Weapon, Apparel, Magic, Misc); touch an item: its name, weight and
@@ -122,7 +137,7 @@ OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Ne
    - Walk, fight and look around with a tab open: the game keeps running.
    - Talk to someone, open a container, START: the old text menus take the bottom screen, and the new
      interface comes back when they close.
-   - Go outside (front door) and travel to Balmora with the silt strider.
+   - Go outside (front door) and walk around Seyda Neen for a few minutes (see above).
    - HOME -> Close at the end: it should close right away.
    Note: anything that looks wrong or unpolished, touches that don't respond (or hit the wrong thing), the
    FPS compared to the last test, and what you like and don't like about the layout.
