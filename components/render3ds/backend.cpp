@@ -2261,6 +2261,14 @@ namespace Render3DS
                 xAxis = osg::Matrix::transform3x3(modelview, xAxis);
                 yAxis = osg::Matrix::transform3x3(modelview, yAxis);
                 const float lengthX2 = xAxis.length2(), lengthY2 = yAxis.length2();
+                // A spell's hit or area effect starts at scale 0 and grows: 1/0 below would make every corner
+                // NaN. The PICA has no defined behaviour for those (hardware test #28: both screens and textures
+                // corrupted as a fireball exploded; Azahar just drops them). Nothing shows at scale 0 anyway.
+                if (!(lengthX2 > 1e-12f && lengthY2 > 1e-12f))
+                {
+                    gStats.mBadParticles += static_cast<uint32_t>(ps.numParticles());
+                    return false;
+                }
                 float xScale, yScale;
                 if (ps.getParticleScaleReferenceFrame() == osgParticle::ParticleSystem::LOCAL_COORDINATES)
                 {
@@ -2324,6 +2332,14 @@ namespace Render3DS
                 const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
                 const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
                 const osg::Vec3 corners[4] = { pos - p1 - p2, pos + p1 - p2, pos + p1 + p2, pos - p1 + p2 };
+                const auto finite = [](const osg::Vec3& v) {
+                    return std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
+                };
+                if (!finite(corners[0]) || !finite(corners[2]))
+                {
+                    ++gStats.mBadParticles;
+                    continue;
+                }
                 const float uv[4][2] = { { s0, t0 }, { s1, t0 }, { s1, t1 }, { s0, t1 } };
                 uint8_t rgba[4];
                 for (int k = 0; k < 4; ++k)
@@ -2514,10 +2530,10 @@ namespace Render3DS
         // The render target still holds the previous frame once C3D_FrameBegin has waited for the GPU. It is
         // read straight from VRAM and detiled on the CPU (a GX display transfer here can return before it ran:
         // its completion event may already be signalled by the previous frame's screen transfer).
-        void captureTarget(const std::string& path)
+        bool captureTarget(const C3D_RenderTarget& target, const std::string& path)
         {
-            constexpr unsigned kW = 240, kH = 400; // render target, portrait as the LCD
-            const auto* src = static_cast<const u32*>(gTarget->frameBuf.colorBuf);
+            const unsigned kW = target.frameBuf.width, kH = target.frameBuf.height; // portrait, as the LCD
+            const auto* src = static_cast<const u32*>(target.frameBuf.colorBuf);
             GSPGPU_InvalidateDataCache(src, kW * kH * 4);
             std::vector<uint8_t> out(kW * kH * 3);
             for (unsigned y = 0; y < kH; ++y)
@@ -2529,11 +2545,12 @@ namespace Render3DS
                     dst[1] = static_cast<uint8_t>(texel >> 16);
                     dst[2] = static_cast<uint8_t>(texel >> 24);
                 }
-            if (p3ds::screenshot::saveRotatedFramebuffer(path.c_str(), out.data(), 400, 240, p3ds::screenshot::Format::BGR8))
-                P3DS_LOGI("render3ds: top screen saved to %s", path.c_str());
+            return p3ds::screenshot::saveRotatedFramebuffer(
+                path.c_str(), out.data(), kH, kW, p3ds::screenshot::Format::BGR8);
         }
 
         void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
+        void captureAll(const std::string& path); // likewise
 
         bool beginFrame()
         {
@@ -2553,7 +2570,7 @@ namespace Render3DS
                 checkDisplayState();
             if (!gCapturePath.empty())
             {
-                captureTarget(gCapturePath);
+                captureAll(gCapturePath);
                 gCapturePath.clear();
             }
             ++gFrame;
@@ -2713,6 +2730,47 @@ namespace Render3DS
                 (unsigned long)regs[1], (unsigned long)expected[1], (unsigned long)regs[2], (unsigned long)expected[2]);
         }
 
+        // Every draw goes to `target`, and only inside it: the scissor test bounds what the GPU writes to the target's
+        // own memory, whatever a draw's vertices are (the render targets lie next to each other in VRAM).
+        void drawOn(C3D_RenderTarget* target)
+        {
+            C3D_FrameDrawOn(target);
+            C3D_SetScissor(GPU_SCISSOR_NORMAL, 0, 0, target->frameBuf.width, target->frameBuf.height);
+            gLastTarget = target;
+        }
+
+        // A screenshot (the Debug tab's button): the top render target, the bottom one too (what the GPU drew there,
+        // before the copy to the screen; the bottom screen as shown is saved separately, frame3ds.cpp), and the GPU's
+        // rasterizer, texturing and framebuffer registers, to tell drawing problems from display ones.
+        void captureAll(const std::string& path)
+        {
+            if (captureTarget(*gTarget, path))
+                P3DS_LOGI("render3ds: top screen saved to %s", path.c_str());
+            if (gBottomTarget != nullptr && gGuiOwnsBottom)
+            {
+                std::string bottom = path;
+                const size_t at = bottom.rfind("top_");
+                if (at != std::string::npos)
+                    bottom.replace(at, 4, "bottomgpu_");
+                if (bottom != path && captureTarget(*gBottomTarget, bottom))
+                    P3DS_LOGI("render3ds: bottom render target saved to %s", bottom.c_str());
+            }
+            const struct
+            {
+                uint32_t mFirst, mCount;
+            } ranges[] = { { 0x40, 0x30 }, { 0x80, 0x20 }, { 0x100, 0x30 } };
+            for (const auto& range : ranges)
+                for (uint32_t reg = range.mFirst; reg < range.mFirst + range.mCount; reg += 8)
+                {
+                    uint32_t v[8] = {};
+                    if (R_FAILED(GSPGPU_ReadHWRegs(0x401000 + reg * 4, v, sizeof(v))))
+                        return;
+                    P3DS_LOGI("gpu regs %03lx: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", (unsigned long)reg,
+                        (unsigned long)v[0], (unsigned long)v[1], (unsigned long)v[2], (unsigned long)v[3],
+                        (unsigned long)v[4], (unsigned long)v[5], (unsigned long)v[6], (unsigned long)v[7]);
+                }
+        }
+
         void checkDisplayState()
         {
             static TargetState top, bottom;
@@ -2801,8 +2859,7 @@ namespace Render3DS
         // setProjection) and the fixed depth z' = -0.5 (no depth test).
         void drawGuiOn(C3D_RenderTarget* target, float scaleX, float offsetY)
         {
-            C3D_FrameDrawOn(target);
-            gLastTarget = target;
+            drawOn(target);
             C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
             projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
             projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
@@ -2903,8 +2960,7 @@ namespace Render3DS
             if (clearBits)
                 C3D_RenderTargetClear(
                     gTarget, static_cast<C3D_ClearBits>(clearBits), toRgba8(stage->getClearColor()), 0xFFFFFF);
-            C3D_FrameDrawOn(gTarget);
-            gLastTarget = gTarget;
+            drawOn(gTarget);
 
             if (!gSelfTestDone)
             {
@@ -2978,6 +3034,13 @@ namespace Render3DS
             gStats.mGpuMs = C3D_GetDrawingTime();
             // The GPU's time for one frame (not the CPU's): explosions and big transparent effects can take long.
             // (A Rosalina or HOME Menu pause in between counts too.)
+            static uint32_t badParticlesLogged = 0;
+            if (gStats.mBadParticles != 0 && gFrame - badParticlesLogged >= 30)
+            {
+                P3DS_LOGW("render3ds: %lu particles left out in frame %lu (zero-scale effect or non-finite corners)",
+                    (unsigned long)gStats.mBadParticles, (unsigned long)gFrame);
+                badParticlesLogged = gFrame;
+            }
             if (gStats.mGpuMs > 500.f)
                 P3DS_LOGW("render3ds: the GPU took %.0f ms for frame %lu (%lu draws, %lu triangles)",
                     double(gStats.mGpuMs), (unsigned long)gFrame, (unsigned long)gStats.mDraws,
