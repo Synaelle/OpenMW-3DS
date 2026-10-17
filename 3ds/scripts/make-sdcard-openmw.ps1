@@ -54,20 +54,19 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #36: the flashing meshes, the top-screen interface draw taken apart):
-  Test #35 said: no interface at all = clean; interface with the scene shader = flash; interface without the
-  bottom screen = flash. So the trigger is in the interface drawn on the TOP screen (the crosshair and the
-  target line). That draw does two kinds of things: it re-selects the screen's render target in the middle of
-  the frame (the GPU then flushes and invalidates its framebuffer cache and gets the framebuffer, viewport and
-  scissor registers again), and it draws a few small quads with their own state. One switch removes each
-  (empty files in sdmc:/openmw/; delete every other test file first):
-    Run A: gui-no-rebind    the target is not re-selected; everything else as usual. Interface unchanged.
-    Run B: gui-no-quads     every state change of the pass, but no quad drawn: no crosshair, no HUD, bottom
-                            screen black. That's expected.
+What this tests (hardware test #37: the flashing meshes, the interface quads themselves):
+  Test #36 said: the quads of the interface are the trigger (no quads = clean; everything else of the pass
+  kept = flash). About 220 small quads per frame on the top screen, and they are the only draws of the frame
+  with the depth test switched off, the only ones changing texture at every draw (tiny RGBA8 textures), and
+  they use straight alpha blending. One switch changes each (empty files in sdmc:/openmw/; delete every other
+  test file first):
+    Run A: gui-depth-test   the quads keep the depth test on (it always passes). Interface unchanged.
+    Run B: gui-no-texture   untextured quads: text and icons become plain coloured boxes. That's expected.
+    Run C: gui-no-blend     opaque quads: the interface gets black boxes around text and icons. Expected too.
   Same walk each time, two or three minutes around Seyda Neen, looking at the houses near you. For each run:
   did meshes flash, and roughly how often? A phone video like last time is perfect. The logs of the last three
-  runs are kept (openmw3ds.log = newest, -1, -2): after both runs send the whole logs folder (run A is then
-  openmw3ds-1.log, run B openmw3ds.log).
+  runs are kept (openmw3ds.log = newest, -1, -2): after the three runs send the whole logs folder (run A is then
+  openmw3ds-2.log, run B openmw3ds-1.log, run C openmw3ds.log).
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

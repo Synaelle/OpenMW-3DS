@@ -2316,6 +2316,15 @@ namespace Render3DS
             // and scissor registers again, mid-frame). gui-no-quads: every state write of the pass, but no draw.
             bool mGuiNoRebind = false;
             bool mGuiNoQuads = false;
+            // Test #37: test #36 said the quads themselves trigger it (gui-no-quads clean, gui-no-rebind
+            // flashes). They are the frame's only draws with the depth test disabled, and the only ones with
+            // RGBA8 textures of odd shapes (MyGUI's 8x512 glyph strips) and straight alpha blending.
+            // gui-depth-test: the quads with the depth test on (always passes, no depth write).
+            // gui-no-texture: untextured quads (vertex colour: coloured boxes instead of text and icons).
+            // gui-no-blend: opaque quads.
+            bool mGuiDepthTest = false;
+            bool mGuiNoTexture = false;
+            bool mGuiNoBlend = false;
         };
 
         const DebugSkips& debugSkips()
@@ -2331,13 +2340,19 @@ namespace Render3DS
                 s.mGuiTopOnly = stat("sdmc:/openmw/gui-top-only", &st) == 0;
                 s.mGuiNoRebind = stat("sdmc:/openmw/gui-no-rebind", &st) == 0;
                 s.mGuiNoQuads = stat("sdmc:/openmw/gui-no-quads", &st) == 0;
+                s.mGuiDepthTest = stat("sdmc:/openmw/gui-depth-test", &st) == 0;
+                s.mGuiNoTexture = stat("sdmc:/openmw/gui-no-texture", &st) == 0;
+                s.mGuiNoBlend = stat("sdmc:/openmw/gui-no-blend", &st) == 0;
                 if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
-                    || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
-                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
-                        s.mArrayDraws ? " array-draws" : "", s.mGuiSceneShader ? " gui-scene-shader" : "",
-                        s.mGuiTopOnly ? " gui-top-only" : "", s.mGuiNoRebind ? " gui-no-rebind" : "",
-                        s.mGuiNoQuads ? " gui-no-quads" : "");
+                    || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads || s.mGuiDepthTest || s.mGuiNoTexture
+                    || s.mGuiNoBlend)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s%s%s%s%s%s",
+                        s.mParticles ? " skip-particles" : "", s.mFarParticles ? " skip-far-particles" : "",
+                        s.mBigEffects ? " skip-big-effects" : "", s.mArrayDraws ? " array-draws" : "",
+                        s.mGuiSceneShader ? " gui-scene-shader" : "", s.mGuiTopOnly ? " gui-top-only" : "",
+                        s.mGuiNoRebind ? " gui-no-rebind" : "", s.mGuiNoQuads ? " gui-no-quads" : "",
+                        s.mGuiDepthTest ? " gui-depth-test" : "", s.mGuiNoTexture ? " gui-no-texture" : "",
+                        s.mGuiNoBlend ? " gui-no-blend" : "");
                 return s;
             }();
             return skips;
@@ -3116,13 +3131,19 @@ namespace Render3DS
             modelView[2] = FVec4_New(0.f, 0.f, 1.f, 0.f);
             modelView[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
 
+            bool noTexture = false, noBlend = false;
+#ifdef OPENMW3DS_DEBUG
+            noTexture = debugSkips().mGuiNoTexture;
+            noBlend = debugSkips().mGuiNoBlend;
+#endif
             C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
             int blend = -1;
             for (const GuiDraw& draw : gGuiDraws)
             {
-                if (draw.mTexture != bound)
+                C3D_Tex* texture = noTexture ? nullptr : draw.mTexture;
+                if (texture != bound)
                 {
-                    bound = draw.mTexture;
+                    bound = texture;
                     if (bound != nullptr)
                         C3D_TexBind(0, bound);
                     gBound.mTexEnv = -1;
@@ -3131,6 +3152,9 @@ namespace Render3DS
                 if (static_cast<int>(draw.mBlend) != blend)
                 {
                     blend = static_cast<int>(draw.mBlend);
+                    if (noBlend)
+                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+                    else
                     switch (draw.mBlend)
                     {
                         case GuiBlend::Additive:
@@ -3185,7 +3209,11 @@ namespace Render3DS
                 sceneBufferInfo(gGuiBuffer);
             setSceneBufferOffset(osConvertVirtToPhys(gGuiBuffer) - gBufferBase);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
-            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+            bool depthTest = false;
+#ifdef OPENMW3DS_DEBUG
+            depthTest = debugSkips().mGuiDepthTest;
+#endif
+            C3D_DepthTest(depthTest, GPU_ALWAYS, GPU_WRITE_COLOR);
             C3D_CullFace(GPU_CULL_NONE);
 
             // Top screen: the canvas's upper half (y in [0, 1]).
