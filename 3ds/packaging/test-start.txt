@@ -16,7 +16,7 @@ player->SetAxe 50
 player->SetSpear 50
 player->SetAthletics 50
 player->SetEnchant 50
-player->SetDestruction 50
+player->SetDestruction 100
 player->SetAlteration 50
 player->SetIllusion 50
 player->SetConjuration 50
@@ -38,3 +38,4 @@ player->AddItem "steel axe" 1
 player->Equip "steel axe"
 player->AddSpell "fire bite"
 player->AddSpell "fireball"
+player->SetMagicka 300

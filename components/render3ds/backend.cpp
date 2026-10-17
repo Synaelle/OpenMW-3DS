@@ -2282,6 +2282,7 @@ namespace Render3DS
             bool mParticles = false; // skip-particles: no particles at all
             bool mFarParticles = false; // skip-far-particles: particles past the far plane
             bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
+            bool mArrayDraws = false; // array-draws: particles and GUI through C3D_DrawArrays again (test #33)
         };
 
         const DebugSkips& debugSkips()
@@ -2292,9 +2293,11 @@ namespace Render3DS
                 s.mParticles = stat("sdmc:/openmw/skip-particles", &st) == 0;
                 s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
                 s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
-                if (s.mParticles || s.mFarParticles || s.mBigEffects)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s", s.mParticles ? " skip-particles" : "",
-                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "");
+                s.mArrayDraws = stat("sdmc:/openmw/array-draws", &st) == 0;
+                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s", s.mParticles ? " skip-particles" : "",
+                        s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
+                        s.mArrayDraws ? " array-draws" : "");
                 return s;
             }();
             return skips;
@@ -2307,6 +2310,35 @@ namespace Render3DS
         Vertex* gTransient = nullptr; // linear memory (init)
         uint32_t gTransientUsed = 0;
         bool gWarnedTransient = false;
+
+        // Hardware test #33 (docs/FIREBALL_CORRUPTION.md): the particles and the GUI were the frame's only
+        // non-indexed draws. citro3d draws indexed triangles in the PICA's "geometry primitive" mode
+        // (GPUREG_PRIMITIVE_CONFIG mode 3, GPUREG_GEOSTAGE_CONFIG/CONFIG2 bit 8) and arrays in plain triangle mode
+        // (mode 0, GEOSTAGE_CONFIG2 bit 0), and those mode registers are written by the command processor as soon
+        // as it reaches them, whether or not the previous draw's vertices are still in the pipeline. Behind a blast
+        // mesh scaled x60,000 (hundreds of screen-sized triangles) they are, and flipping the mode under them left
+        // the vertex stream one output out of step for the rest of the run (test #33: no corruption over five
+        // blasts with this change, corruption within three with the array-draws switch, same build and console).
+        // So every triangle list in the frame is an indexed draw through this identity index buffer (index i =
+        // vertex i of the bound buffer): one primitive mode for the whole frame. Never add a C3D_DrawArrays or an
+        // immediate-mode draw to a frame with scene geometry. The self-test's TRIANGLE_FAN draw stays (startup,
+        // GPU idle).
+        constexpr uint32_t kIdentityIndices = 65536; // the particle buffer (16384) and the GUI's at most (65536)
+        uint16_t* gIdentityIbo = nullptr; // linear memory (init); null: back to C3D_DrawArrays
+        static_assert(kTransientVertices <= kIdentityIndices); // and kGuiMaxVertices, checked where it is defined
+
+        // Draws vertices [first, first + count) of the bound buffer as a triangle list.
+        void drawTriangleList(uint32_t first, uint32_t count)
+        {
+            bool arrays = gIdentityIbo == nullptr || first + count > kIdentityIndices;
+#ifdef OPENMW3DS_DEBUG
+            arrays = arrays || debugSkips().mArrayDraws;
+#endif
+            if (arrays)
+                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first), static_cast<int>(count));
+            else
+                C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(count), C3D_UNSIGNED_SHORT, gIdentityIbo + first);
+        }
 
         // osgParticle::ParticleSystem::drawImplementation's quads (OSG ParticleSystem.cpp), on the CPU: OpenMW's
         // fires, flames, smoke and spell effects (they draw through immediate GL that never reaches us). Normal
@@ -2622,7 +2654,7 @@ namespace Render3DS
                 if (gSceneBuffer == nullptr)
                     sceneBufferInfo(gTransient);
                 setSceneBufferOffset(osConvertVirtToPhys(gTransient) - gBufferBase);
-                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(particleFirst), static_cast<int>(particleCount));
+                drawTriangleList(particleFirst, particleCount);
                 ++gStats.mDraws;
                 gStats.mTriangles += particleCount / 3;
                 gStats.mShaderRuns[gDrawLights] += particleCount;
@@ -2760,6 +2792,7 @@ namespace Render3DS
             | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8)
             | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
         constexpr uint32_t kGuiMaxVertices = 65536; // 2.3 MB of linear memory at most
+        static_assert(kGuiMaxVertices <= kIdentityIndices); // drawTriangleList
 
         bool gDrawsGui = false;
         GuiBatchSource gGuiSource = nullptr;
@@ -3067,7 +3100,7 @@ namespace Render3DS
                             break;
                     }
                 }
-                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(draw.mFirst), static_cast<int>(draw.mCount));
+                drawTriangleList(draw.mFirst, draw.mCount);
                 ++gStats.mGuiDraws;
             }
         }
@@ -3257,6 +3290,15 @@ namespace Render3DS
         gTransient = static_cast<Vertex*>(gpuAlloc(kTransientVertices * sizeof(Vertex)));
         if (gTransient == nullptr)
             P3DS_LOGW("render3ds: no linear memory for the particle buffer; particles are not drawn");
+        gIdentityIbo = static_cast<uint16_t*>(gpuAlloc(kIdentityIndices * sizeof(uint16_t)));
+        if (gIdentityIbo != nullptr)
+        {
+            for (uint32_t i = 0; i < kIdentityIndices; ++i)
+                gIdentityIbo[i] = static_cast<uint16_t>(i);
+            flushToGpu(gIdentityIbo, kIdentityIndices * sizeof(uint16_t));
+        }
+        else
+            P3DS_LOGW("render3ds: no linear memory for the identity index buffer; particles and GUI drawn as arrays");
 
         gDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(scene_shbin)), scene_shbin_size);
         shaderProgramInit(&gProgram);

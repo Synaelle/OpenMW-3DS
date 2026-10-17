@@ -54,20 +54,22 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #32: the fireball fix, and the flashing meshes):
-  Test #31's screenshots told what breaks: the GPU's vertex outputs get shifted by one at the explosion (the
-  picture in the top-left corner is the interface drawn at its texture coordinates). The fix stops changing the
-  GPU's shader setup in the middle of a frame. It may also fix the flashing/disappearing meshes.
-  First DELETE every test file in sdmc:/openmw/: draw-inside-effects, no-draw-check, skip-near-particles (and
-  skip-big-effects, skip-particles, skip-far-particles, no-m8ui if any is there). Two runs:
-    Run A: no file. The fix. Cast at your feet 3 times or more, then a few times at a wall or an NPC a few steps
-           away. Also walk around Seyda Neen for a minute: do any meshes flash or disappear?
-    Run B: one empty file, full-program-switch (part of the old behaviour back). Same casts, same walk.
+What this tests (hardware test #33: the fireball, one more try):
+  The old builds you ran (m7, t19) showed the bug is as old as the particles. The particles (and the interface)
+  were the only things drawn in the GPU's "array" mode; everything else uses its "indexed" mode, and the GPU
+  switched between the two right behind the huge blast meshes. This build draws everything in the indexed mode.
+  First DELETE every test file in sdmc:/openmw/ (full-program-switch, skip-big-effects, skip-particles,
+  skip-far-particles, no-m8ui... if any is there). Two runs:
+    Run A: no file. The fix. Cast at your feet 3 times or more (wait for the explosion to finish each time), then
+           a few times at a wall or an NPC a few steps away. Then walk around Seyda Neen for a minute.
+    Run B: one empty file, array-draws (the old way back, same build). Cast at your feet until the screens break
+           (or 5 casts). This checks that the bug still happens on this console today.
   If a run breaks the screens: quit with L + R + START + SELECT (or hold POWER), no screenshot.
   Each cast: Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
+  (The test character now has Destruction 100 and 300 magicka, so casts shouldn't fail.)
   The logs of the last three runs are kept (openmw3ds.log = newest, -1, -2): after both runs, send the whole logs
-  folder (run A is then openmw3ds-1.log, run B openmw3ds.log), and say for each run whether the screens broke and
-  whether meshes flashed.
+  folder (run A is then openmw3ds-1.log, run B openmw3ds.log), and say for each run whether the screens broke,
+  and after how many casts.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 
