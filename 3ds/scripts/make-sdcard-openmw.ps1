@@ -54,19 +54,16 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #37: the flashing meshes, the interface quads themselves):
-  Test #36 said: the quads of the interface are the trigger (no quads = clean; everything else of the pass
-  kept = flash). About 220 small quads per frame on the top screen, and they are the only draws of the frame
-  with the depth test switched off, the only ones changing texture at every draw (tiny RGBA8 textures), and
-  they use straight alpha blending. One switch changes each (empty files in sdmc:/openmw/; delete every other
-  test file first):
-    Run A: gui-depth-test   the quads keep the depth test on (it always passes). Interface unchanged.
-    Run B: gui-no-texture   untextured quads: text and icons become plain coloured boxes. That's expected.
-    Run C: gui-no-blend     opaque quads: the interface gets black boxes around text and icons. Expected too.
-  Same walk each time, two or three minutes around Seyda Neen, looking at the houses near you. For each run:
-  did meshes flash, and roughly how often? A phone video like last time is perfect. The logs of the last three
-  runs are kept (openmw3ds.log = newest, -1, -2): after the three runs send the whole logs folder (run A is then
-  openmw3ds-2.log, run B openmw3ds-1.log, run C openmw3ds.log).
+What this tests (hardware test #38: the flashing meshes, the interface's textures):
+  Test #37 said: only untextured interface quads are clean. A frame draws about 220 quads that change texture
+  at nearly every draw, between some 34 tiny textures (Morrowind's menu frames: 8x8 corners, 8x512 borders).
+  One run with one switch (empty file in sdmc:/openmw/; delete every other test file first):
+    Run A: gui-one-texture  every quad uses the same (largest) texture: the interface shows wrong pictures,
+                            that's expected, but the GPU changes texture once per frame instead of 220 times.
+  Same walk as before, two or three minutes around Seyda Neen, looking at the houses near you: did meshes
+  flash, and roughly how often? A phone video is perfect. Then send the logs folder.
+  Clean = the texture changes are the trigger, and the fix is to pack the interface's pictures into one
+  texture. Flash = something about texturing the quads at all, and the next build looks at the format.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

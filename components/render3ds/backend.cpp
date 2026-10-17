@@ -2325,6 +2325,11 @@ namespace Render3DS
             bool mGuiDepthTest = false;
             bool mGuiNoTexture = false;
             bool mGuiNoBlend = false;
+            // Test #38: only gui-no-texture was clean in test #37. A frame's ~220 quads change texture at every
+            // draw between ~34 textures (Morrowind's menu frames: 8x8 corners, 8x512 borders), each change with a
+            // texture cache clear. gui-one-texture: the frame's largest GUI texture bound once for every quad
+            // (wrong pictures, one bind). Clean = the per-draw texture changes; flash = texturing itself.
+            bool mGuiOneTexture = false;
         };
 
         const DebugSkips& debugSkips()
@@ -2343,6 +2348,9 @@ namespace Render3DS
                 s.mGuiDepthTest = stat("sdmc:/openmw/gui-depth-test", &st) == 0;
                 s.mGuiNoTexture = stat("sdmc:/openmw/gui-no-texture", &st) == 0;
                 s.mGuiNoBlend = stat("sdmc:/openmw/gui-no-blend", &st) == 0;
+                s.mGuiOneTexture = stat("sdmc:/openmw/gui-one-texture", &st) == 0;
+                if (s.mGuiOneTexture)
+                    P3DS_LOGW("render3ds: debug switch: gui-one-texture");
                 if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
                     || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads || s.mGuiDepthTest || s.mGuiNoTexture
                     || s.mGuiNoBlend)
@@ -3132,15 +3140,22 @@ namespace Render3DS
             modelView[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
 
             bool noTexture = false, noBlend = false;
+            C3D_Tex* oneTexture = nullptr;
 #ifdef OPENMW3DS_DEBUG
             noTexture = debugSkips().mGuiNoTexture;
             noBlend = debugSkips().mGuiNoBlend;
+            if (debugSkips().mGuiOneTexture)
+                for (const GuiDraw& draw : gGuiDraws)
+                    if (draw.mTexture != nullptr
+                        && (oneTexture == nullptr
+                            || draw.mTexture->width * draw.mTexture->height > oneTexture->width * oneTexture->height))
+                        oneTexture = draw.mTexture;
 #endif
             C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
             int blend = -1;
             for (const GuiDraw& draw : gGuiDraws)
             {
-                C3D_Tex* texture = noTexture ? nullptr : draw.mTexture;
+                C3D_Tex* texture = noTexture ? nullptr : oneTexture != nullptr && draw.mTexture != nullptr ? oneTexture : draw.mTexture;
                 if (texture != bound)
                 {
                     bound = texture;
