@@ -18,8 +18,6 @@ if(NOT NINTENDO_3DS)
     message(FATAL_ERROR "This tree must be configured with the devkitPro 3DS toolchain file")
 endif()
 
-option(OPENMW3DS_BUILD_TESTAPP "Build the M0 platform test app" ON)
-option(OPENMW3DS_BUILD_SMOKETESTS "Build dependency smoke tests (needs scripts/build-deps.ps1)" ON)
 set(OPENMW3DS_DEPS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/.deps/3ds" CACHE PATH "Cross-built dependency prefix")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -27,10 +25,4 @@ include(Ctr3dsPackaging)
 
 add_subdirectory(platform3ds)
 
-if(OPENMW3DS_BUILD_TESTAPP)
-    add_subdirectory(testapp)
-endif()
 
-if(OPENMW3DS_BUILD_SMOKETESTS AND EXISTS "${OPENMW3DS_DEPS_PREFIX}/lib/libosg.a")
-    add_subdirectory(smoketests/deps)
-endif()

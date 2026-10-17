@@ -13,8 +13,6 @@
 #
 # -TexturePack: a textures.o3tp cooked by the revision's own tools\cook_textures.py (the format changed with M8);
 # without it, the revision's cooker makes one from the Morrowind data (read only).
-# -Patch: a backport applied to the revision first (scripts\snapshot-patches\), e.g. a debug feature it lacks.
-# -TestStart: a console script run at startup (OpenMW's --script-run), e.g. a test character.
 # -AllowDepsChange: build even though deps/ or cmake/ changed since the revision, when the change only added things
 # (check with git diff <rev> HEAD -- deps cmake): the worktree uses this checkout's .deps.
 # Output: out\snapshots\<Name>\ - copy its contents to the SD card root, install cias\openmw3ds-<Name>.cia.
@@ -22,8 +20,6 @@ param(
     [string]$Rev = '',
     [Parameter(Mandatory)][ValidatePattern('^[a-z0-9]{1,8}$')][string]$Name,
     [string]$TexturePack = '',
-    [string]$Patch = '',
-    [string]$TestStart = '',
     [string]$Start = "Seyda Neen, Arrille's Tradehouse",
     [switch]$AllowDepsChange,
     [switch]$Remove
@@ -72,17 +68,6 @@ if (Test-Path $Wt) {
 # The prebuilt dependencies and the packaging tools (makerom, bannertool) are git-ignored: shared by junctions.
 foreach ($dir in '.deps', '.tools') {
     if (-not (Test-Path "$Wt\$dir")) { New-Item -ItemType Junction -Path "$Wt\$dir" -Target "$Main\$dir" | Out-Null }
-}
-
-# The backport, on the revision's own files (before the path edits), once.
-if ($Patch) {
-    $patchFile = FromMain $Patch
-    $applied = Join-Path $Wt ('.snapshot-patch-' + [IO.Path]::GetFileNameWithoutExtension($patchFile))
-    if (-not (Test-Path $applied)) {
-        git -C $Wt apply --ignore-whitespace $patchFile
-        if ($LASTEXITCODE -ne 0) { throw "patch $patchFile does not apply to $Rev" }
-        Set-Content $applied $patchFile
-    }
 }
 
 # The SD folder and the title, edited in the worktree (each edit only matches the original text, so re-running
@@ -140,11 +125,6 @@ Get-ChildItem "$Pkg\$Root\data" -Force | Remove-Item -Recurse -Force # shared: s
 foreach ($f in Get-ChildItem "$Pkg\$Root" -File -Filter *.txt) {
     $text = [IO.File]::ReadAllText($f.FullName)
     if ($text.Contains('sdmc:/openmw/')) { [IO.File]::WriteAllText($f.FullName, $text.Replace('sdmc:/openmw/', "sdmc:/$Root/")) }
-}
-if ($TestStart) {
-    Copy-Item (FromMain $TestStart) "$Pkg\$Root\test-start.txt" -Force
-    [IO.File]::WriteAllLines("$Pkg\$Root\args.txt",
-        [string[]]@('--skip-menu', '--start', $Start, '--script-run', "sdmc:/$Root/test-start.txt"))
 }
 Copy-Item "$src\cias\openmw3ds.cia" "$Pkg\cias\openmw3ds-$Name.cia"
 

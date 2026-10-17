@@ -949,25 +949,6 @@ namespace Render3DS
         // a tiled PICA format (nearest-neighbour resampled to a power of two). One mip level.
         uint32_t gTextureGeneration = 0; // bumped when a runtime texture is (re)converted: the CPU interface redraws
 
-#ifdef OPENMW3DS_DEBUG
-        // Test #41 (the flashing meshes): textures made at runtime by convertImage (MyGUI's font pages, the map and
-        // compass), as opposed to cooked ones; gui-cooked-only leaves the GUI draws that use them out.
-        std::unordered_set<const C3D_Tex*> gRuntimeTextures;
-
-        // gui-no-reupload: a runtime texture is converted once; later changes to its image are ignored.
-        bool guiNoReupload()
-        {
-            static const bool on = [] {
-                struct stat st;
-                const bool exists = stat("sdmc:/openmw/gui-no-reupload", &st) == 0;
-                if (exists)
-                    P3DS_LOGW("render3ds: debug switch: gui-no-reupload");
-                return exists;
-            }();
-            return on;
-        }
-#endif
-
         bool convertImage(GpuTexture& gpu, const osg::Image& image)
         {
             const GLenum format = image.getPixelFormat();
@@ -1057,9 +1038,6 @@ namespace Render3DS
             gpu.mTex.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
             gpu.mLevels = 1;
             ++gTextureGeneration;
-#ifdef OPENMW3DS_DEBUG
-            gRuntimeTextures.insert(&gpu.mTex);
-#endif
             return true;
         }
 
@@ -1125,31 +1103,6 @@ namespace Render3DS
                 return gpu->mValid ? &gpu->mTex : nullptr;
             }
 
-#ifdef OPENMW3DS_DEBUG
-            // Test #41: how often a runtime texture is converted again in place while playing (MyGUI images that
-            // change: the local map, ...), logged at most once a second; gui-no-reupload keeps the first version.
-            if (gpu->mValid && gpu->mImage == image && image != nullptr
-                && dynamic_cast<const CookedImage*>(image) == nullptr)
-            {
-                if (guiNoReupload())
-                {
-                    gpu->mImageModified = image->getModifiedCount();
-                    applySampler(*gpu, texture);
-                    return &gpu->mTex;
-                }
-                static uint32_t count = 0;
-                static uint64_t lastLog = 0;
-                ++count;
-                const uint64_t now = svcGetSystemTick();
-                if (now - lastLog > uint64_t(SYSCLOCK_ARM11))
-                {
-                    P3DS_LOGI("render3ds: runtime texture converted again in place: %ux%u '%s' (%lu so far)",
-                        unsigned(image->s()), unsigned(image->t()), image->getFileName().c_str(),
-                        (unsigned long)count);
-                    lastLog = now;
-                }
-            }
-#endif
             gpu->mImage = image;
             gpu->mImageModified = image ? image->getModifiedCount() : 0;
             gpu->mValid = false;
@@ -1569,40 +1522,7 @@ namespace Render3DS
 
         int gDrawLights = 0; // point lights of the current draw (stats)
 
-#ifdef OPENMW3DS_DEBUG
-        // Hardware test #32: sdmc:/openmw/full-program-switch switches the scene's shader variants through citro3d
-        // again (C3D_BindProgram: the whole shader configuration), as before the fix below.
-        bool fullProgramSwitch()
-        {
-            static const bool on = [] {
-                struct stat st;
-                const bool exists = stat("sdmc:/openmw/full-program-switch", &st) == 0;
-                if (exists)
-                    P3DS_LOGW("render3ds: debug switch: full-program-switch");
-                return exists;
-            }();
-            return on;
-        }
-
-        // Hardware test #34 (the flashing meshes): every scene draw through the 8-light variant, so the frame's
-        // only entry point switch is the GUI's at the end. The light variants (0, 1 or 8 point lights) switch the
-        // vertex shader's entry point between draws, ~45 times a frame, and the suspicion is the fireball's
-        // mechanism again (test #33): under a heavy draw, vertices still in the pipeline run the next draw's
-        // variant, and a nearby lit mesh comes out wrong for one frame. Empty file sdmc:/openmw/one-variant.
-        bool oneVariant()
-        {
-            static const bool on = [] {
-                struct stat st;
-                const bool exists = stat("sdmc:/openmw/one-variant", &st) == 0;
-                if (exists)
-                    P3DS_LOGW("render3ds: debug switch: one-variant");
-                return exists;
-            }();
-            return on;
-        }
-#endif
-
-        // The fireball corruption (docs/FIREBALL_CORRUPTION.md): on hardware, from a big explosion on, the shader
+        // The fireball corruption (docs/history/FIREBALL_CORRUPTION.md): on hardware, from a big explosion on, the shader
         // outputs came out shifted by one (positions taken from texture coordinates, colours from positions) for
         // the rest of the run. Most likely trigger: the vertex shader reconfigured while the GPU is still busy with
         // earlier draws. citro3d's C3D_BindProgram re-sends a program's whole configuration (output map, output
@@ -1617,13 +1537,6 @@ namespace Render3DS
                 return;
             gBound.mProgram = program;
             ++gStats.mProgramSwitches;
-#ifdef OPENMW3DS_DEBUG
-            if (fullProgramSwitch() && program != &gFlatProgram)
-            {
-                C3D_BindProgram(const_cast<shaderProgram_s*>(program));
-                return;
-            }
-#endif
             GPUCMD_AddWrite(GPUREG_VSH_ENTRYPOINT, 0x7FFF0000u | (program->vertexShader->dvle->mainOffset & 0xFFFF));
         }
 
@@ -1674,11 +1587,7 @@ namespace Render3DS
                 count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
             gDrawLights = count;
 
-            bool variants = gVariants;
-#ifdef OPENMW3DS_DEBUG
-            variants = variants && !oneVariant();
-#endif
-            const shaderProgram_s* program = !variants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
+            const shaderProgram_s* program = !gVariants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
             useProgram(program);
             if (program == &gProgram0)
                 return;
@@ -2352,95 +2261,6 @@ namespace Render3DS
             gEmitLap = now;
         }
 
-#ifdef OPENMW3DS_DEBUG
-        // Hardware test #29: a fireball exploding at the player's feet breaks the GPU, with or without M8's UI, and
-        // not in Azahar. What reaches the GPU then (noteUnusualDraw, Azahar): the hit's particles around the camera,
-        // particles left at the world origin 71000 units away (on every cast), and the blast meshes, tiny models
-        // scaled x1500 to x44000 by their animation, enclosing the camera. Empty files in sdmc:/openmw/ leave one
-        // kind out, to find which one the hardware can't take.
-        struct DebugSkips
-        {
-            bool mParticles = false; // skip-particles: no particles at all
-            bool mFarParticles = false; // skip-far-particles: particles past the far plane
-            bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
-            bool mArrayDraws = false; // array-draws: particles and GUI through C3D_DrawArrays again (test #33)
-            // Test #35 (the flashing meshes): the GUI pass taken apart. gui-scene-shader: the GUI drawn with the
-            // scene's 8-light shader set to "unlit vertex colour" instead of the flat shader (no entry point
-            // write at all during a frame). gui-top-only: the bottom screen never redrawn (no second render
-            // target, no mid-frame clear). no-m8ui (frame3ds.cpp) removes the whole pass.
-            bool mGuiSceneShader = false;
-            bool mGuiTopOnly = false;
-            // Test #36: test #35 left the top-screen GUI draws as the trigger (no-m8ui clean, the other two
-            // flash). gui-no-rebind: the GUI pass doesn't re-select the top target (citro3d otherwise sends a
-            // framebuffer flush, an early-depth clear, a framebuffer invalidate and the framebuffer, viewport
-            // and scissor registers again, mid-frame). gui-no-quads: every state write of the pass, but no draw.
-            bool mGuiNoRebind = false;
-            bool mGuiNoQuads = false;
-            // Test #37: test #36 said the quads themselves trigger it (gui-no-quads clean, gui-no-rebind
-            // flashes). They are the frame's only draws with the depth test disabled, and the only ones with
-            // RGBA8 textures of odd shapes (MyGUI's 8x512 glyph strips) and straight alpha blending.
-            // gui-depth-test: the quads with the depth test on (always passes, no depth write).
-            // gui-no-texture: untextured quads (vertex colour: coloured boxes instead of text and icons).
-            // gui-no-blend: opaque quads.
-            bool mGuiDepthTest = false;
-            bool mGuiNoTexture = false;
-            bool mGuiNoBlend = false;
-            // Test #38: only gui-no-texture was clean in test #37. A frame's ~220 quads change texture at every
-            // draw between ~34 textures (Morrowind's menu frames: 8x8 corners, 8x512 borders), each change with a
-            // texture cache clear. gui-one-texture: the frame's largest GUI texture bound once for every quad
-            // (wrong pictures, one bind). Clean = the per-draw texture changes; flash = texturing itself.
-            bool mGuiOneTexture = false;
-            // Test #41: the UI atlas (#39, #40) cut the texture changes from ~220 to ~16-19 per frame and the
-            // flashes got rarer, not gone; only one texture for all quads (#38) was clean. gui-no-cache-clear:
-            // after the pass's first bind, texture changes write texture unit 0's registers directly, without
-            // citro3d's texture cache clear (GPUREG_TEXUNIT_CONFIG bit 16) that comes with every C3D_TexBind.
-            // gui-cooked-only: the GUI draws with a runtime texture (font pages, map, compass) left out: no text.
-            // gui-no-reupload (guiNoReupload) is read where textures are converted.
-            bool mGuiNoCacheClear = false;
-            bool mGuiCookedOnly = false;
-        };
-
-        const DebugSkips& debugSkips()
-        {
-            static const DebugSkips skips = [] {
-                DebugSkips s;
-                struct stat st;
-                s.mParticles = stat("sdmc:/openmw/skip-particles", &st) == 0;
-                s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
-                s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
-                s.mArrayDraws = stat("sdmc:/openmw/array-draws", &st) == 0;
-                s.mGuiSceneShader = stat("sdmc:/openmw/gui-scene-shader", &st) == 0;
-                s.mGuiTopOnly = stat("sdmc:/openmw/gui-top-only", &st) == 0;
-                s.mGuiNoRebind = stat("sdmc:/openmw/gui-no-rebind", &st) == 0;
-                s.mGuiNoQuads = stat("sdmc:/openmw/gui-no-quads", &st) == 0;
-                s.mGuiDepthTest = stat("sdmc:/openmw/gui-depth-test", &st) == 0;
-                s.mGuiNoTexture = stat("sdmc:/openmw/gui-no-texture", &st) == 0;
-                s.mGuiNoBlend = stat("sdmc:/openmw/gui-no-blend", &st) == 0;
-                s.mGuiOneTexture = stat("sdmc:/openmw/gui-one-texture", &st) == 0;
-                if (s.mGuiOneTexture)
-                    P3DS_LOGW("render3ds: debug switch: gui-one-texture");
-                s.mGuiNoCacheClear = stat("sdmc:/openmw/gui-no-cache-clear", &st) == 0;
-                if (s.mGuiNoCacheClear)
-                    P3DS_LOGW("render3ds: debug switch: gui-no-cache-clear");
-                s.mGuiCookedOnly = stat("sdmc:/openmw/gui-cooked-only", &st) == 0;
-                if (s.mGuiCookedOnly)
-                    P3DS_LOGW("render3ds: debug switch: gui-cooked-only");
-                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
-                    || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads || s.mGuiDepthTest || s.mGuiNoTexture
-                    || s.mGuiNoBlend)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s%s%s%s%s%s",
-                        s.mParticles ? " skip-particles" : "", s.mFarParticles ? " skip-far-particles" : "",
-                        s.mBigEffects ? " skip-big-effects" : "", s.mArrayDraws ? " array-draws" : "",
-                        s.mGuiSceneShader ? " gui-scene-shader" : "", s.mGuiTopOnly ? " gui-top-only" : "",
-                        s.mGuiNoRebind ? " gui-no-rebind" : "", s.mGuiNoQuads ? " gui-no-quads" : "",
-                        s.mGuiDepthTest ? " gui-depth-test" : "", s.mGuiNoTexture ? " gui-no-texture" : "",
-                        s.mGuiNoBlend ? " gui-no-blend" : "");
-                return s;
-            }();
-            return skips;
-        }
-#endif
-
         // Vertices built on the CPU every frame (particle quads). When beginFrame returns, the GPU has finished the
         // previous frame, so the buffer is refilled from the start each frame.
         constexpr uint32_t kTransientVertices = 16384; // 2730 particles, 576 KB (rain alone: ~1400-1900 drops)
@@ -2448,7 +2268,7 @@ namespace Render3DS
         uint32_t gTransientUsed = 0;
         bool gWarnedTransient = false;
 
-        // Hardware test #33 (docs/FIREBALL_CORRUPTION.md): the particles and the GUI were the frame's only
+        // Hardware test #33 (docs/history/FIREBALL_CORRUPTION.md): the particles and the GUI were the frame's only
         // non-indexed draws. citro3d draws indexed triangles in the PICA's "geometry primitive" mode
         // (GPUREG_PRIMITIVE_CONFIG mode 3, GPUREG_GEOSTAGE_CONFIG/CONFIG2 bit 8) and arrays in plain triangle mode
         // (mode 0, GEOSTAGE_CONFIG2 bit 0), and those mode registers are written by the command processor as soon
@@ -2467,11 +2287,7 @@ namespace Render3DS
         // Draws vertices [first, first + count) of the bound buffer as a triangle list.
         void drawTriangleList(uint32_t first, uint32_t count)
         {
-            bool arrays = gIdentityIbo == nullptr || first + count > kIdentityIndices;
-#ifdef OPENMW3DS_DEBUG
-            arrays = arrays || debugSkips().mArrayDraws;
-#endif
-            if (arrays)
+            if (gIdentityIbo == nullptr || first + count > kIdentityIndices)
                 C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first), static_cast<int>(count));
             else
                 C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(count), C3D_UNSIGNED_SHORT, gIdentityIbo + first);
@@ -2487,13 +2303,6 @@ namespace Render3DS
             count = 0;
             if (gTransient == nullptr || ps.numParticles() <= 0)
                 return false;
-#ifdef OPENMW3DS_DEBUG
-            if (debugSkips().mParticles)
-            {
-                gStats.mDebugSkipped += static_cast<uint32_t>(ps.numParticles());
-                return false;
-            }
-#endif
             const int detail = std::max(1, ps.getLevelOfDetail());
             const float scale = std::sqrt(static_cast<float>(detail));
             osg::Vec3 xAxis = ps.getAlignVectorX();
@@ -2574,13 +2383,6 @@ namespace Render3DS
                 const float size = particle->getCurrentSize() * scale;
                 const osg::Vec3 p1 = x * size, p2 = y * size;
                 const osg::Vec3& pos = particle->getPosition();
-#ifdef OPENMW3DS_DEBUG
-                if (debugSkips().mFarParticles && -(pos * modelview).z() > gFar)
-                {
-                    ++gStats.mDebugSkipped;
-                    continue;
-                }
-#endif
                 const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
                 const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
                 const osg::Vec3 corners[4] = { pos - p1 - p2, pos + p1 - p2, pos + p1 + p2, pos - p1 + p2 };
@@ -2706,17 +2508,6 @@ namespace Render3DS
             }
             else
             {
-#ifdef OPENMW3DS_DEBUG
-                if (debugSkips().mBigEffects)
-                {
-                    const osg::Matrix& mv = *leaf->_modelview;
-                    if (osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2() > 100.f * 100.f)
-                    {
-                        ++gStats.mDebugSkipped;
-                        return;
-                    }
-                }
-#endif
                 gpu = geometryFor(*geometry);
                 if (gpu == nullptr || gpu->mPrimitives.empty())
                 {
@@ -3353,13 +3144,7 @@ namespace Render3DS
         // setProjection) and the fixed depth z' = -0.5 (no depth test).
         void drawGuiOn(C3D_RenderTarget* target, float scaleX, float offsetY)
         {
-            bool noRebind = false, noQuads = false;
-#ifdef OPENMW3DS_DEBUG
-            noRebind = debugSkips().mGuiNoRebind;
-            noQuads = debugSkips().mGuiNoQuads;
-#endif
-            if (!noRebind || target != gLastTarget)
-                drawOn(target);
+            drawOn(target);
             C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
             projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
             projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
@@ -3371,61 +3156,21 @@ namespace Render3DS
             modelView[2] = FVec4_New(0.f, 0.f, 1.f, 0.f);
             modelView[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
 
-            bool noTexture = false, noBlend = false;
-            C3D_Tex* oneTexture = nullptr;
-#ifdef OPENMW3DS_DEBUG
-            noTexture = debugSkips().mGuiNoTexture;
-            noBlend = debugSkips().mGuiNoBlend;
-            if (debugSkips().mGuiOneTexture)
-                for (const GuiDraw& draw : gGuiDraws)
-                    if (draw.mTexture != nullptr
-                        && (oneTexture == nullptr
-                            || draw.mTexture->width * draw.mTexture->height > oneTexture->width * oneTexture->height))
-                        oneTexture = draw.mTexture;
-#endif
-            bool noCacheClear = false, cookedOnly = false;
-#ifdef OPENMW3DS_DEBUG
-            noCacheClear = debugSkips().mGuiNoCacheClear;
-            cookedOnly = debugSkips().mGuiCookedOnly;
-#endif
-            bool unitBound = false; // gui-no-cache-clear: the pass's first bind went through citro3d
             C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
             int blend = -1;
             for (const GuiDraw& draw : gGuiDraws)
             {
-#ifdef OPENMW3DS_DEBUG
-                if (cookedOnly && draw.mTexture != nullptr && gRuntimeTextures.count(draw.mTexture) != 0)
-                    continue;
-#endif
-                C3D_Tex* texture = noTexture ? nullptr : oneTexture != nullptr && draw.mTexture != nullptr ? oneTexture : draw.mTexture;
-                if (texture != bound)
+                if (draw.mTexture != bound)
                 {
-                    bound = texture;
+                    bound = draw.mTexture;
                     if (bound != nullptr)
-                    {
-                        if (noCacheClear && unitBound)
-                        {
-                            // C3Di_SetTex's writes for unit 0, without GPUREG_TEXUNIT_CONFIG (no cache clear).
-                            const u32 regs[5] = { bound->border, bound->dim, bound->param, bound->lodParam,
-                                osConvertVirtToPhys(bound->data) >> 3 };
-                            GPUCMD_AddIncrementalWrites(GPUREG_TEXUNIT0_BORDER_COLOR, regs, 5);
-                            GPUCMD_AddWrite(GPUREG_TEXUNIT0_TYPE, bound->fmt);
-                        }
-                        else
-                        {
-                            C3D_TexBind(0, bound);
-                            unitBound = true;
-                        }
-                    }
+                        C3D_TexBind(0, bound);
                     gBound.mTexEnv = -1;
                     setTexEnv(bound != nullptr ? TexEnv_Textured : TexEnv_VertexColor);
                 }
                 if (static_cast<int>(draw.mBlend) != blend)
                 {
                     blend = static_cast<int>(draw.mBlend);
-                    if (noBlend)
-                        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
-                    else
                     switch (draw.mBlend)
                     {
                         case GuiBlend::Additive:
@@ -3441,8 +3186,7 @@ namespace Render3DS
                             break;
                     }
                 }
-                if (!noQuads)
-                    drawTriangleList(draw.mFirst, draw.mCount);
+                drawTriangleList(draw.mFirst, draw.mCount);
                 ++gStats.mGuiDraws;
             }
         }
@@ -4794,39 +4538,18 @@ namespace Render3DS
             if (gGuiDraws.empty())
                 return;
 
-            bool sceneShader = false, topOnly = false;
-#ifdef OPENMW3DS_DEBUG
-            sceneShader = debugSkips().mGuiSceneShader;
-            topOnly = debugSkips().mGuiTopOnly;
-#endif
-            if (sceneShader)
-            {
-                // The scene shader as a pass-through: unlit (lighting.x = 0), colour and alpha from the vertex
-                // colour (colorSel: D and E from it, alpha x1), identity texture matrices. gBound is reset below,
-                // so the next frame uploads its own values again.
-                useProgram(&gProgram);
-                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mLighting, 0, 0, 0, 0);
-                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 0, 1, 1);
-                writeTexMat(gLoc.mTexMat, osg::Matrixf());
-                writeTexMat(gLoc.mTexMat1, osg::Matrixf());
-            }
-            else
-                useProgram(&gFlatProgram);
+            useProgram(&gFlatProgram);
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gGuiBuffer);
             setSceneBufferOffset(osConvertVirtToPhys(gGuiBuffer) - gBufferBase);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
-            bool depthTest = false;
-#ifdef OPENMW3DS_DEBUG
-            depthTest = debugSkips().mGuiDepthTest;
-#endif
-            C3D_DepthTest(depthTest, GPU_ALWAYS, GPU_WRITE_COLOR);
+            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
             C3D_CullFace(GPU_CULL_NONE);
 
             // Top screen: the canvas's upper half (y in [0, 1]).
             drawGuiOn(gTarget, 1.f, -1.f);
             // Bottom screen: x in [-0.8, 0.8] (canvas pixels 40..360), y in [-1, 0]; only when it changed.
-            if (!soft && !topOnly && gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
+            if (!soft && gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
             {
                 C3D_RenderTargetClear(gBottomTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
                 drawGuiOn(gBottomTarget,
@@ -4862,12 +4585,6 @@ namespace Render3DS
             }
             // A no-op after the first frame (citro3d's program stays gProgram, see useProgram); the first draw sets
             // its variant's entry point (gBound was reset).
-#ifdef OPENMW3DS_DEBUG
-            // full-program-switch: citro3d's program may already be gProgram while the GPU runs the GUI's flat
-            // shader (set by entry point): bind another one first so the whole configuration is sent again.
-            if (fullProgramSwitch())
-                C3D_BindProgram(&gProgram0);
-#endif
             C3D_BindProgram(&gProgram);
             setupAttributes();
             gVerifyThisFrame = gVerifyFramesLeft > 0;
@@ -4933,13 +4650,6 @@ namespace Render3DS
             gStats.mGpuMs = C3D_GetDrawingTime();
             // The GPU's time for one frame (not the CPU's): explosions and big transparent effects can take long.
             // (A Rosalina or HOME Menu pause in between counts too.)
-            static uint32_t debugSkipLogged = 0;
-            if (gStats.mDebugSkipped != 0 && gFrame - debugSkipLogged >= 30)
-            {
-                P3DS_LOGI("render3ds: the debug switches left out %lu draws/particles in frame %lu",
-                    (unsigned long)gStats.mDebugSkipped, (unsigned long)gFrame);
-                debugSkipLogged = gFrame;
-            }
             static uint32_t badParticlesLogged = 0;
             if (gStats.mBadParticles != 0 && gFrame - badParticlesLogged >= 30)
             {
