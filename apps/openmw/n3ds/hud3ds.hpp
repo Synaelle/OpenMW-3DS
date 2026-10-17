@@ -38,9 +38,9 @@ namespace omw3ds
     // menu (which pauses the game). False if there are no tabs (OpenMW's own layouts).
     bool toggleInventoryTab3DS();
 
-    // The port's own interface (Render3DS::Ui3DS): the touch screen's state each frame (bottom-screen pixels; a
+    // The port's own interface (Render3DS::Lumiere): the touch screen's state each frame (bottom-screen pixels; a
     // release acts on the zone under the last touch).
-    void touchUi3DS(int px, int py, bool down);
+    void touchLumiere(int px, int py, bool down);
 }
 
 #endif

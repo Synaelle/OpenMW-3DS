@@ -18,8 +18,8 @@ ONE texture, built here:
 Output: <out> (format below), a PNG preview next to it (--preview) and a JSON sidecar of the index for tools.
 The Morrowind data is only read.
 
-    python tools/cook_ui_atlas.py --data "D:/.../Morrowind/Data Files" --resources build/openmw/resources/vfs \
-        --out out/cooked/ui3ds.o3ua
+    python tools/cook_lumiere_atlas.py --data "D:/.../Morrowind/Data Files" --resources build/openmw/resources/vfs \
+        --out out/cooked/lumiere.o3ua
 
 Format (little endian; the console loads the whole file into linear memory and binds the texels as they are):
   header  (64 bytes): magic 'O3UA', version, width, height, image count, font count, glyph count,
@@ -233,7 +233,7 @@ def main():
                 wanted.add(key)
     images = []  # (key, rgba array, flags)
     # A solid white square for untextured rectangles (bars' backgrounds, dimming), drawn from the same texture.
-    images.append(("ui3ds/white", np.full((4, 4, 4), 255, dtype=np.uint8), 0))
+    images.append(("lumiere/white", np.full((4, 4, 4), 255, dtype=np.uint8), 0))
     missing, skipped = [], []
     for key in sorted(wanted):
         if key.startswith(SKIP_IMAGES):

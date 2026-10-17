@@ -2883,7 +2883,7 @@ namespace Render3DS
         void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
         void captureAll(const std::string& path); // likewise
 
-        namespace ui3ds
+        namespace lumiere
         {
             void uploadPendingIcons(); // the port's own interface, below
         }
@@ -2917,7 +2917,7 @@ namespace Render3DS
             gSceneBuffer = nullptr;
             gTransientUsed = 0;
             processPendingDeletes();
-            ui3ds::uploadPendingIcons(); // the GPU is idle: the atlas's icon region can change
+            lumiere::uploadPendingIcons(); // the GPU is idle: the atlas's icon region can change
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             if (gSelfTestDone) // the self-test's first steps keep the exact M0 setup: unit 1 never bound
             {
@@ -3460,7 +3460,7 @@ namespace Render3DS
         {
             static const bool on = [] {
                 struct stat st;
-                const bool gpu = stat("sdmc:/openmw/gpu-ui", &st) == 0 || stat("sdmc:/openmw/ui3ds", &st) == 0;
+                const bool gpu = stat("sdmc:/openmw/gpu-ui", &st) == 0 || stat("sdmc:/openmw/lumiere", &st) == 0;
                 P3DS_LOGI("render3ds: interface drawn by the %s", gpu ? "GPU (gpu-ui)" : "CPU");
                 return !gpu;
             }();
@@ -4170,20 +4170,20 @@ namespace Render3DS
             gGuiDraws.push_back(GuiDraw{ 0, 6, &gOverlay, GuiBlend::Premultiplied });
         }
 
-        // ------------------------------------------------------------------ the port's own interface (ui3ds)
+        // ------------------------------------------------------------------ the port's own interface (Lumiere)
         //
         // Hardware tests #34-#43: the New 3DS draws nearby scene meshes wrong for a frame when the interface
         // binds many textures per frame, whatever their kind; one texture bound for the whole interface pass is
         // clean (#38, #43: a 512x256 one). This interface draws everything from ONE texture, the atlas cooked by
-        // tools/cook_ui_atlas.py (sdmc:/openmw/cooked/ui3ds.o3ua: the skins' images, the font's glyphs at the
+        // tools/cook_ui_atlas.py (sdmc:/openmw/cooked/lumiere.o3ua: the skins' images, the font's glyphs at the
         // port's pixel sizes, and a region the console fills with item icons while the GPU is idle), as one
         // vertex buffer and one indexed draw per screen (drawTriangleList: the fireball rule), with the flat
         // shader and the scene's vertex layout. Vertices are rebuilt only when a screen's content changes
-        // (Canvas::mVersion), and the bottom screen is redrawn only then. sdmc:/openmw/ui3ds turns it on;
-        // ui3ds-demo shows a static screen (hardware test #44) instead of the game's interface.
-        namespace ui3ds
+        // (Canvas::mVersion), and the bottom screen is redrawn only then. sdmc:/openmw/lumiere turns it on;
+        // lumiere-demo shows a static screen (hardware test #44) instead of the game's interface.
+        namespace lumiere
         {
-            constexpr const char* kAtlasPath = "sdmc:/openmw/cooked/ui3ds.o3ua";
+            constexpr const char* kAtlasPath = "sdmc:/openmw/cooked/lumiere.o3ua";
             constexpr uint32_t kMagic = 0x4155334F; // "O3UA"
             constexpr uint32_t kVersion = 1;
             constexpr uint16_t kImageTransposed = 2;
@@ -4192,7 +4192,7 @@ namespace Render3DS
             {
                 static const bool on = [] {
                     struct stat st;
-                    return stat("sdmc:/openmw/ui3ds", &st) == 0;
+                    return stat("sdmc:/openmw/lumiere", &st) == 0;
                 }();
                 return on;
             }
@@ -4201,7 +4201,7 @@ namespace Render3DS
             {
                 static const bool on = [] {
                     struct stat st;
-                    return stat("sdmc:/openmw/ui3ds-demo", &st) == 0;
+                    return stat("sdmc:/openmw/lumiere-demo", &st) == 0;
                 }();
                 return on;
             }
@@ -4288,7 +4288,7 @@ namespace Render3DS
                 FILE* f = std::fopen(kAtlasPath, "rb");
                 if (f == nullptr)
                 {
-                    P3DS_LOGE("ui3ds: %s not found: the interface atlas isn't cooked", kAtlasPath);
+                    P3DS_LOGE("lumiere: %s not found: the interface atlas isn't cooked", kAtlasPath);
                     return false;
                 }
                 std::fseek(f, 0, SEEK_END);
@@ -4299,7 +4299,7 @@ namespace Render3DS
                 {
                     std::fclose(f);
                     gpuFree(file);
-                    P3DS_LOGE("ui3ds: can't read %s (%ld bytes)", kAtlasPath, size);
+                    P3DS_LOGE("lumiere: can't read %s (%ld bytes)", kAtlasPath, size);
                     return false;
                 }
                 std::fclose(f);
@@ -4317,7 +4317,7 @@ namespace Render3DS
                 if (magic != kMagic || version != kVersion || dataOffset + dataSize > static_cast<uint32_t>(size)
                     || dataSize != uint32_t(width) * height * 4 || iconSize == 0)
                 {
-                    P3DS_LOGE("ui3ds: %s: bad header (magic %08lx version %lu)", kAtlasPath, (unsigned long)magic,
+                    P3DS_LOGE("lumiere: %s: bad header (magic %08lx version %lu)", kAtlasPath, (unsigned long)magic,
                         (unsigned long)version);
                     gpuFree(file);
                     return false;
@@ -4348,7 +4348,7 @@ namespace Render3DS
                 C3D_TexSetWrap(&gAtlas.mTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
                 GSPGPU_FlushDataCache(file, static_cast<u32>(size));
                 gAtlas.mReady = true;
-                P3DS_LOGI("ui3ds: atlas %ux%u, %u images, %u fonts, %lu glyphs, icon region %ux%u at %u,%u (%ld KB)",
+                P3DS_LOGI("lumiere: atlas %ux%u, %u images, %u fonts, %lu glyphs, icon region %ux%u at %u,%u (%ld KB)",
                     width, height, imageCount, fontCount, (unsigned long)glyphCount, iconW, iconH, iconX, iconY,
                     size / 1024);
                 return true;
@@ -4410,7 +4410,7 @@ namespace Render3DS
                         && (cooked->s() == gAtlas.mIconSize || cooked->s() == gAtlas.mIconSize / 2);
                     if (!fits)
                     {
-                        P3DS_LOGW("ui3ds: icon %s: %s (slot left empty)", slot.mKey.c_str(),
+                        P3DS_LOGW("lumiere: icon %s: %s (slot left empty)", slot.mKey.c_str(),
                             cooked == nullptr ? "not in the texture pack" : "not a 32x32 or 16x16 RGBA8 cooked texture");
                         continue;
                     }
@@ -4505,7 +4505,7 @@ namespace Render3DS
 
                 void rect(float x, float y, float w, float h, Rgba c)
                 {
-                    const ImageEntry* e = findImage("ui3ds/white");
+                    const ImageEntry* e = findImage("lumiere/white");
                     if (e != nullptr) // the centre texel of the white square, so filtering never leaves it
                         quad(x, y, w, h, e->mX + 1.5f, e->mY + 1.5f, 1.f, 1.f, c);
                 }
@@ -4657,7 +4657,7 @@ namespace Render3DS
                         capacity *= 2;
                     if (capacity > kIdentityIndices)
                     {
-                        P3DS_LOGW("ui3ds: %lu vertices on one screen: more than the index buffer covers",
+                        P3DS_LOGW("lumiere: %lu vertices on one screen: more than the index buffer covers",
                             (unsigned long)count);
                         return false;
                     }
@@ -4785,7 +4785,7 @@ namespace Render3DS
             if (!gDrawsGui || !gGuiOwnsBottom || gGuiSource == nullptr || gFlatProjection < 0)
                 return;
             p3ds::perf::Phase phase("guiDraw");
-            if (ui3ds::enabled() && ui3ds::draw())
+            if (lumiere::enabled() && lumiere::draw())
                 return;
             const uint64_t hash = prepareGuiDraws();
             const bool soft = softGui();
@@ -5180,19 +5180,19 @@ namespace Render3DS
     }
 }
 
-namespace Render3DS::Ui3DS
+namespace Render3DS::Lumiere
 {
     bool enabled()
     {
-        return ui3ds::enabled();
+        return lumiere::enabled();
     }
     bool active()
     {
-        return ui3ds::enabled() && ui3ds::loadAtlas();
+        return lumiere::enabled() && lumiere::loadAtlas();
     }
-    ui3ds::Canvas& canvas(Screen screen)
+    lumiere::Canvas& canvas(Screen screen)
     {
-        return screen == Top ? ui3ds::gTop : ui3ds::gBottom;
+        return screen == Top ? lumiere::gTop : lumiere::gBottom;
     }
     void begin(Screen screen)
     {
@@ -5200,23 +5200,23 @@ namespace Render3DS::Ui3DS
     }
     void image(Screen screen, std::string_view key, float x, float y, float w, float h, Rgba c)
     {
-        canvas(screen).image(key, x, y, w, h, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+        canvas(screen).image(key, x, y, w, h, lumiere::Rgba{ c.r, c.g, c.b, c.a });
     }
     void imageRotated(Screen screen, std::string_view key, float cx, float cy, float w, float h, float radians, Rgba c)
     {
-        canvas(screen).imageRotated(key, cx, cy, w, h, radians, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+        canvas(screen).imageRotated(key, cx, cy, w, h, radians, lumiere::Rgba{ c.r, c.g, c.b, c.a });
     }
     void rect(Screen screen, float x, float y, float w, float h, Rgba c)
     {
-        canvas(screen).rect(x, y, w, h, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+        canvas(screen).rect(x, y, w, h, lumiere::Rgba{ c.r, c.g, c.b, c.a });
     }
     float text(Screen screen, int font, float x, float y, std::string_view s, Rgba c)
     {
-        return canvas(screen).text(font, x, y, s, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+        return canvas(screen).text(font, x, y, s, lumiere::Rgba{ c.r, c.g, c.b, c.a });
     }
     float textWidth(int font, std::string_view s)
     {
-        return ui3ds::gTop.textWidth(font, s);
+        return lumiere::gTop.textWidth(font, s);
     }
     void frame(Screen screen, float x, float y, float w, float h, const char* style)
     {
@@ -5226,10 +5226,10 @@ namespace Render3DS::Ui3DS
     {
         if (key.empty())
             return;
-        canvas(screen).icon(ui3ds::iconSlot(key), x, y, size);
+        canvas(screen).icon(lumiere::iconSlot(key), x, y, size);
     }
     void releaseIcons()
     {
-        ui3ds::releaseIcons();
+        lumiere::releaseIcons();
     }
 }

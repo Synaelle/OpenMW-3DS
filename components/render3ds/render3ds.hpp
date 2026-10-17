@@ -67,11 +67,11 @@ namespace Render3DS
 
     // Who draws the bottom screen: MyGUI through the GPU (true) or the CPU text display (false: the debug display,
     // the M6 text menus). Switching to the GPU redraws it at the next frame.
-    // The port's own interface (backend.cpp, namespace ui3ds): everything drawn from one texture, one draw per
+    // The port's own interface (backend.cpp, namespace lumiere): everything drawn from one texture, one draw per
     // screen; the game side is n3ds/hud3ds.cpp. Coordinates are canvas pixels (the top screen 400x240 at the
     // top, the bottom screen's 320x240 under it at x 40..360, y 240..480). A screen's vertices are rebuilt only
     // between begin() and the next begin(); the bottom screen is redrawn only when they changed.
-    namespace Ui3DS
+    namespace Lumiere
     {
         struct Rgba
         {
@@ -82,7 +82,7 @@ namespace Render3DS
             Top,
             Bottom
         };
-        bool enabled(); // sdmc:/openmw/ui3ds: the port's interface instead of MyGUI's
+        bool enabled(); // sdmc:/openmw/lumiere: the port's interface instead of MyGUI's
         bool active(); // enabled and the atlas loaded
         void begin(Screen screen);
         void image(Screen screen, std::string_view key, float x, float y, float w, float h, Rgba colour);
