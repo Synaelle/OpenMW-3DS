@@ -2304,6 +2304,12 @@ namespace Render3DS
             bool mFarParticles = false; // skip-far-particles: particles past the far plane
             bool mBigEffects = false; // skip-big-effects: draws scaled more than x100
             bool mArrayDraws = false; // array-draws: particles and GUI through C3D_DrawArrays again (test #33)
+            // Test #35 (the flashing meshes): the GUI pass taken apart. gui-scene-shader: the GUI drawn with the
+            // scene's 8-light shader set to "unlit vertex colour" instead of the flat shader (no entry point
+            // write at all during a frame). gui-top-only: the bottom screen never redrawn (no second render
+            // target, no mid-frame clear). no-m8ui (frame3ds.cpp) removes the whole pass.
+            bool mGuiSceneShader = false;
+            bool mGuiTopOnly = false;
         };
 
         const DebugSkips& debugSkips()
@@ -2315,10 +2321,14 @@ namespace Render3DS
                 s.mFarParticles = stat("sdmc:/openmw/skip-far-particles", &st) == 0;
                 s.mBigEffects = stat("sdmc:/openmw/skip-big-effects", &st) == 0;
                 s.mArrayDraws = stat("sdmc:/openmw/array-draws", &st) == 0;
-                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s", s.mParticles ? " skip-particles" : "",
+                s.mGuiSceneShader = stat("sdmc:/openmw/gui-scene-shader", &st) == 0;
+                s.mGuiTopOnly = stat("sdmc:/openmw/gui-top-only", &st) == 0;
+                if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
+                    || s.mGuiTopOnly)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
                         s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
-                        s.mArrayDraws ? " array-draws" : "");
+                        s.mArrayDraws ? " array-draws" : "", s.mGuiSceneShader ? " gui-scene-shader" : "",
+                        s.mGuiTopOnly ? " gui-top-only" : "");
                 return s;
             }();
             return skips;
@@ -3137,7 +3147,24 @@ namespace Render3DS
             if (gGuiDraws.empty())
                 return;
 
-            useProgram(&gFlatProgram);
+            bool sceneShader = false, topOnly = false;
+#ifdef OPENMW3DS_DEBUG
+            sceneShader = debugSkips().mGuiSceneShader;
+            topOnly = debugSkips().mGuiTopOnly;
+#endif
+            if (sceneShader)
+            {
+                // The scene shader as a pass-through: unlit (lighting.x = 0), colour and alpha from the vertex
+                // colour (colorSel: D and E from it, alpha x1), identity texture matrices. gBound is reset below,
+                // so the next frame uploads its own values again.
+                useProgram(&gProgram);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mLighting, 0, 0, 0, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, gLoc.mColorSel, 1, 0, 1, 1);
+                writeTexMat(gLoc.mTexMat, osg::Matrixf());
+                writeTexMat(gLoc.mTexMat1, osg::Matrixf());
+            }
+            else
+                useProgram(&gFlatProgram);
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gGuiBuffer);
             setSceneBufferOffset(osConvertVirtToPhys(gGuiBuffer) - gBufferBase);
@@ -3148,7 +3175,7 @@ namespace Render3DS
             // Top screen: the canvas's upper half (y in [0, 1]).
             drawGuiOn(gTarget, 1.f, -1.f);
             // Bottom screen: x in [-0.8, 0.8] (canvas pixels 40..360), y in [-1, 0]; only when it changed.
-            if (gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
+            if (!topOnly && gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
             {
                 C3D_RenderTargetClear(gBottomTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
                 drawGuiOn(gBottomTarget,
