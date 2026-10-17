@@ -27,6 +27,17 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef OPENMW3DS_DEBUG
+#include <platform3ds/textfb.hpp>
+
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <set>
+#include <sstream>
+#include <sys/stat.h>
+#endif
+
 int runApplication(int argc, char* argv[]); // apps/openmw/main.cpp
 
 namespace
@@ -60,6 +71,177 @@ namespace
     }
 
     const char* gContext = "openmw: startup";
+
+#ifdef OPENMW3DS_DEBUG
+    // Hardware tests: sdmc:/openmw/test-menu.txt (written for each test) lists the test's runs, and the tester picks
+    // one on the bottom screen before OpenMW starts, instead of putting and removing empty switch files by hand.
+    // The menu creates the chosen run's switch files in sdmc:/openmw/ and deletes the other runs' ones: the code
+    // that uses a switch still just checks whether its file exists. Automated runs (autorun.txt) skip it.
+    //   title <text>
+    //   run <label> | <switch files, separated by spaces, or nothing>
+    // Only the labels are shown (anything after a second '|' is ignored).
+    struct TestRun
+    {
+        std::string mLabel;
+        std::vector<std::string> mSwitches;
+    };
+
+    std::string trim(const std::string& text)
+    {
+        const size_t first = text.find_first_not_of(" \t\r");
+        if (first == std::string::npos)
+            return {};
+        return text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
+    }
+
+    // Shown before p3ds::init: the chosen run's logs get their own folder (logs/<prefix>-<run>, "logs <prefix>"
+    // in the menu file), so the platform isn't up yet (no log; the bottom screen is set up here). Returns that
+    // folder's name (empty: the usual logs folder) and, in `chosenLine`, the line to log once logging starts.
+    std::string testMenu(std::string& chosenLine)
+    {
+        std::ifstream file("sdmc:/openmw/test-menu.txt");
+        if (!file)
+            return {};
+        std::string title = "Test runs";
+        std::string logPrefix;
+        std::vector<TestRun> runs;
+        std::string line;
+        while (std::getline(file, line))
+        {
+            line = trim(line);
+            if (line.rfind("title ", 0) == 0)
+                title = trim(line.substr(6));
+            else if (line.rfind("logs ", 0) == 0)
+                logPrefix = trim(line.substr(5));
+            else if (line.rfind("run ", 0) == 0)
+            {
+                TestRun run;
+                const std::string rest = line.substr(4);
+                const size_t bar1 = rest.find('|');
+                const size_t bar2 = bar1 == std::string::npos ? bar1 : rest.find('|', bar1 + 1);
+                run.mLabel = trim(rest.substr(0, bar1));
+                if (bar1 != std::string::npos)
+                {
+                    const size_t end = bar2 == std::string::npos ? rest.size() : bar2;
+                    std::istringstream names(rest.substr(bar1 + 1, end - bar1 - 1));
+                    std::string name;
+                    while (names >> name)
+                        run.mSwitches.push_back(name);
+                }
+                runs.push_back(run);
+            }
+        }
+        if (runs.empty())
+            return {};
+        struct stat autorun;
+        if (stat(p3ds::kAutorunPath, &autorun) == 0)
+        {
+            chosenLine = "test menu: skipped (automated run)";
+            return {};
+        }
+
+        namespace tf = p3ds::textfb;
+        tf::setupBottomScreen();
+        size_t selected = 0;
+        std::vector<int> firstRow(runs.size()), lastRow(runs.size());
+        bool redraw = true;
+        bool chosen = false;
+        while (!chosen && aptMainLoop())
+        {
+            if (redraw)
+            {
+                tf::clear(tf::color::black);
+                tf::fillRows(0, 1, tf::color::header);
+                tf::drawText(0, 0, title.c_str(), tf::color::yellow, tf::color::header);
+                int row = 2;
+                for (size_t i = 0; i < runs.size(); ++i)
+                {
+                    const bool on = i == selected;
+                    firstRow[i] = row;
+                    const std::string head = std::string(on ? "> " : "  ") + runs[i].mLabel;
+                    tf::drawText(0, row, head.c_str(), on ? tf::color::green : tf::color::white, tf::color::black);
+                    // Two text rows per run, so a run is easy to tap.
+                    lastRow[i] = row + 1;
+                    row += 2;
+                }
+                tf::fillRows(tf::kRows - 1, 1, tf::color::header);
+                tf::drawText(0, tf::kRows - 1, "UP/DOWN choose, A start (or tap twice)", tf::color::yellow,
+                    tf::color::header);
+                tf::present();
+                redraw = false;
+            }
+            gspWaitForVBlank();
+            hidScanInput();
+            const u32 down = hidKeysDown();
+            if (down & KEY_DOWN)
+            {
+                selected = (selected + 1) % runs.size();
+                redraw = true;
+            }
+            if (down & KEY_UP)
+            {
+                selected = (selected + runs.size() - 1) % runs.size();
+                redraw = true;
+            }
+            if (down & KEY_A)
+                chosen = true;
+            if (down & KEY_TOUCH)
+            {
+                touchPosition touch;
+                hidTouchRead(&touch);
+                const int row = touch.py / 8;
+                for (size_t i = 0; i < runs.size(); ++i)
+                    if (row >= firstRow[i] && row <= lastRow[i])
+                    {
+                        chosen = i == selected;
+                        selected = i;
+                        redraw = true;
+                    }
+            }
+        }
+
+        // Every switch any run names: the chosen run's ones exist afterwards, the others don't.
+        std::set<std::string> all;
+        for (const TestRun& run : runs)
+            all.insert(run.mSwitches.begin(), run.mSwitches.end());
+        const std::vector<std::string>& wanted = runs[selected].mSwitches;
+        for (const std::string& name : all)
+        {
+            const std::string path = "sdmc:/openmw/" + name;
+            struct stat st;
+            const bool exists = stat(path.c_str(), &st) == 0;
+            const bool want = std::find(wanted.begin(), wanted.end(), name) != wanted.end();
+            if (want && !exists)
+            {
+                if (std::FILE* f = std::fopen(path.c_str(), "w"))
+                    std::fclose(f);
+            }
+            else if (!want && exists)
+                std::remove(path.c_str());
+        }
+        // The run's log folder: the label up to its ':' ("A: ..." -> "A"), letters, digits and '-' only. A run
+        // without one ("Normal game") keeps the usual folder.
+        std::string folder;
+        const std::string& label = runs[selected].mLabel;
+        if (label.find(':') != std::string::npos)
+        {
+            for (char c : label.substr(0, label.find(':')))
+                if (std::isalnum(static_cast<unsigned char>(c)) || c == '-')
+                    folder += c;
+                else if (c == ' ' && !folder.empty() && folder.back() != '-')
+                    folder += '-';
+            while (!folder.empty() && folder.back() == '-')
+                folder.pop_back();
+            if (!logPrefix.empty())
+                folder = folder.empty() ? logPrefix : logPrefix + "-" + folder;
+        }
+        chosenLine = "test menu: run \"" + runs[selected].mLabel + "\" chosen (" + std::to_string(wanted.size())
+            + " switch file(s)), logs in " + (folder.empty() ? std::string("logs/") : "logs/" + folder + "/");
+        tf::clear(tf::color::black);
+        tf::present();
+        return folder;
+    }
+#endif
 }
 
 int main(int, char**)
@@ -67,7 +249,21 @@ int main(int, char**)
     gfxInitDefault();
     p3ds::InitOptions opts;
     opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
+#ifdef OPENMW3DS_DEBUG
+    // Before p3ds::init (the run decides where the logs go) and the watchdog (waiting here isn't a hang).
+    std::string menuChoice;
+    const std::string runLogs = testMenu(menuChoice);
+    if (!runLogs.empty())
+    {
+        opts.logSubdir = runLogs.c_str();
+        setenv("OPENMW3DS_LOG_DIR", ("/openmw/logs/" + runLogs).c_str(), 1); // OpenMW's openmw.log, MyGUI.log
+    }
+#endif
     p3ds::init(opts);
+#ifdef OPENMW3DS_DEBUG
+    if (!menuChoice.empty())
+        P3DS_LOGI("%s", menuChoice.c_str());
+#endif
     p3ds::crash::setContextString(&gContext);
     // Fed by Engine::frame() and LoadingScreen::draw() (see p3ds::crash::kick calls in openmw).
     p3ds::crash::startWatchdog(60, p3ds::info().syscoreLimit > 0 ? 1 : 0);

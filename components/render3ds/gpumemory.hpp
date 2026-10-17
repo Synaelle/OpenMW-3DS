@@ -10,6 +10,11 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace osg
+{
+    class Texture;
+}
+
 namespace Render3DS
 {
     // linearAlloc/linearFree behind one lock: textures load on any thread (ImageManager), geometry is
@@ -30,7 +35,8 @@ namespace Render3DS
     {
     public:
         CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, uint16_t srcWidth,
-            uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags);
+            uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags, uint8_t atlas = 0,
+            uint32_t atlasPos = 0);
 
         void* gpuData() const { return mGpuData; }
         uint32_t gpuSize() const { return mGpuSize; }
@@ -43,6 +49,15 @@ namespace Render3DS
         // UI images are padded, not resampled (FLAG_PADDED): the image fills sourceWidth x sourceHeight from the
         // top left, so texture coordinates over the image are scaled by source / cooked size.
         bool padded() const { return (mFlags & 4) != 0; }
+        // Small UI images are also packed into a UI atlas (FLAG_ATLAS; uiAtlasTexture): the image's (u, v) is at
+        // atlas texel (atlasX + u * sourceWidth, atlasY + v * sourceHeight), or with the axes swapped when it is
+        // stored transposed (atlasX + v * sourceHeight, atlasY + u * sourceWidth). A 1-texel repeated-edge gutter
+        // surrounds it. This image's own data is still the standalone texture (for skins that tile).
+        bool inAtlas() const { return (mFlags & 8) != 0; }
+        bool atlasTransposed() const { return (mFlags & 16) != 0; }
+        uint8_t atlasIndex() const { return mAtlas; }
+        uint16_t atlasX() const { return static_cast<uint16_t>(mAtlasPos & 0xFFFF); }
+        uint16_t atlasY() const { return static_cast<uint16_t>(mAtlasPos >> 16); }
 
     protected:
         ~CookedImage() override;
@@ -55,7 +70,13 @@ namespace Render3DS
         uint8_t mFlags;
         uint16_t mSrcWidth;
         uint16_t mSrcHeight;
+        uint8_t mAtlas;
+        uint32_t mAtlasPos;
     };
+
+    // The UI atlas texture (pack entry "ui-atlas/<index>", loaded on first use and kept: clamped, bilinear, no
+    // mipmaps), or nullptr when the pack has none. Render thread.
+    osg::Texture* uiAtlasTexture(unsigned index);
 }
 
 #endif

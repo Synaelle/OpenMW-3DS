@@ -32,6 +32,9 @@ if (-not $NoDebug) {
     # Test builds: a console script run once at startup gives the new character gold and skills at 50
     # (packaging/test-start.txt; the console's output goes to openmw.log).
     Copy-Item (Join-Path $RepoRoot 'packaging\test-start.txt') "$sd\openmw\test-start.txt"
+    # The hardware test's runs, chosen on the bottom screen at startup (main3ds.cpp testMenu): it creates the
+    # chosen run's switch files, so the tester never handles them.
+    Copy-Item (Join-Path $RepoRoot 'packaging\test-menu.txt') "$sd\openmw\test-menu.txt"
     $startArgs += @('--script-run', 'sdmc:/openmw/test-start.txt')
 }
 [IO.File]::WriteAllLines("$sd\openmw\args.txt", [string[]]$startArgs)
@@ -54,16 +57,22 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #38: the flashing meshes, the interface's textures):
-  Test #37 said: only untextured interface quads are clean. A frame draws about 220 quads that change texture
-  at nearly every draw, between some 34 tiny textures (Morrowind's menu frames: 8x8 corners, 8x512 borders).
-  One run with one switch (empty file in sdmc:/openmw/; delete every other test file first):
-    Run A: gui-one-texture  every quad uses the same (largest) texture: the interface shows wrong pictures,
-                            that's expected, but the GPU changes texture once per frame instead of 220 times.
-  Same walk as before, two or three minutes around Seyda Neen, looking at the houses near you: did meshes
-  flash, and roughly how often? A phone video is perfect. Then send the logs folder.
-  Clean = the texture changes are the trigger, and the fix is to pack the interface's pictures into one
-  texture. Flash = something about texturing the quads at all, and the next build looks at the format.
+What this tests (hardware test #45: the port's own interface, now the game's HUD):
+  Test #44's demo screen was clean. This build draws the real HUD the same way (one texture, one draw per
+  screen): the tab bar, the health/magicka/fatigue bars with their values, the weapon and the spell with their
+  icons, names and bars, sneaking and the active effects, the quick keys 1-9 (touch one to use it), the compass
+  (the minimap stays black), the crosshair and the target line on top, and the four tabs: Inventory (filters,
+  the items with their icons, touch one for Use/Unequip, Drop and the quick keys 1-9), Magic (spells with cost
+  and chance, touch one to select it, then a quick key), Stats (level, race, class, attributes, skills) and
+  Debug (the debug rows and the Screenshot button). Touch works as before: tabs, Home, the bars (Stats), the
+  weapon (Inventory), the spell (Magic), the quick keys. Lists scroll with the arrows at the right.
+  New: the CIA and openmw/test-menu.txt (uploaded).
+  At startup, choose a run with UP/DOWN and A:
+    Run A: the new interface. Walk around Seyda Neen for 3 minutes, use the tabs and quick keys, cast: do meshes
+           flash? Frame rate against 20-23 (the old GPU interface)? Does the HUD look like the old one?
+    Run B: MyGUI's interface drawn by the CPU (today's fallback), for the look and the speed.
+    Run C: MyGUI's interface through the GPU (flashes).
+    Logs: logs/test45-A, -B, -C. A phone video of run A is perfect.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

@@ -32,6 +32,7 @@
 #include <citro3d.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <unordered_set>
 
@@ -921,10 +922,19 @@ namespace Render3DS
         // Morton (Z-order) offset of (x, y) inside an 8x8 tile.
         inline u32 morton8(u32 x, u32 y)
         {
-            u32 m = 0;
-            for (u32 i = 0; i < 3; ++i)
-                m |= ((x >> i) & 1) << (2 * i) | ((y >> i) & 1) << (2 * i + 1);
-            return m;
+            static const auto table = [] {
+                std::array<uint8_t, 64> t{};
+                for (u32 ty = 0; ty < 8; ++ty)
+                    for (u32 tx = 0; tx < 8; ++tx)
+                    {
+                        u32 m = 0;
+                        for (u32 i = 0; i < 3; ++i)
+                            m |= ((tx >> i) & 1) << (2 * i) | ((ty >> i) & 1) << (2 * i + 1);
+                        t[ty * 8 + tx] = uint8_t(m);
+                    }
+                return t;
+            }();
+            return table[(y & 7) * 8 + (x & 7)];
         }
 
         u32 nextPow2(u32 v, u32 minimum, u32 maximum)
@@ -937,6 +947,27 @@ namespace Render3DS
 
         // Uncompressed images made at runtime (fonts, generated textures, the warning image): converted to
         // a tiled PICA format (nearest-neighbour resampled to a power of two). One mip level.
+        uint32_t gTextureGeneration = 0; // bumped when a runtime texture is (re)converted: the CPU interface redraws
+
+#ifdef OPENMW3DS_DEBUG
+        // Test #41 (the flashing meshes): textures made at runtime by convertImage (MyGUI's font pages, the map and
+        // compass), as opposed to cooked ones; gui-cooked-only leaves the GUI draws that use them out.
+        std::unordered_set<const C3D_Tex*> gRuntimeTextures;
+
+        // gui-no-reupload: a runtime texture is converted once; later changes to its image are ignored.
+        bool guiNoReupload()
+        {
+            static const bool on = [] {
+                struct stat st;
+                const bool exists = stat("sdmc:/openmw/gui-no-reupload", &st) == 0;
+                if (exists)
+                    P3DS_LOGW("render3ds: debug switch: gui-no-reupload");
+                return exists;
+            }();
+            return on;
+        }
+#endif
+
         bool convertImage(GpuTexture& gpu, const osg::Image& image)
         {
             const GLenum format = image.getPixelFormat();
@@ -1025,6 +1056,10 @@ namespace Render3DS
             gpu.mTex.height = static_cast<u16>(h);
             gpu.mTex.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
             gpu.mLevels = 1;
+            ++gTextureGeneration;
+#ifdef OPENMW3DS_DEBUG
+            gRuntimeTextures.insert(&gpu.mTex);
+#endif
             return true;
         }
 
@@ -1090,6 +1125,31 @@ namespace Render3DS
                 return gpu->mValid ? &gpu->mTex : nullptr;
             }
 
+#ifdef OPENMW3DS_DEBUG
+            // Test #41: how often a runtime texture is converted again in place while playing (MyGUI images that
+            // change: the local map, ...), logged at most once a second; gui-no-reupload keeps the first version.
+            if (gpu->mValid && gpu->mImage == image && image != nullptr
+                && dynamic_cast<const CookedImage*>(image) == nullptr)
+            {
+                if (guiNoReupload())
+                {
+                    gpu->mImageModified = image->getModifiedCount();
+                    applySampler(*gpu, texture);
+                    return &gpu->mTex;
+                }
+                static uint32_t count = 0;
+                static uint64_t lastLog = 0;
+                ++count;
+                const uint64_t now = svcGetSystemTick();
+                if (now - lastLog > uint64_t(SYSCLOCK_ARM11))
+                {
+                    P3DS_LOGI("render3ds: runtime texture converted again in place: %ux%u '%s' (%lu so far)",
+                        unsigned(image->s()), unsigned(image->t()), image->getFileName().c_str(),
+                        (unsigned long)count);
+                    lastLog = now;
+                }
+            }
+#endif
             gpu->mImage = image;
             gpu->mImageModified = image ? image->getModifiedCount() : 0;
             gpu->mValid = false;
@@ -2330,6 +2390,14 @@ namespace Render3DS
             // texture cache clear. gui-one-texture: the frame's largest GUI texture bound once for every quad
             // (wrong pictures, one bind). Clean = the per-draw texture changes; flash = texturing itself.
             bool mGuiOneTexture = false;
+            // Test #41: the UI atlas (#39, #40) cut the texture changes from ~220 to ~16-19 per frame and the
+            // flashes got rarer, not gone; only one texture for all quads (#38) was clean. gui-no-cache-clear:
+            // after the pass's first bind, texture changes write texture unit 0's registers directly, without
+            // citro3d's texture cache clear (GPUREG_TEXUNIT_CONFIG bit 16) that comes with every C3D_TexBind.
+            // gui-cooked-only: the GUI draws with a runtime texture (font pages, map, compass) left out: no text.
+            // gui-no-reupload (guiNoReupload) is read where textures are converted.
+            bool mGuiNoCacheClear = false;
+            bool mGuiCookedOnly = false;
         };
 
         const DebugSkips& debugSkips()
@@ -2351,6 +2419,12 @@ namespace Render3DS
                 s.mGuiOneTexture = stat("sdmc:/openmw/gui-one-texture", &st) == 0;
                 if (s.mGuiOneTexture)
                     P3DS_LOGW("render3ds: debug switch: gui-one-texture");
+                s.mGuiNoCacheClear = stat("sdmc:/openmw/gui-no-cache-clear", &st) == 0;
+                if (s.mGuiNoCacheClear)
+                    P3DS_LOGW("render3ds: debug switch: gui-no-cache-clear");
+                s.mGuiCookedOnly = stat("sdmc:/openmw/gui-cooked-only", &st) == 0;
+                if (s.mGuiCookedOnly)
+                    P3DS_LOGW("render3ds: debug switch: gui-cooked-only");
                 if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
                     || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads || s.mGuiDepthTest || s.mGuiNoTexture
                     || s.mGuiNoBlend)
@@ -2809,6 +2883,11 @@ namespace Render3DS
         void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
         void captureAll(const std::string& path); // likewise
 
+        namespace ui3ds
+        {
+            void uploadPendingIcons(); // the port's own interface, below
+        }
+
         bool beginFrame()
         {
             if (gInFrame)
@@ -2838,6 +2917,7 @@ namespace Render3DS
             gSceneBuffer = nullptr;
             gTransientUsed = 0;
             processPendingDeletes();
+            ui3ds::uploadPendingIcons(); // the GPU is idle: the atlas's icon region can change
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             if (gSelfTestDone) // the self-test's first steps keep the exact M0 setup: unit 1 never bound
             {
@@ -3057,8 +3137,15 @@ namespace Render3DS
             return gGuiBuffer != nullptr;
         }
 
-        // Copies this frame's batches into the GUI buffer (texture coordinates of padded UI textures scaled to the
-        // image) and returns a hash of what they draw.
+        // Copies this frame's batches into the GUI buffer and returns a hash of what they draw.
+        //
+        // Texture coordinates: a padded UI texture's are scaled to the image; an image in the UI atlas (hardware
+        // tests #34-#38: the interface's ~220 texture changes per frame on tiny textures made the New 3DS draw
+        // nearby scene meshes wrong for a frame) has them mapped into its atlas rectangle, and the batch draws
+        // with the atlas texture, so consecutive batches with the same texture and blend merge into one draw: the
+        // HUD then binds a handful of textures (the atlas and the font pages) instead of hundreds; batches that don't
+        // overlap anything drawn between them join an earlier draw too (pass 1 below). A batch whose coordinates
+        // leave [0, 1] (a tiling skin) keeps the image's own texture, logged once per image.
         uint64_t prepareGuiDraws()
         {
             gGuiBatches.clear();
@@ -3072,45 +3159,190 @@ namespace Render3DS
 
             uint64_t hash = 0xCBF29CE484222325ull;
             auto mix = [&hash](uint64_t value) { hash = (hash ^ value) * 0x100000001B3ull; };
-            uint32_t used = 0;
+            // Pass 1: each batch's texture, texture-coordinate mapping and screen box, and the draw it joins.
+            // A batch joins the latest earlier draw with its texture and blend if no batch drawn in between overlaps
+            // it on screen (the frames of a row of tabs join one draw, their texts another; a bar's value stays
+            // behind its frame): blending order only matters where pixels overlap, so the picture is the same.
+            // Boxes that touch don't overlap. Batches are compared one by one, not by a draw's union box (a text
+            // draw spanning the screen would otherwise block everything behind it), and two batches whose boxes
+            // overlap are compared triangle by triangle (a text line's glyphs are spread out, the gaps are free).
+            struct Box
+            {
+                float mMinX, mMinY, mMaxX, mMaxY;
+                bool overlaps(const Box& other) const
+                {
+                    return mMinX < other.mMaxX && mMaxX > other.mMinX && mMinY < other.mMaxY && mMaxY > other.mMinY;
+                }
+            };
+            struct Record
+            {
+                const GuiVertex* mIn;
+                uint32_t mCount;
+                float mScaleU, mScaleV, mOffsetU, mOffsetV;
+                bool mTransposed, mFlipV;
+                Box mBox;
+                uint32_t mFirstTriangle; // into triangles
+                int mNext; // next batch of the same draw, or -1
+            };
+            static std::vector<Box> triangles;
+            triangles.clear();
+            auto overlaps = [](const Record& a, const Record& b) {
+                if (!a.mBox.overlaps(b.mBox))
+                    return false;
+                for (uint32_t i = 0; i < a.mCount / 3; ++i)
+                    for (uint32_t j = 0; j < b.mCount / 3; ++j)
+                        if (triangles[a.mFirstTriangle + i].overlaps(triangles[b.mFirstTriangle + j]))
+                            return true;
+                return false;
+            };
+            struct Group
+            {
+                C3D_Tex* mTexture;
+                GuiBlend mBlend;
+                int mHead, mTail;
+                uint32_t mCount;
+            };
+            static std::vector<Record> records;
+            static std::vector<Group> groups;
+            records.clear();
+            groups.clear();
+            static std::set<std::string> loggedTiled;
+            constexpr float kUvSlack = 1.f / 1024.f; // MyGUI's coordinates are pixel / size: 0 and 1 exactly
             for (const GuiBatch& batch : gGuiBatches)
             {
-                C3D_Tex* texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
-                // A texture the GPU can't show (the local map's render-to-texture tiles until M8 step 5): left out
-                // rather than drawn as a plain white quad.
-                if (batch.mTexture != nullptr && texture == nullptr)
-                    continue;
-                float scaleU = 1.f, scaleV = 1.f;
                 const osg::Image* image
                     = batch.mTexture != nullptr && batch.mTexture->getNumImages() > 0 ? batch.mTexture->getImage(0) : nullptr;
                 const auto* cooked = dynamic_cast<const CookedImage*>(image);
-                if (cooked != nullptr && cooked->padded())
+                const auto* in = static_cast<const GuiVertex*>(batch.mVertices);
+                C3D_Tex* texture = nullptr;
+                bool atlased = false;
+                if (cooked != nullptr && cooked->inAtlas())
                 {
-                    scaleU = float(cooked->sourceWidth()) / float(cooked->s());
-                    scaleV = float(cooked->sourceHeight()) / float(cooked->t());
+                    bool inside = true;
+                    for (uint32_t i = 0; i < batch.mCount && inside; ++i)
+                        inside = in[i].mTexCoord[0] >= -kUvSlack && in[i].mTexCoord[0] <= 1.f + kUvSlack
+                            && in[i].mTexCoord[1] >= -kUvSlack && in[i].mTexCoord[1] <= 1.f + kUvSlack;
+                    if (inside)
+                    {
+                        if (osg::Texture* atlas = uiAtlasTexture(cooked->atlasIndex()))
+                            texture = textureFor(*atlas);
+                        atlased = texture != nullptr;
+                    }
+                    else if (loggedTiled.insert(image->getFileName()).second)
+                        P3DS_LOGI("render3ds: GUI: %s is drawn tiled (texture coordinates outside [0, 1]): its own "
+                                  "texture instead of the UI atlas",
+                            image->getFileName().c_str());
+                }
+                if (!atlased)
+                {
+                    texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
+                    // A texture the GPU can't show (the local map's render-to-texture tiles until M8 step 5): left
+                    // out rather than drawn as a plain white quad.
+                    if (batch.mTexture != nullptr && texture == nullptr)
+                        continue;
+                }
+                Record record{ in, batch.mCount, 1.f, 1.f, 0.f, 0.f, false, false, Box{}, 0, -1 };
+                if (atlased)
+                {
+                    record.mTransposed = cooked->atlasTransposed();
+                    const float atlasWidth = float(texture->width), atlasHeight = float(texture->height);
+                    record.mOffsetU = float(cooked->atlasX()) / atlasWidth;
+                    record.mOffsetV = float(cooked->atlasY()) / atlasHeight;
+                    // The image's extent in texels: its source size, or its whole texture when the cooker resampled
+                    // it (a side above 256, test #40; then it isn't padded).
+                    const float extentW = float(cooked->padded() ? cooked->sourceWidth() : cooked->s());
+                    const float extentH = float(cooked->padded() ? cooked->sourceHeight() : cooked->t());
+                    record.mScaleU = (record.mTransposed ? extentH : extentW) / atlasWidth;
+                    record.mScaleV = (record.mTransposed ? extentW : extentH) / atlasHeight;
+                }
+                else if (cooked != nullptr && cooked->padded())
+                {
+                    record.mScaleU = float(cooked->sourceWidth()) / float(cooked->s());
+                    record.mScaleV = float(cooked->sourceHeight()) / float(cooked->t());
                 }
                 // Images made at runtime (MyGUI's font atlases) are uploaded with their first row at t = 0, the
                 // cooked ones (which MyGUI's v = 0 at the top expects) flipped: mirror v for the runtime ones.
-                const bool flipV = image != nullptr && cooked == nullptr;
-                Vertex* out = gGuiBuffer + used;
-                const auto* in = static_cast<const GuiVertex*>(batch.mVertices);
-                for (uint32_t i = 0; i < batch.mCount; ++i)
+                record.mFlipV = image != nullptr && cooked == nullptr;
+
+                record.mFirstTriangle = static_cast<uint32_t>(triangles.size());
+                Box box{ in[0].mPosition[0], in[0].mPosition[1], in[0].mPosition[0], in[0].mPosition[1] };
+                for (uint32_t i = 0; i + 2 < batch.mCount; i += 3)
                 {
-                    std::memcpy(out[i].mPosition, in[i].mPosition, 12);
-                    out[i].mNormal[0] = out[i].mNormal[1] = 0.f;
-                    out[i].mNormal[2] = 1.f;
-                    std::memcpy(out[i].mColor, in[i].mColor, 4);
-                    out[i].mTexCoord[0] = in[i].mTexCoord[0] * scaleU;
-                    out[i].mTexCoord[1] = flipV ? 1.f - in[i].mTexCoord[1] : in[i].mTexCoord[1] * scaleV;
+                    Box tri{ in[i].mPosition[0], in[i].mPosition[1], in[i].mPosition[0], in[i].mPosition[1] };
+                    for (uint32_t k = 1; k < 3; ++k)
+                    {
+                        tri.mMinX = std::min(tri.mMinX, in[i + k].mPosition[0]);
+                        tri.mMaxX = std::max(tri.mMaxX, in[i + k].mPosition[0]);
+                        tri.mMinY = std::min(tri.mMinY, in[i + k].mPosition[1]);
+                        tri.mMaxY = std::max(tri.mMaxY, in[i + k].mPosition[1]);
+                    }
+                    triangles.push_back(tri);
+                    box.mMinX = std::min(box.mMinX, tri.mMinX);
+                    box.mMaxX = std::max(box.mMaxX, tri.mMaxX);
+                    box.mMinY = std::min(box.mMinY, tri.mMinY);
+                    box.mMaxY = std::max(box.mMaxY, tri.mMaxY);
                 }
+                record.mBox = box;
                 const auto* words = reinterpret_cast<const uint32_t*>(in);
                 for (uint32_t i = 0, n = batch.mCount * sizeof(GuiVertex) / 4; i < n; ++i)
                     mix(words[i]);
                 mix(reinterpret_cast<uintptr_t>(texture));
+                mix(reinterpret_cast<uintptr_t>(image)); // atlased images share the texture
                 mix(image != nullptr ? image->getModifiedCount() : 0);
                 mix(static_cast<uint64_t>(batch.mBlend));
-                gGuiDraws.push_back(GuiDraw{ used, batch.mCount, texture, batch.mBlend });
-                used += batch.mCount;
+
+                const int index = static_cast<int>(records.size());
+                records.push_back(record);
+                int joined = -1;
+                for (int g = static_cast<int>(groups.size()) - 1; g >= 0; --g)
+                {
+                    const Group& group = groups[g];
+                    if (group.mTexture == texture && group.mBlend == batch.mBlend)
+                    {
+                        joined = g;
+                        break;
+                    }
+                    bool blocked = false;
+                    for (int r = group.mHead; r >= 0 && !blocked; r = records[r].mNext)
+                        blocked = overlaps(record, records[r]);
+                    if (blocked)
+                        break;
+                }
+                if (joined < 0)
+                    groups.push_back(Group{ texture, batch.mBlend, index, index, batch.mCount });
+                else
+                {
+                    Group& group = groups[joined];
+                    records[group.mTail].mNext = index;
+                    group.mTail = index;
+                    group.mCount += batch.mCount;
+                }
+            }
+
+            // Pass 2: the vertices, draw by draw, in the scene's vertex layout.
+            uint32_t used = 0;
+            for (const Group& group : groups)
+            {
+                gGuiDraws.push_back(GuiDraw{ used, group.mCount, group.mTexture, group.mBlend });
+                for (int r = group.mHead; r >= 0; r = records[r].mNext)
+                {
+                    const Record& record = records[r];
+                    const GuiVertex* in = record.mIn;
+                    Vertex* out = gGuiBuffer + used;
+                    for (uint32_t i = 0; i < record.mCount; ++i)
+                    {
+                        std::memcpy(out[i].mPosition, in[i].mPosition, 12);
+                        out[i].mNormal[0] = out[i].mNormal[1] = 0.f;
+                        out[i].mNormal[2] = 1.f;
+                        std::memcpy(out[i].mColor, in[i].mColor, 4);
+                        const float u = record.mTransposed ? in[i].mTexCoord[1] : in[i].mTexCoord[0];
+                        const float v = record.mTransposed ? in[i].mTexCoord[0] : in[i].mTexCoord[1];
+                        out[i].mTexCoord[0] = record.mOffsetU + u * record.mScaleU;
+                        out[i].mTexCoord[1]
+                            = record.mFlipV ? 1.f - in[i].mTexCoord[1] : record.mOffsetV + v * record.mScaleV;
+                    }
+                    used += record.mCount;
+                }
             }
             flushToGpu(gGuiBuffer, used * sizeof(Vertex));
             return hash | 1; // never 0 ("redraw")
@@ -3151,16 +3383,40 @@ namespace Render3DS
                             || draw.mTexture->width * draw.mTexture->height > oneTexture->width * oneTexture->height))
                         oneTexture = draw.mTexture;
 #endif
+            bool noCacheClear = false, cookedOnly = false;
+#ifdef OPENMW3DS_DEBUG
+            noCacheClear = debugSkips().mGuiNoCacheClear;
+            cookedOnly = debugSkips().mGuiCookedOnly;
+#endif
+            bool unitBound = false; // gui-no-cache-clear: the pass's first bind went through citro3d
             C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
             int blend = -1;
             for (const GuiDraw& draw : gGuiDraws)
             {
+#ifdef OPENMW3DS_DEBUG
+                if (cookedOnly && draw.mTexture != nullptr && gRuntimeTextures.count(draw.mTexture) != 0)
+                    continue;
+#endif
                 C3D_Tex* texture = noTexture ? nullptr : oneTexture != nullptr && draw.mTexture != nullptr ? oneTexture : draw.mTexture;
                 if (texture != bound)
                 {
                     bound = texture;
                     if (bound != nullptr)
-                        C3D_TexBind(0, bound);
+                    {
+                        if (noCacheClear && unitBound)
+                        {
+                            // C3Di_SetTex's writes for unit 0, without GPUREG_TEXUNIT_CONFIG (no cache clear).
+                            const u32 regs[5] = { bound->border, bound->dim, bound->param, bound->lodParam,
+                                osConvertVirtToPhys(bound->data) >> 3 };
+                            GPUCMD_AddIncrementalWrites(GPUREG_TEXUNIT0_BORDER_COLOR, regs, 5);
+                            GPUCMD_AddWrite(GPUREG_TEXUNIT0_TYPE, bound->fmt);
+                        }
+                        else
+                        {
+                            C3D_TexBind(0, bound);
+                            unitBound = true;
+                        }
+                    }
                     gBound.mTexEnv = -1;
                     setTexEnv(bound != nullptr ? TexEnv_Textured : TexEnv_VertexColor);
                 }
@@ -3191,6 +3447,1337 @@ namespace Render3DS
             }
         }
 
+        // ------------------------------------------------------------------ the interface drawn by the CPU
+
+        // The flashing meshes (tests #34-#41): with the interface drawn by the GPU, a frame's run of nearby meshes
+        // was drawn wrong at random; never with no interface (no-m8ui), with untextured quads or with one texture
+        // for every quad (#38). So the CPU draws the interface (MyGUI's batches, the same layouts and textures):
+        // straight into the bottom screen's framebuffer, and into one overlay texture for the top screen that the
+        // GPU draws as a single quad: one texture bind per frame for the whole interface. Each screen is redrawn
+        // only when what it shows changes. sdmc:/openmw/gpu-ui brings back the GPU interface (the startup test
+        // menu's "Old interface" run).
+        bool softGui()
+        {
+            static const bool on = [] {
+                struct stat st;
+                const bool gpu = stat("sdmc:/openmw/gpu-ui", &st) == 0 || stat("sdmc:/openmw/ui3ds", &st) == 0;
+                P3DS_LOGI("render3ds: interface drawn by the %s", gpu ? "GPU (gpu-ui)" : "CPU");
+                return !gpu;
+            }();
+            return on;
+        }
+
+        struct Texel
+        {
+            int r, g, b, a;
+        };
+
+        // One texel of a PICA texture (level 0), (x, y) in memory order; the GPU reads texture coordinate v at row
+        // height - 1 - v * height (rasterizeGui).
+        Texel fetchTexel(const C3D_Tex& tex, unsigned x, unsigned y)
+        {
+            const auto* base = static_cast<const uint8_t*>(tex.data);
+            const unsigned w = tex.width;
+            const GPU_TEXCOLOR fmt = static_cast<GPU_TEXCOLOR>(tex.fmt);
+            if (fmt == GPU_ETC1 || fmt == GPU_ETC1A4)
+            {
+                // 8x8 tiles of four 4x4 blocks (Z order), each a little-endian 64-bit ETC1 word, after a 64-bit
+                // block of 4-bit alphas for ETC1A4. Pixel i = column * 4 + row inside the block.
+                const bool alpha = fmt == GPU_ETC1A4;
+                const unsigned blockBytes = alpha ? 16 : 8;
+                const unsigned tile = (y / 8) * (w / 8) + x / 8;
+                const unsigned sub = ((y % 8) / 4) * 2 + (x % 8) / 4;
+                const uint8_t* block = base + (tile * 4 + sub) * blockBytes;
+                const unsigned px = x % 4, py = y % 4;
+                const unsigned i = px * 4 + py;
+                int a = 255;
+                if (alpha)
+                {
+                    uint64_t alphas;
+                    std::memcpy(&alphas, block, 8);
+                    a = int((alphas >> (4 * i)) & 0xF) * 17;
+                    block += 8;
+                }
+                uint64_t bits;
+                std::memcpy(&bits, block, 8);
+                const uint32_t hi = uint32_t(bits >> 32), lo = uint32_t(bits);
+                const bool flip = (hi & 1) != 0, diff = (hi & 2) != 0;
+                const bool second = flip ? py >= 2 : px >= 2;
+                int c[3];
+                for (int k = 0; k < 3; ++k)
+                {
+                    const int shift = 27 - 8 * k; // R at 27, G at 19, B at 11 (5-bit base, 3-bit delta below)
+                    if (diff)
+                    {
+                        int v = int((hi >> shift) & 31);
+                        if (second)
+                        {
+                            int d = int((hi >> (shift - 3)) & 7);
+                            if (d >= 4)
+                                d -= 8;
+                            v += d;
+                        }
+                        v &= 31;
+                        c[k] = (v << 3) | (v >> 2);
+                    }
+                    else
+                    {
+                        const int v = int((hi >> (second ? shift - 3 : shift + 1)) & 15);
+                        c[k] = v * 17;
+                    }
+                }
+                static const int kTable[8][2] = { { 2, 8 }, { 5, 17 }, { 9, 29 }, { 13, 42 }, { 18, 60 }, { 24, 80 },
+                    { 33, 106 }, { 47, 183 } };
+                const unsigned table = second ? (hi >> 2) & 7 : (hi >> 5) & 7;
+                const unsigned msb = (lo >> (16 + i)) & 1, lsb = (lo >> i) & 1;
+                const int step = kTable[table][lsb];
+                const int mod = msb ? -step : step;
+                return { std::clamp(c[0] + mod, 0, 255), std::clamp(c[1] + mod, 0, 255), std::clamp(c[2] + mod, 0, 255),
+                    a };
+            }
+            const unsigned texel = ((y / 8) * (w / 8) + x / 8) * 64 + morton8(x % 8, y % 8);
+            switch (fmt)
+            {
+                case GPU_RGBA8:
+                {
+                    const uint8_t* p = base + texel * 4; // A, B, G, R
+                    return { p[3], p[2], p[1], p[0] };
+                }
+                case GPU_RGB8:
+                {
+                    const uint8_t* p = base + texel * 3; // B, G, R
+                    return { p[2], p[1], p[0], 255 };
+                }
+                case GPU_RGBA5551:
+                case GPU_RGB565:
+                case GPU_RGBA4:
+                case GPU_LA8:
+                {
+                    uint16_t v;
+                    std::memcpy(&v, base + texel * 2, 2);
+                    if (fmt == GPU_RGBA5551)
+                        return { int((v >> 11) & 31) * 255 / 31, int((v >> 6) & 31) * 255 / 31,
+                            int((v >> 1) & 31) * 255 / 31, (v & 1) ? 255 : 0 };
+                    if (fmt == GPU_RGB565)
+                        return { int((v >> 11) & 31) * 255 / 31, int((v >> 5) & 63) * 255 / 63, int(v & 31) * 255 / 31,
+                            255 };
+                    if (fmt == GPU_RGBA4)
+                        return { int((v >> 12) & 15) * 17, int((v >> 8) & 15) * 17, int((v >> 4) & 15) * 17,
+                            int(v & 15) * 17 };
+                    const int l = v >> 8; // LA8: A, L
+                    return { l, l, l, int(v & 0xFF) };
+                }
+                case GPU_L8:
+                {
+                    const int l = base[texel];
+                    return { l, l, l, 255 };
+                }
+                case GPU_A8:
+                    return { 0, 0, 0, base[texel] };
+                case GPU_LA4:
+                {
+                    const int v = base[texel];
+                    return { (v >> 4) * 17, (v >> 4) * 17, (v >> 4) * 17, (v & 15) * 17 };
+                }
+                default:
+                    return { 255, 0, 255, 255 }; // a format the interface doesn't use
+            }
+        }
+
+        // Interface textures unpacked once for the CPU: RGBA8 words (r, g, b, a from the low byte), row r being
+        // what the GPU samples for v in [r / height, (r + 1) / height). Dropped when a runtime texture changes
+        // (gTextureGeneration) or when they pass 6 MB.
+        struct DecodedTexture
+        {
+            const void* mData = nullptr;
+            uint16_t mWidth = 0, mHeight = 0;
+            std::vector<uint32_t> mPixels;
+        };
+        std::unordered_map<const C3D_Tex*, DecodedTexture> gDecoded;
+        size_t gDecodedBytes = 0;
+        uint32_t gDecodedGeneration = 0;
+
+        const DecodedTexture& decodedTexture(const C3D_Tex& tex)
+        {
+            if (gDecodedGeneration != gTextureGeneration || gDecodedBytes > (6u << 20))
+            {
+                gDecoded.clear();
+                gDecodedBytes = 0;
+                gDecodedGeneration = gTextureGeneration;
+            }
+            DecodedTexture& decoded = gDecoded[&tex];
+            if (decoded.mData == tex.data && decoded.mWidth == tex.width && decoded.mHeight == tex.height)
+                return decoded;
+            decoded.mData = tex.data;
+            decoded.mWidth = tex.width;
+            decoded.mHeight = tex.height;
+            decoded.mPixels.resize(size_t(tex.width) * tex.height);
+            for (unsigned y = 0; y < tex.height; ++y)
+                for (unsigned x = 0; x < tex.width; ++x)
+                {
+                    const Texel t = fetchTexel(tex, x, tex.height - 1 - y);
+                    decoded.mPixels[size_t(y) * tex.width + x]
+                        = uint32_t(t.r) | uint32_t(t.g) << 8 | uint32_t(t.b) << 16 | uint32_t(t.a) << 24;
+                }
+            gDecodedBytes += decoded.mPixels.size() * 4;
+            return decoded;
+        }
+
+        struct PixelRect
+        {
+            int mX0 = 0, mY0 = 0, mX1 = 0, mY1 = 0; // [x0, x1) x [y0, y1)
+
+            bool empty() const { return mX0 >= mX1 || mY0 >= mY1; }
+            void add(const PixelRect& other)
+            {
+                if (other.empty())
+                    return;
+                if (empty())
+                {
+                    *this = other;
+                    return;
+                }
+                mX0 = std::min(mX0, other.mX0);
+                mY0 = std::min(mY0, other.mY0);
+                mX1 = std::max(mX1, other.mX1);
+                mY1 = std::max(mY1, other.mY1);
+            }
+            PixelRect clipped(const PixelRect& clip) const
+            {
+                return { std::max(mX0, clip.mX0), std::max(mY0, clip.mY0), std::min(mX1, clip.mX1),
+                    std::min(mY1, clip.mY1) };
+            }
+        };
+
+        // a * b / 255 without a division (the ARM11 has no divide instruction).
+        inline uint32_t mul8(uint32_t a, uint32_t b)
+        {
+            const uint32_t t = a * b + 128;
+            return (t + (t >> 8)) >> 8;
+        }
+
+        // Blends a straight-alpha colour into a premultiplied pixel (r, g, b, a from the low byte), as the GPU
+        // would with MyGUI's blend modes (see rasterizeGui).
+        inline void blendPixel(uint32_t& dst, uint32_t r, uint32_t g, uint32_t b, uint32_t a, GuiBlend mode)
+        {
+            uint32_t dr = dst & 0xFF, dg = (dst >> 8) & 0xFF, db = (dst >> 16) & 0xFF, da = dst >> 24;
+            switch (mode)
+            {
+                case GuiBlend::Additive:
+                    dr = std::min(255u, dr + mul8(r, a));
+                    dg = std::min(255u, dg + mul8(g, a));
+                    db = std::min(255u, db + mul8(b, a));
+                    break;
+                case GuiBlend::Premultiplied:
+                {
+                    const uint32_t keep = 255 - a;
+                    dr = std::min(255u, r + mul8(dr, keep));
+                    dg = std::min(255u, g + mul8(dg, keep));
+                    db = std::min(255u, b + mul8(db, keep));
+                    da = a + mul8(da, keep);
+                    break;
+                }
+                default:
+                {
+                    if (a == 255)
+                    {
+                        dst = r | g << 8 | b << 16 | 0xFF000000u;
+                        return;
+                    }
+                    const uint32_t keep = 255 - a;
+                    dr = mul8(r, a) + mul8(dr, keep);
+                    dg = mul8(g, a) + mul8(dg, keep);
+                    db = mul8(b, a) + mul8(db, keep);
+                    da = a + mul8(da, keep);
+                    break;
+                }
+            }
+            dst = dr | dg << 8 | db << 16 | da << 24;
+        }
+
+        // A premultiplied RGBA canvas of one screen (origin: its top left in GUI canvas pixels), kept between frames
+        // so that only what changed is drawn again.
+        struct SoftTarget
+        {
+            int mWidth, mHeight, mOriginX, mOriginY;
+            std::vector<uint32_t> mPixels;
+            // What was drawn last time (to find what changed): each triangle touching this screen, as a signature
+            // (vertices, texture, blend) and its box.
+            std::vector<std::pair<uint64_t, PixelRect>> mPrevTriangles;
+            uint32_t mPrevGeneration = 0;
+            bool mValid = false;
+            // Stats for the log: redraws and their time since the last log line.
+            unsigned mRedraws = 0;
+            double mRedrawMs = 0, mWorstMs = 0;
+            PixelRect mLastRect;
+
+            PixelRect bounds() const { return { 0, 0, mWidth, mHeight }; }
+        };
+
+        constexpr float kHalfCanvasW = kGuiCanvasWidth * 0.5f, kHalfCanvasH = kGuiCanvasHeight * 0.5f;
+
+        inline float screenX(const Vertex& v, const SoftTarget& target)
+        {
+            return (v.mPosition[0] + 1.f) * kHalfCanvasW - float(target.mOriginX);
+        }
+
+        inline float screenY(const Vertex& v, const SoftTarget& target)
+        {
+            return (1.f - v.mPosition[1]) * kHalfCanvasH - float(target.mOriginY);
+        }
+
+        // The pixels a triangle can touch on `target`, rounded out by one.
+        PixelRect triangleRect(const Vertex* v, const SoftTarget& target)
+        {
+            float x0 = screenX(v[0], target), x1 = x0, y0 = screenY(v[0], target), y1 = y0;
+            for (int k = 1; k < 3; ++k)
+            {
+                const float x = screenX(v[k], target), y = screenY(v[k], target);
+                x0 = std::min(x0, x);
+                x1 = std::max(x1, x);
+                y0 = std::min(y0, y);
+                y1 = std::max(y1, y);
+            }
+            return { int(std::floor(x0)) - 1, int(std::floor(y0)) - 1, int(std::ceil(x1)) + 1, int(std::ceil(y1)) + 1 };
+        }
+
+        // Pixel centres of [a, b): the first and one past the last index.
+        inline void pixelSpan(float a, float b, int& first, int& end)
+        {
+            first = int(std::ceil(a - 0.5f));
+            end = int(std::ceil(b - 0.5f));
+        }
+
+        // Two triangles (6 vertices) that make an axis-aligned rectangle whose texture coordinates follow the axes
+        // and whose vertex colours are all the same: nearly every MyGUI quad. Drawn row by row.
+        bool drawRectQuad(const Vertex* v, const C3D_Tex* tex, GuiBlend blend, SoftTarget& target, const PixelRect& clip)
+        {
+            float xs[2], ys[2], us[2], vs[2];
+            int nx = 0, ny = 0;
+            for (int i = 0; i < 6; ++i)
+            {
+                if (std::memcmp(v[i].mColor, v[0].mColor, 4) != 0)
+                    return false;
+                const float x = screenX(v[i], target), y = screenY(v[i], target);
+                int ix = 0;
+                while (ix < nx && std::fabs(xs[ix] - x) > 1e-3f)
+                    ++ix;
+                if (ix == nx)
+                {
+                    if (nx == 2)
+                        return false;
+                    xs[nx] = x;
+                    us[nx++] = v[i].mTexCoord[0];
+                }
+                else if (std::fabs(us[ix] - v[i].mTexCoord[0]) > 1e-5f)
+                    return false;
+                int iy = 0;
+                while (iy < ny && std::fabs(ys[iy] - y) > 1e-3f)
+                    ++iy;
+                if (iy == ny)
+                {
+                    if (ny == 2)
+                        return false;
+                    ys[ny] = y;
+                    vs[ny++] = v[i].mTexCoord[1];
+                }
+                else if (std::fabs(vs[iy] - v[i].mTexCoord[1]) > 1e-5f)
+                    return false;
+            }
+            if (nx != 2 || ny != 2)
+                return false;
+            if (xs[0] > xs[1])
+            {
+                std::swap(xs[0], xs[1]);
+                std::swap(us[0], us[1]);
+            }
+            if (ys[0] > ys[1])
+            {
+                std::swap(ys[0], ys[1]);
+                std::swap(vs[0], vs[1]);
+            }
+            int px0, px1, py0, py1;
+            pixelSpan(xs[0], xs[1], px0, px1);
+            pixelSpan(ys[0], ys[1], py0, py1);
+            px0 = std::max(px0, clip.mX0);
+            px1 = std::min(px1, clip.mX1);
+            py0 = std::max(py0, clip.mY0);
+            py1 = std::min(py1, clip.mY1);
+            if (px0 >= px1 || py0 >= py1)
+                return true;
+            const uint32_t cr = v[0].mColor[0], cg = v[0].mColor[1], cb = v[0].mColor[2], ca = v[0].mColor[3];
+            if (tex == nullptr)
+            {
+                if (ca == 0 && blend != GuiBlend::Premultiplied)
+                    return true;
+                for (int py = py0; py < py1; ++py)
+                {
+                    uint32_t* row = target.mPixels.data() + size_t(py) * target.mWidth;
+                    for (int px = px0; px < px1; ++px)
+                        blendPixel(row[px], cr, cg, cb, ca, blend);
+                }
+                return true;
+            }
+            const DecodedTexture& decoded = decodedTexture(*tex);
+            const int w = decoded.mWidth, h = decoded.mHeight;
+            // Texel column of each pixel column (nearest, as for the triangles).
+            static std::vector<int> columns;
+            columns.resize(size_t(px1 - px0));
+            const float du = (us[1] - us[0]) / (xs[1] - xs[0]);
+            for (int px = px0; px < px1; ++px)
+                columns[size_t(px - px0)]
+                    = std::clamp(int(std::floor((us[0] + (px + 0.5f - xs[0]) * du) * w)), 0, w - 1);
+            const float dv = (vs[1] - vs[0]) / (ys[1] - ys[0]);
+            const bool white = cr == 255 && cg == 255 && cb == 255 && ca == 255;
+            for (int py = py0; py < py1; ++py)
+            {
+                const int ty = std::clamp(int(std::floor((vs[0] + (py + 0.5f - ys[0]) * dv) * h)), 0, h - 1);
+                const uint32_t* texRow = decoded.mPixels.data() + size_t(ty) * w;
+                uint32_t* row = target.mPixels.data() + size_t(py) * target.mWidth;
+                for (int px = px0; px < px1; ++px)
+                {
+                    const uint32_t t = texRow[columns[size_t(px - px0)]];
+                    uint32_t r = t & 0xFF, g = (t >> 8) & 0xFF, b = (t >> 16) & 0xFF, a = t >> 24;
+                    if (!white)
+                    {
+                        r = mul8(r, cr);
+                        g = mul8(g, cg);
+                        b = mul8(b, cb);
+                        a = mul8(a, ca);
+                    }
+                    if (a == 0 && blend != GuiBlend::Premultiplied)
+                        continue;
+                    blendPixel(row[px], r, g, b, a, blend);
+                }
+            }
+            return true;
+        }
+
+        // Any triangle (the rotated ones: the compass needle), clipped to `clip`: the modulate texenv (texel x
+        // vertex colour), nearest texel, pixel centres, the top-left fill rule (a quad's two triangles never both
+        // cover a pixel).
+        void drawTriangle(const Vertex* tri, const C3D_Tex* tex, GuiBlend blend, SoftTarget& target, const PixelRect& clip)
+        {
+            float sx[3], sy[3];
+            for (int k = 0; k < 3; ++k)
+            {
+                sx[k] = screenX(tri[k], target);
+                sy[k] = screenY(tri[k], target);
+            }
+            float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sy[1] - sy[0]) * (sx[2] - sx[0]);
+            if (std::fabs(area) < 1e-6f)
+                return;
+            int order[3] = { 0, 1, 2 };
+            if (area < 0)
+            {
+                std::swap(order[1], order[2]);
+                area = -area;
+            }
+            const float x0 = sx[order[0]], y0 = sy[order[0]], x1 = sx[order[1]], y1 = sy[order[1]], x2 = sx[order[2]],
+                        y2 = sy[order[2]];
+            const int minX = std::max(clip.mX0, int(std::floor(std::min({ x0, x1, x2 }))));
+            const int maxX = std::min(clip.mX1 - 1, int(std::ceil(std::max({ x0, x1, x2 }))));
+            const int minY = std::max(clip.mY0, int(std::floor(std::min({ y0, y1, y2 }))));
+            const int maxY = std::min(clip.mY1 - 1, int(std::ceil(std::max({ y0, y1, y2 }))));
+            if (minX > maxX || minY > maxY)
+                return;
+            auto edge = [](float ax, float ay, float bx, float by, float px, float py) {
+                return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+            };
+            auto topLeft = [](float ax, float ay, float bx, float by) { return (ay == by && bx < ax) || by > ay; };
+            const bool tl0 = topLeft(x1, y1, x2, y2), tl1 = topLeft(x2, y2, x0, y0), tl2 = topLeft(x0, y0, x1, y1);
+            const Vertex& a = tri[order[0]];
+            const Vertex& b = tri[order[1]];
+            const Vertex& c = tri[order[2]];
+            const DecodedTexture* decoded = tex != nullptr ? &decodedTexture(*tex) : nullptr;
+            const float inv = 1.f / area;
+            for (int py = minY; py <= maxY; ++py)
+            {
+                uint32_t* row = target.mPixels.data() + size_t(py) * target.mWidth;
+                const float cy = py + 0.5f;
+                for (int px = minX; px <= maxX; ++px)
+                {
+                    const float cx = px + 0.5f;
+                    const float w0 = edge(x1, y1, x2, y2, cx, cy);
+                    const float w1 = edge(x2, y2, x0, y0, cx, cy);
+                    const float w2 = edge(x0, y0, x1, y1, cx, cy);
+                    if (w0 < 0 || w1 < 0 || w2 < 0 || (w0 == 0 && !tl0) || (w1 == 0 && !tl1) || (w2 == 0 && !tl2))
+                        continue;
+                    const float l0 = w0 * inv, l1 = w1 * inv, l2 = w2 * inv;
+                    uint32_t col[4];
+                    for (int k = 0; k < 4; ++k)
+                        col[k] = uint32_t(l0 * a.mColor[k] + l1 * b.mColor[k] + l2 * c.mColor[k] + 0.5f);
+                    if (decoded != nullptr)
+                    {
+                        const float u = l0 * a.mTexCoord[0] + l1 * b.mTexCoord[0] + l2 * c.mTexCoord[0];
+                        const float vv = l0 * a.mTexCoord[1] + l1 * b.mTexCoord[1] + l2 * c.mTexCoord[1];
+                        const int tx = std::clamp(int(std::floor(u * decoded->mWidth)), 0, decoded->mWidth - 1);
+                        const int ty = std::clamp(int(std::floor(vv * decoded->mHeight)), 0, decoded->mHeight - 1);
+                        const uint32_t t = decoded->mPixels[size_t(ty) * decoded->mWidth + tx];
+                        col[0] = mul8(col[0], t & 0xFF);
+                        col[1] = mul8(col[1], (t >> 8) & 0xFF);
+                        col[2] = mul8(col[2], (t >> 16) & 0xFF);
+                        col[3] = mul8(col[3], t >> 24);
+                    }
+                    if (col[3] == 0 && blend != GuiBlend::Premultiplied)
+                        continue;
+                    blendPixel(row[px], col[0], col[1], col[2], col[3], blend);
+                }
+            }
+        }
+
+        // Draws this frame's GUI draws (gGuiDraws over gGuiBuffer, as prepareGuiDraws left them) into `target`,
+        // only inside `clip` (cleared first).
+        void rasterizeGui(SoftTarget& target, const PixelRect& clip)
+        {
+            for (int y = clip.mY0; y < clip.mY1; ++y)
+                std::fill_n(target.mPixels.data() + size_t(y) * target.mWidth + clip.mX0, clip.mX1 - clip.mX0, 0u);
+            for (const GuiDraw& draw : gGuiDraws)
+            {
+                const Vertex* v = gGuiBuffer + draw.mFirst;
+                uint32_t t = 0;
+                while (t + 2 < draw.mCount)
+                {
+                    if (t + 5 < draw.mCount)
+                    {
+                        // Quick reject before the quad test: both triangles' boxes outside the clip.
+                        PixelRect box = triangleRect(v + t, target);
+                        box.add(triangleRect(v + t + 3, target));
+                        if (box.clipped(clip).empty())
+                        {
+                            t += 6;
+                            continue;
+                        }
+                        if (drawRectQuad(v + t, draw.mTexture, draw.mBlend, target, clip))
+                        {
+                            t += 6;
+                            continue;
+                        }
+                    }
+                    if (!triangleRect(v + t, target).clipped(clip).empty())
+                        drawTriangle(v + t, draw.mTexture, draw.mBlend, target, clip);
+                    t += 3;
+                }
+            }
+        }
+
+        // This frame's triangles touching `target`: signature (vertices, texture, blend) and box.
+        void collectTriangles(const SoftTarget& target, std::vector<std::pair<uint64_t, PixelRect>>& out)
+        {
+            out.clear();
+            const PixelRect all = target.bounds();
+            for (const GuiDraw& draw : gGuiDraws)
+            {
+                const Vertex* v = gGuiBuffer + draw.mFirst;
+                for (uint32_t t = 0; t + 2 < draw.mCount; t += 3)
+                {
+                    const PixelRect rect = triangleRect(v + t, target).clipped(all);
+                    if (rect.empty())
+                        continue;
+                    uint64_t hash = 0xCBF29CE484222325ull;
+                    const auto* words = reinterpret_cast<const uint32_t*>(v + t);
+                    for (size_t i = 0; i < 3 * sizeof(Vertex) / 4; ++i)
+                        hash = (hash ^ words[i]) * 0x100000001B3ull;
+                    hash = (hash ^ reinterpret_cast<uintptr_t>(draw.mTexture)) * 0x100000001B3ull;
+                    hash = (hash ^ static_cast<uint64_t>(draw.mBlend)) * 0x100000001B3ull;
+                    out.emplace_back(hash, rect);
+                }
+            }
+        }
+
+        // What changed on `target` since its last redraw: the boxes of the triangles that appeared or went away,
+        // whatever the draws they're grouped in (prepareGuiDraws regroups batches as the interface changes; the
+        // order of triangles that don't overlap doesn't change the picture). Everything after a runtime texture
+        // changed. Leaves this frame's triangles as the reference for the next one.
+        PixelRect changedRect(SoftTarget& target)
+        {
+            static std::vector<std::pair<uint64_t, PixelRect>> now;
+            static std::unordered_map<uint64_t, int> before;
+            collectTriangles(target, now);
+            PixelRect dirty;
+            if (!target.mValid || target.mPrevGeneration != gTextureGeneration)
+                dirty = target.bounds();
+            else
+            {
+                before.clear();
+                for (const auto& [hash, rect] : target.mPrevTriangles)
+                    ++before[hash];
+                for (const auto& [hash, rect] : now)
+                {
+                    auto it = before.find(hash);
+                    if (it != before.end() && it->second > 0)
+                        --it->second;
+                    else
+                        dirty.add(rect);
+                }
+                for (const auto& [hash, rect] : target.mPrevTriangles)
+                {
+                    auto it = before.find(hash);
+                    if (it != before.end() && it->second > 0)
+                    {
+                        --it->second;
+                        dirty.add(rect);
+                    }
+                }
+            }
+            target.mPrevTriangles.swap(now);
+            target.mPrevGeneration = gTextureGeneration;
+            target.mValid = true;
+            return dirty;
+        }
+
+        SoftTarget gSoftTop{ kGuiCanvasWidth, kGuiCanvasHeight / 2, 0, 0, {} };
+        SoftTarget gSoftBottom{ kGuiCanvasWidth - 2 * kGuiBottomX, kGuiCanvasHeight / 2, kGuiBottomX, kGuiCanvasHeight / 2, {} };
+        bool gSoftTopEmpty = true;
+        C3D_Tex gOverlay{}; // the top screen's interface: 512x256 RGBA8, premultiplied (gSoftTop at its top left)
+        bool gOverlayReady = false;
+
+        // How long the screens' redraws take on the CPU: one log line per screen at most every 5 s.
+        void noteSoftRedraw(const char* screen, SoftTarget& target, const PixelRect& rect, uint64_t start)
+        {
+            const double ms = double(svcGetSystemTick() - start) / CPU_TICKS_PER_MSEC;
+            ++target.mRedraws;
+            target.mRedrawMs += ms;
+            target.mWorstMs = std::max(target.mWorstMs, ms);
+            target.mLastRect = rect;
+            static uint64_t lastTop = 0, lastBottom = 0;
+            uint64_t& last = screen[0] == 't' ? lastTop : lastBottom;
+            const uint64_t now = svcGetSystemTick();
+            if (now - last < 5 * uint64_t(SYSCLOCK_ARM11))
+                return;
+            last = now;
+            P3DS_LOGI("render3ds: CPU interface, %s screen: %u redraws, avg %.1f ms, worst %.1f ms; last one %dx%d at "
+                      "(%d, %d)",
+                screen, target.mRedraws, target.mRedrawMs / target.mRedraws, target.mWorstMs,
+                rect.mX1 - rect.mX0, rect.mY1 - rect.mY0, rect.mX0, rect.mY0);
+            target.mRedraws = 0;
+            target.mRedrawMs = 0;
+            target.mWorstMs = 0;
+        }
+
+        // The bottom screen: `rect` of the canvas over black, into the LCD framebuffer (RGB565, column-major).
+        void presentSoftBottom(const PixelRect& rect)
+        {
+            uint16_t* fb = p3ds::textfb::framebuffer();
+            const int w = gSoftBottom.mWidth, h = gSoftBottom.mHeight;
+            for (int x = rect.mX0; x < rect.mX1; ++x)
+            {
+                uint16_t* col = fb + x * h;
+                for (int y = rect.mY0; y < rect.mY1; ++y)
+                {
+                    const uint32_t p = gSoftBottom.mPixels[size_t(y) * w + x];
+                    col[h - 1 - y] = uint16_t((p & 0xF8) << 8 | (p >> 5 & 0x7E0) | (p >> 19 & 0x1F));
+                }
+            }
+            GSPGPU_FlushDataCache(fb, w * h * sizeof(uint16_t));
+        }
+
+        // `rect` of gSoftTop into the overlay texture (v = 0 at the screen's top row, stored as the GPU reads it).
+        bool uploadSoftTop(const PixelRect& rect)
+        {
+            if (!gOverlayReady)
+            {
+                void* data = gpuAlloc(512 * 256 * 4);
+                if (data == nullptr)
+                    return false;
+                gOverlay = C3D_Tex{};
+                gOverlay.data = data;
+                gOverlay.fmt = GPU_RGBA8;
+                gOverlay.size = 512 * 256 * 4;
+                gOverlay.width = 512;
+                gOverlay.height = 256;
+                gOverlay.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
+                C3D_TexSetFilter(&gOverlay, GPU_NEAREST, GPU_NEAREST);
+                C3D_TexSetWrap(&gOverlay, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+                std::memset(data, 0, gOverlay.size);
+                gOverlayReady = true;
+            }
+            auto* out = static_cast<uint32_t*>(gOverlay.data);
+            const int w = gSoftTop.mWidth;
+            for (int y = rect.mY0; y < rect.mY1; ++y)
+            {
+                const int ty = 255 - y; // the GPU reads texture rows bottom up (fetchTexel)
+                for (int x = rect.mX0; x < rect.mX1; ++x)
+                {
+                    const uint32_t p = gSoftTop.mPixels[size_t(y) * w + x]; // r, g, b, a from the low byte
+                    // PICA RGBA8 texel: the word 0xRRGGBBAA.
+                    out[((ty / 8) * (512 / 8) + x / 8) * 64 + morton8(x % 8, ty % 8)]
+                        = (p & 0xFF) << 24 | (p >> 8 & 0xFF) << 16 | (p >> 16 & 0xFF) << 8 | p >> 24;
+                }
+            }
+            flushToGpu(gOverlay.data, gOverlay.size);
+            return true;
+        }
+
+        // CPU interface for this frame (gGuiDraws prepared). Leaves gGuiDraws as the GPU's work: nothing, or the
+        // top overlay as one quad (6 vertices at the start of gGuiBuffer, premultiplied blend).
+        void drawSoftGui()
+        {
+            const PixelRect topRect = changedRect(gSoftTop);
+            if (!topRect.empty())
+            {
+                const uint64_t start = svcGetSystemTick();
+                if (gSoftTop.mPixels.empty())
+                    gSoftTop.mPixels.resize(size_t(gSoftTop.mWidth) * gSoftTop.mHeight);
+                rasterizeGui(gSoftTop, topRect);
+                gSoftTopEmpty = std::all_of(
+                    gSoftTop.mPixels.begin(), gSoftTop.mPixels.end(), [](uint32_t value) { return value == 0; });
+                if (!gSoftTopEmpty && !uploadSoftTop(topRect))
+                    gSoftTopEmpty = true;
+                noteSoftRedraw("top", gSoftTop, topRect, start);
+            }
+
+            if (gGuiOwnsBottom)
+            {
+                if (gBottomHash == 0)
+                    gSoftBottom.mValid = false; // the bottom screen was someone else's: everything again
+                const PixelRect bottomRect = changedRect(gSoftBottom);
+                if (!bottomRect.empty())
+                {
+                    const uint64_t start = svcGetSystemTick();
+                    if (gSoftBottom.mPixels.empty())
+                        gSoftBottom.mPixels.resize(size_t(gSoftBottom.mWidth) * gSoftBottom.mHeight);
+                    rasterizeGui(gSoftBottom, bottomRect);
+                    presentSoftBottom(bottomRect);
+                    noteSoftRedraw("bottom", gSoftBottom, bottomRect, start);
+                    ++gStats.mGuiBottomFrames;
+                }
+                gBottomHash = 1;
+            }
+
+            gGuiDraws.clear();
+            if (gSoftTopEmpty)
+                return;
+            // The overlay quad over the whole top screen: canvas x in [-1, 1], y in [0, 1]; texels 1:1.
+            const float u1 = float(gSoftTop.mWidth) / 512.f, v1 = float(gSoftTop.mHeight) / 256.f;
+            const float corners[4][4] = { { -1.f, 1.f, 0.f, 0.f }, { 1.f, 1.f, u1, 0.f }, { 1.f, 0.f, u1, v1 },
+                { -1.f, 0.f, 0.f, v1 } };
+            static const int kOrder[6] = { 0, 1, 2, 0, 2, 3 };
+            for (int i = 0; i < 6; ++i)
+            {
+                Vertex& out = gGuiBuffer[i];
+                const float* c = corners[kOrder[i]];
+                out.mPosition[0] = c[0];
+                out.mPosition[1] = c[1];
+                out.mPosition[2] = 0.f;
+                out.mNormal[0] = out.mNormal[1] = 0.f;
+                out.mNormal[2] = 1.f;
+                out.mColor[0] = out.mColor[1] = out.mColor[2] = out.mColor[3] = 255;
+                out.mTexCoord[0] = c[2];
+                out.mTexCoord[1] = c[3];
+            }
+            flushToGpu(gGuiBuffer, 6 * sizeof(Vertex));
+            gGuiDraws.push_back(GuiDraw{ 0, 6, &gOverlay, GuiBlend::Premultiplied });
+        }
+
+        // ------------------------------------------------------------------ the port's own interface (ui3ds)
+        //
+        // Hardware tests #34-#43: the New 3DS draws nearby scene meshes wrong for a frame when the interface
+        // binds many textures per frame, whatever their kind; one texture bound for the whole interface pass is
+        // clean (#38, #43: a 512x256 one). This interface draws everything from ONE texture, the atlas cooked by
+        // tools/cook_ui_atlas.py (sdmc:/openmw/cooked/ui3ds.o3ua: the skins' images, the font's glyphs at the
+        // port's pixel sizes, and a region the console fills with item icons while the GPU is idle), as one
+        // vertex buffer and one indexed draw per screen (drawTriangleList: the fireball rule), with the flat
+        // shader and the scene's vertex layout. Vertices are rebuilt only when a screen's content changes
+        // (Canvas::mVersion), and the bottom screen is redrawn only then. sdmc:/openmw/ui3ds turns it on;
+        // ui3ds-demo shows a static screen (hardware test #44) instead of the game's interface.
+        namespace ui3ds
+        {
+            constexpr const char* kAtlasPath = "sdmc:/openmw/cooked/ui3ds.o3ua";
+            constexpr uint32_t kMagic = 0x4155334F; // "O3UA"
+            constexpr uint32_t kVersion = 1;
+            constexpr uint16_t kImageTransposed = 2;
+
+            bool enabled()
+            {
+                static const bool on = [] {
+                    struct stat st;
+                    return stat("sdmc:/openmw/ui3ds", &st) == 0;
+                }();
+                return on;
+            }
+
+            bool demo()
+            {
+                static const bool on = [] {
+                    struct stat st;
+                    return stat("sdmc:/openmw/ui3ds-demo", &st) == 0;
+                }();
+                return on;
+            }
+
+            struct ImageEntry
+            {
+                uint64_t mHash;
+                uint16_t mX, mY, mW, mH, mFlags, mReserved[3];
+            };
+            struct FontEntry
+            {
+                uint16_t mHeight, mLineHeight;
+                int16_t mAscent;
+                uint16_t mGlyphCount;
+                uint32_t mFirstGlyph, mReserved;
+            };
+            struct GlyphEntry
+            {
+                uint32_t mCode;
+                uint16_t mX, mY, mW, mH;
+                int8_t mBearingX, mBearingY;
+                uint8_t mAdvance, mReserved;
+            };
+            static_assert(sizeof(ImageEntry) == 24 && sizeof(FontEntry) == 16 && sizeof(GlyphEntry) == 16);
+
+            struct Atlas
+            {
+                uint8_t* mFile = nullptr; // the whole file in linear memory (the texels are read in place)
+                bool mTried = false;
+                uint16_t mWidth = 0, mHeight = 0;
+                const ImageEntry* mImages = nullptr;
+                uint32_t mImageCount = 0;
+                const FontEntry* mFonts = nullptr;
+                uint32_t mFontCount = 0;
+                const GlyphEntry* mGlyphs = nullptr;
+                uint16_t mIconX = 0, mIconY = 0, mIconW = 0, mIconH = 0, mIconSize = 32;
+                uint8_t* mTexels = nullptr;
+                uint32_t mTexelBytes = 0;
+                C3D_Tex mTex{};
+                bool mReady = false;
+                bool mChanged = false; // texels rewritten (icons): screens drawn before must be redrawn
+            } gAtlas;
+
+            uint64_t hashKey(std::string_view key)
+            {
+                uint64_t h = 0xCBF29CE484222325ull;
+                for (unsigned char c : key)
+                    h = (h ^ c) * 0x100000001B3ull;
+                return h;
+            }
+
+            const ImageEntry* findImage(std::string_view key)
+            {
+                const uint64_t h = hashKey(key);
+                for (uint32_t i = 0; i < gAtlas.mImageCount; ++i) // ~70 entries: a scan is fine
+                    if (gAtlas.mImages[i].mHash == h)
+                        return &gAtlas.mImages[i];
+                return nullptr;
+            }
+
+            const GlyphEntry* findGlyph(const FontEntry& font, uint32_t code)
+            {
+                const GlyphEntry* g = gAtlas.mGlyphs + font.mFirstGlyph;
+                const GlyphEntry* end = g + font.mGlyphCount;
+                for (; g < end; ++g) // in code point order
+                    if (g->mCode == code)
+                        return g;
+                return nullptr;
+            }
+
+            template <typename T>
+            T readLe(const uint8_t* p)
+            {
+                T v;
+                std::memcpy(&v, p, sizeof(T));
+                return v;
+            }
+
+            bool loadAtlas()
+            {
+                if (gAtlas.mReady || gAtlas.mTried)
+                    return gAtlas.mReady;
+                gAtlas.mTried = true;
+                FILE* f = std::fopen(kAtlasPath, "rb");
+                if (f == nullptr)
+                {
+                    P3DS_LOGE("ui3ds: %s not found: the interface atlas isn't cooked", kAtlasPath);
+                    return false;
+                }
+                std::fseek(f, 0, SEEK_END);
+                const long size = std::ftell(f);
+                std::fseek(f, 0, SEEK_SET);
+                uint8_t* file = size > 64 ? static_cast<uint8_t*>(gpuAlloc(static_cast<size_t>(size))) : nullptr;
+                if (file == nullptr || std::fread(file, 1, static_cast<size_t>(size), f) != static_cast<size_t>(size))
+                {
+                    std::fclose(f);
+                    gpuFree(file);
+                    P3DS_LOGE("ui3ds: can't read %s (%ld bytes)", kAtlasPath, size);
+                    return false;
+                }
+                std::fclose(f);
+                const uint8_t* p = file;
+                const uint32_t magic = readLe<uint32_t>(p), version = readLe<uint32_t>(p + 4);
+                const uint16_t width = readLe<uint16_t>(p + 8), height = readLe<uint16_t>(p + 10);
+                const uint16_t imageCount = readLe<uint16_t>(p + 12), fontCount = readLe<uint16_t>(p + 14);
+                const uint32_t glyphCount = readLe<uint32_t>(p + 16);
+                const uint16_t iconX = readLe<uint16_t>(p + 20), iconY = readLe<uint16_t>(p + 22);
+                const uint16_t iconW = readLe<uint16_t>(p + 24), iconH = readLe<uint16_t>(p + 26);
+                const uint16_t iconSize = readLe<uint16_t>(p + 28);
+                const uint32_t imageTable = readLe<uint32_t>(p + 32), fontTable = readLe<uint32_t>(p + 36);
+                const uint32_t glyphTable = readLe<uint32_t>(p + 40), dataOffset = readLe<uint32_t>(p + 44);
+                const uint32_t dataSize = readLe<uint32_t>(p + 48);
+                if (magic != kMagic || version != kVersion || dataOffset + dataSize > static_cast<uint32_t>(size)
+                    || dataSize != uint32_t(width) * height * 4 || iconSize == 0)
+                {
+                    P3DS_LOGE("ui3ds: %s: bad header (magic %08lx version %lu)", kAtlasPath, (unsigned long)magic,
+                        (unsigned long)version);
+                    gpuFree(file);
+                    return false;
+                }
+                gAtlas.mFile = file;
+                gAtlas.mWidth = width;
+                gAtlas.mHeight = height;
+                gAtlas.mImages = reinterpret_cast<const ImageEntry*>(file + imageTable);
+                gAtlas.mImageCount = imageCount;
+                gAtlas.mFonts = reinterpret_cast<const FontEntry*>(file + fontTable);
+                gAtlas.mFontCount = fontCount;
+                gAtlas.mGlyphs = reinterpret_cast<const GlyphEntry*>(file + glyphTable);
+                gAtlas.mIconX = iconX;
+                gAtlas.mIconY = iconY;
+                gAtlas.mIconW = iconW;
+                gAtlas.mIconH = iconH;
+                gAtlas.mIconSize = iconSize;
+                gAtlas.mTexels = file + dataOffset;
+                gAtlas.mTexelBytes = dataSize;
+                gAtlas.mTex = C3D_Tex{};
+                gAtlas.mTex.data = gAtlas.mTexels;
+                gAtlas.mTex.fmt = GPU_RGBA8;
+                gAtlas.mTex.size = dataSize;
+                gAtlas.mTex.width = width;
+                gAtlas.mTex.height = height;
+                gAtlas.mTex.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
+                C3D_TexSetFilter(&gAtlas.mTex, GPU_LINEAR, GPU_LINEAR);
+                C3D_TexSetWrap(&gAtlas.mTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+                GSPGPU_FlushDataCache(file, static_cast<u32>(size));
+                gAtlas.mReady = true;
+                P3DS_LOGI("ui3ds: atlas %ux%u, %u images, %u fonts, %lu glyphs, icon region %ux%u at %u,%u (%ld KB)",
+                    width, height, imageCount, fontCount, (unsigned long)glyphCount, iconW, iconH, iconX, iconY,
+                    size / 1024);
+                return true;
+            }
+
+            // Item and effect icons: slots of the atlas's icon region, filled from the texture pack's cooked
+            // 32x32 RGBA8 icons by copying their 8x8 tiles (both are tiled and flipped the same way), while the
+            // GPU is idle (uploadPendingIcons runs from beginFrame).
+            struct IconSlot
+            {
+                std::string mKey; // normalized path without extension; "" = free
+                bool mPending = false;
+                uint16_t mPixels = 0; // the cooked icon's size once copied (16 or 32): what the quad samples
+            };
+            std::vector<IconSlot> gIconSlots;
+
+            // The slot holding the icon (its upload requested when new), or -1 when the region is full.
+            int iconSlot(std::string_view key)
+            {
+                if (!gAtlas.mReady)
+                    return -1;
+                if (gIconSlots.empty())
+                    gIconSlots.resize(static_cast<size_t>((gAtlas.mIconW / gAtlas.mIconSize) * (gAtlas.mIconH / gAtlas.mIconSize)));
+                for (size_t i = 0; i < gIconSlots.size(); ++i)
+                    if (gIconSlots[i].mKey == key)
+                        return static_cast<int>(i);
+                for (size_t i = 0; i < gIconSlots.size(); ++i)
+                    if (gIconSlots[i].mKey.empty())
+                    {
+                        gIconSlots[i].mKey = std::string(key);
+                        gIconSlots[i].mPending = true;
+                        return static_cast<int>(i);
+                    }
+                return -1;
+            }
+
+            void releaseIcons()
+            {
+                for (IconSlot& slot : gIconSlots)
+                    slot = IconSlot{};
+            }
+
+            void uploadPendingIcons()
+            {
+                if (!gAtlas.mReady)
+                    return;
+                const uint32_t across = gAtlas.mIconW / gAtlas.mIconSize;
+                const uint32_t tilesPerRow = gAtlas.mWidth / 8u;
+                bool any = false;
+                for (size_t i = 0; i < gIconSlots.size(); ++i)
+                {
+                    IconSlot& slot = gIconSlots[i];
+                    if (!slot.mPending)
+                        continue;
+                    slot.mPending = false;
+                    osg::ref_ptr<osg::Image> image = loadCookedImage(slot.mKey + ".dds");
+                    const auto* cooked = dynamic_cast<const CookedImage*>(image.get());
+                    const bool fits = cooked != nullptr && cooked->gpuFormat() == GPU_RGBA8 && cooked->s() == cooked->t()
+                        && (cooked->s() == gAtlas.mIconSize || cooked->s() == gAtlas.mIconSize / 2);
+                    if (!fits)
+                    {
+                        P3DS_LOGW("ui3ds: icon %s: %s (slot left empty)", slot.mKey.c_str(),
+                            cooked == nullptr ? "not in the texture pack" : "not a 32x32 or 16x16 RGBA8 cooked texture");
+                        continue;
+                    }
+                    slot.mPixels = static_cast<uint16_t>(cooked->s());
+                    const uint32_t col = static_cast<uint32_t>(i) % across, row = static_cast<uint32_t>(i) / across;
+                    // the slot's origin in memory: cooked textures are stored bottom-up (the PICA's t = 0 is the
+                    // last row in memory, so v = y / H samples the image's row y), for the atlas and the cooked
+                    // icon alike, so tile rows are counted from the bottom of both
+                    const uint32_t x = gAtlas.mIconX + col * gAtlas.mIconSize;
+                    // a 16 px icon takes the slot's top-left quarter (the quad samples slot.mPixels)
+                    const uint32_t yStored = gAtlas.mHeight - (gAtlas.mIconY + row * gAtlas.mIconSize) - slot.mPixels;
+                    const uint32_t tiles = slot.mPixels / 8u;
+                    const auto* src = static_cast<const uint8_t*>(cooked->gpuData());
+                    for (uint32_t ty = 0; ty < tiles; ++ty)
+                        for (uint32_t tx = 0; tx < tiles; ++tx)
+                        {
+                            const uint32_t dstTile = (yStored / 8u + ty) * tilesPerRow + x / 8u + tx;
+                            std::memcpy(gAtlas.mTexels + dstTile * 256u, src + (ty * tiles + tx) * 256u, 256u);
+                        }
+                    any = true;
+                }
+                if (any)
+                {
+                    GSPGPU_FlushDataCache(gAtlas.mTexels, gAtlas.mTexelBytes);
+                    gAtlas.mChanged = true;
+                }
+            }
+
+            // ---- the canvas: quads in canvas pixels (400x480: the top screen above, the bottom screen's 320x240
+            // under it at x 40..360), converted to the flat shader's canvas space (x -1..1 right, y 1..-1 down).
+            struct Rgba
+            {
+                uint8_t r, g, b, a;
+            };
+            constexpr Rgba kWhite{ 255, 255, 255, 255 };
+
+            struct Canvas
+            {
+                std::vector<Vertex> mVertices;
+                uint32_t mVersion = 1; // bumped by every change; the draw path remembers what it uploaded
+
+                void clear()
+                {
+                    mVertices.clear();
+                    ++mVersion;
+                }
+
+                // One quad: a canvas pixel rectangle, an atlas texel rectangle (image space), a colour.
+                void quad(float x, float y, float w, float h, float ax, float ay, float aw, float ah, Rgba c,
+                    bool transposed = false)
+                {
+                    const float W = gAtlas.mWidth, H = gAtlas.mHeight;
+                    const float x0 = x / (kGuiCanvasWidth * 0.5f) - 1.f, x1 = (x + w) / (kGuiCanvasWidth * 0.5f) - 1.f;
+                    const float y0 = 1.f - y / (kGuiCanvasHeight * 0.5f), y1 = 1.f - (y + h) / (kGuiCanvasHeight * 0.5f);
+                    const float px[4] = { x0, x1, x1, x0 }, py[4] = { y0, y0, y1, y1 };
+                    const float cu[4] = { 0, 1, 1, 0 }, cv[4] = { 0, 0, 1, 1 };
+                    static const int order[6] = { 0, 1, 2, 2, 3, 0 };
+                    for (int corner : order)
+                    {
+                        Vertex v{};
+                        v.mPosition[0] = px[corner];
+                        v.mPosition[1] = py[corner];
+                        v.mPosition[2] = -0.5f;
+                        v.mNormal[2] = 1.f;
+                        v.mColor[0] = c.r;
+                        v.mColor[1] = c.g;
+                        v.mColor[2] = c.b;
+                        v.mColor[3] = c.a;
+                        // atlas texel -> (u, v): the texels are stored bottom-up like every cooked texture, so the
+                        // image's row y is sampled at v = y / H (as MyGUI's cooked textures)
+                        const float iu = cu[corner], iv = cv[corner];
+                        const float tx = transposed ? ax + iv * aw : ax + iu * aw;
+                        const float ty = transposed ? ay + iu * ah : ay + iv * ah;
+                        v.mTexCoord[0] = tx / W;
+                        v.mTexCoord[1] = ty / H;
+                        mVertices.push_back(v);
+                    }
+                    ++mVersion;
+                }
+
+                // An atlas image stretched to a rectangle (its own size when w or h is 0).
+                bool image(std::string_view key, float x, float y, float w = 0, float h = 0, Rgba c = kWhite)
+                {
+                    const ImageEntry* e = findImage(key);
+                    if (e == nullptr)
+                        return false;
+                    const bool t = (e->mFlags & kImageTransposed) != 0;
+                    const float iw = t ? e->mH : e->mW, ih = t ? e->mW : e->mH; // the image's own size
+                    quad(x, y, w > 0 ? w : iw, h > 0 ? h : ih, e->mX, e->mY, e->mW, e->mH, c, t);
+                    return true;
+                }
+
+                void rect(float x, float y, float w, float h, Rgba c)
+                {
+                    const ImageEntry* e = findImage("ui3ds/white");
+                    if (e != nullptr) // the centre texel of the white square, so filtering never leaves it
+                        quad(x, y, w, h, e->mX + 1.5f, e->mY + 1.5f, 1.f, 1.f, c);
+                }
+
+                // Morrowind's menu frame around a rectangle: the corners at their size, the borders stretched.
+                void frame(float x, float y, float w, float h, const char* style = "thick")
+                {
+                    const std::string p = std::string("textures/menu_") + style + "_border_";
+                    const ImageEntry* top = findImage(p + "top");
+                    const ImageEntry* left = findImage(p + "left");
+                    const ImageEntry* corner = findImage(p + "top_left_corner");
+                    if (top == nullptr || left == nullptr || corner == nullptr)
+                        return;
+                    const float bt = top->mH, bl = (left->mFlags & kImageTransposed) ? left->mH : left->mW;
+                    const float cw = corner->mW, ch = corner->mH;
+                    image(p + "top", x + cw, y, w - 2 * cw, bt);
+                    image(p + "bottom", x + cw, y + h - bt, w - 2 * cw, bt);
+                    image(p + "left", x, y + ch, bl, h - 2 * ch);
+                    image(p + "right", x + w - bl, y + ch, bl, h - 2 * ch);
+                    image(p + "top_left_corner", x, y);
+                    image(p + "top_right_corner", x + w - cw, y);
+                    image(p + "bottom_left_corner", x, y + h - ch);
+                    image(p + "bottom_right_corner", x + w - cw, y + h - ch);
+                }
+
+                // Text with its line's top-left at (x, y); font = index into the atlas's fonts (0 = 16 px).
+                // Returns the pen's end x. The strings are UTF-8, as OpenMW's.
+                float text(int font, float x, float y, std::string_view s, Rgba c = kWhite)
+                {
+                    if (!gAtlas.mReady || font < 0 || static_cast<uint32_t>(font) >= gAtlas.mFontCount)
+                        return x;
+                    const FontEntry& f = gAtlas.mFonts[font];
+                    const float baseline = y + f.mAscent;
+                    float pen = x;
+                    for (size_t i = 0; i < s.size();)
+                    {
+                        uint32_t code = static_cast<unsigned char>(s[i]);
+                        size_t len = 1;
+                        if (code >= 0xC0 && code < 0xE0 && i + 1 < s.size())
+                        {
+                            code = ((code & 0x1F) << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3F);
+                            len = 2;
+                        }
+                        else if (code >= 0xE0 && code < 0xF0 && i + 2 < s.size())
+                        {
+                            code = ((code & 0x0F) << 12) | ((static_cast<unsigned char>(s[i + 1]) & 0x3F) << 6)
+                                | (static_cast<unsigned char>(s[i + 2]) & 0x3F);
+                            len = 3;
+                        }
+                        i += len;
+                        const GlyphEntry* g = findGlyph(f, code);
+                        if (g == nullptr)
+                            g = findGlyph(f, '_'); // OpenMW's substitute
+                        if (g == nullptr)
+                            continue;
+                        if (g->mW > 0 && g->mH > 0)
+                            quad(pen + g->mBearingX, baseline - g->mBearingY, g->mW, g->mH, g->mX, g->mY, g->mW, g->mH, c);
+                        pen += g->mAdvance;
+                    }
+                    return pen;
+                }
+
+                float textWidth(int font, std::string_view s) const
+                {
+                    if (!gAtlas.mReady || font < 0 || static_cast<uint32_t>(font) >= gAtlas.mFontCount)
+                        return 0;
+                    const FontEntry& f = gAtlas.mFonts[font];
+                    float pen = 0;
+                    for (unsigned char ch : s)
+                        if (const GlyphEntry* g = findGlyph(f, ch))
+                            pen += g->mAdvance;
+                    return pen;
+                }
+
+                // An icon slot (iconSlot) as a quad of `size` (the icon's own size when 0); a 16 px icon samples
+                // its quarter of the slot (uploadPendingIcons).
+                void icon(int slot, float x, float y, float size = 0)
+                {
+                    if (slot < 0 || !gAtlas.mReady || static_cast<size_t>(slot) >= gIconSlots.size())
+                        return;
+                    const int across = gAtlas.mIconW / gAtlas.mIconSize;
+                    const float ax = gAtlas.mIconX + (slot % across) * gAtlas.mIconSize;
+                    const float ay = gAtlas.mIconY + (slot / across) * gAtlas.mIconSize;
+                    const float pixels = gIconSlots[static_cast<size_t>(slot)].mPixels > 0
+                        ? gIconSlots[static_cast<size_t>(slot)].mPixels
+                        : gAtlas.mIconSize; // pending: the whole slot, redrawn once the icon is in
+                    const float s = size > 0 ? size : pixels;
+                    quad(x, y, s, s, ax, ay, pixels, pixels, kWhite);
+                }
+
+                // An atlas image rotated by `radians` about the centre (cx, cy) of a w x h rectangle.
+                void imageRotated(std::string_view key, float cx, float cy, float w, float h, float radians, Rgba c)
+                {
+                    const ImageEntry* e = findImage(key);
+                    if (e == nullptr)
+                        return;
+                    const bool t = (e->mFlags & kImageTransposed) != 0;
+                    const float W = gAtlas.mWidth, H = gAtlas.mHeight;
+                    const float cs = std::cos(radians), sn = std::sin(radians);
+                    const float hx = w * 0.5f, hy = h * 0.5f;
+                    const float ox[4] = { -hx, hx, hx, -hx }, oy[4] = { -hy, -hy, hy, hy };
+                    const float cu[4] = { 0, 1, 1, 0 }, cv[4] = { 0, 0, 1, 1 };
+                    static const int order[6] = { 0, 1, 2, 2, 3, 0 };
+                    for (int corner : order)
+                    {
+                        const float x = cx + ox[corner] * cs - oy[corner] * sn;
+                        const float y = cy + ox[corner] * sn + oy[corner] * cs;
+                        Vertex v{};
+                        v.mPosition[0] = x / (kGuiCanvasWidth * 0.5f) - 1.f;
+                        v.mPosition[1] = 1.f - y / (kGuiCanvasHeight * 0.5f);
+                        v.mPosition[2] = -0.5f;
+                        v.mNormal[2] = 1.f;
+                        v.mColor[0] = c.r;
+                        v.mColor[1] = c.g;
+                        v.mColor[2] = c.b;
+                        v.mColor[3] = c.a;
+                        const float iu = cu[corner], iv = cv[corner];
+                        const float tx = t ? e->mX + iv * e->mW : e->mX + iu * e->mW;
+                        const float ty = t ? e->mY + iu * e->mH : e->mY + iv * e->mH;
+                        v.mTexCoord[0] = tx / W;
+                        v.mTexCoord[1] = ty / H;
+                        mVertices.push_back(v);
+                    }
+                    ++mVersion;
+                }
+            };
+
+            Canvas gTop, gBottom; // canvas pixels: the top screen y 0..240, the bottom y 240..480 and x 40..360
+
+            // ---- the GPU side: one linear vertex buffer per screen, one draw per screen
+            struct ScreenBuffer
+            {
+                Vertex* mVbo = nullptr;
+                uint32_t mCapacity = 0;
+                uint32_t mCount = 0;
+                uint32_t mVersion = 0; // the canvas version the buffer holds
+            } gTopBuffer, gBottomBuffer;
+            uint32_t gBottomDrawn = 0; // the canvas version the bottom target shows
+
+            bool uploadCanvas(const Canvas& canvas, ScreenBuffer& buffer)
+            {
+                if (buffer.mVersion == canvas.mVersion && buffer.mVbo != nullptr)
+                    return buffer.mCount > 0;
+                const uint32_t count = static_cast<uint32_t>(canvas.mVertices.size());
+                if (count > buffer.mCapacity)
+                {
+                    uint32_t capacity = std::max<uint32_t>(2048, buffer.mCapacity);
+                    while (capacity < count)
+                        capacity *= 2;
+                    if (capacity > kIdentityIndices)
+                    {
+                        P3DS_LOGW("ui3ds: %lu vertices on one screen: more than the index buffer covers",
+                            (unsigned long)count);
+                        return false;
+                    }
+                    gpuFree(buffer.mVbo); // the GPU finished the previous frame (beginFrame)
+                    buffer.mVbo = static_cast<Vertex*>(gpuAlloc(capacity * sizeof(Vertex)));
+                    buffer.mCapacity = buffer.mVbo != nullptr ? capacity : 0;
+                    if (buffer.mVbo == nullptr)
+                        return false;
+                }
+                if (count > 0)
+                {
+                    std::memcpy(buffer.mVbo, canvas.mVertices.data(), count * sizeof(Vertex));
+                    flushToGpu(buffer.mVbo, count * sizeof(Vertex));
+                }
+                buffer.mCount = count;
+                buffer.mVersion = canvas.mVersion;
+                return count > 0;
+            }
+
+            void drawScreen(C3D_RenderTarget* target, ScreenBuffer& buffer, float scaleX, float offsetY)
+            {
+                drawOn(target);
+                C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
+                projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
+                projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
+                projection[2] = FVec4_New(0.f, 0.f, 0.f, -0.5f);
+                projection[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
+                C3D_FVec* modelView = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatModelView, 4);
+                modelView[0] = FVec4_New(1.f, 0.f, 0.f, 0.f);
+                modelView[1] = FVec4_New(0.f, 1.f, 0.f, 0.f);
+                modelView[2] = FVec4_New(0.f, 0.f, 1.f, 0.f);
+                modelView[3] = FVec4_New(0.f, 0.f, 0.f, 1.f);
+                sceneBufferInfo(buffer.mVbo);
+                setSceneBufferOffset(osConvertVirtToPhys(buffer.mVbo) - gBufferBase);
+                drawTriangleList(0, buffer.mCount);
+                ++gStats.mGuiDraws;
+            }
+
+            bool gDemoBuilt = false;
+            void buildDemo()
+            {
+                if (gDemoBuilt)
+                    return;
+                gDemoBuilt = true;
+                const Rgba gold{ 202, 165, 96, 255 }, dim{ 0, 0, 0, 160 }, red{ 150, 30, 30, 255 },
+                    blue{ 40, 60, 160, 255 }, green{ 40, 130, 40, 255 }, grey{ 60, 60, 60, 255 };
+                // the top screen: the crosshair and a target line
+                gTop.clear();
+                gTop.image("textures/target", 200 - 16, 120 - 16);
+                const std::string label = "Wooden Door to Seyda Neen";
+                const float lw = gTop.textWidth(1, label);
+                gTop.rect(200 - lw / 2 - 4, 4, lw + 8, 15, dim);
+                gTop.text(1, 200 - lw / 2, 5, label, gold);
+                // the bottom screen: a frame, three bars with names and values, icons, the home button
+                gBottom.clear();
+                const float bx = kGuiBottomX, by = kGuiBottomY;
+                gBottom.frame(bx + 2, by + 2, 316, 236);
+                gBottom.text(0, bx + 12, by + 10, "OpenMW 3DS: the interface, hardware test #44", gold);
+                const char* names[3] = { "Health", "Magicka", "Fatigue" };
+                const Rgba colours[3] = { red, blue, green };
+                const float fill[3] = { 0.8f, 0.55f, 1.0f };
+                const char* values[3] = { "35/35", "165/300", "200/200" };
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float y = by + 40 + i * 22;
+                    gBottom.text(1, bx + 12, y + 2, names[i], gold);
+                    gBottom.rect(bx + 80, y, 160, 14, grey);
+                    gBottom.rect(bx + 80, y, 160 * fill[i], 14, colours[i]);
+                    gBottom.text(2, bx + 246, y + 2, values[i], kWhite);
+                }
+                gBottom.image("textures/omw_3ds_home", bx + 12, by + 200);
+                gBottom.image("textures/compass", bx + 260, by + 180, 48, 48);
+                gBottom.rect(bx + 56, by + 186, 72, 40, Rgba{ 200, 200, 200, 255 });
+                gBottom.icon(iconSlot("icons/k/stealth_sneak"), bx + 60, by + 190);
+                gBottom.icon(iconSlot("icons/w/tx_axe_steel"), bx + 92, by + 190);
+                gBottom.icon(iconSlot("icons/s/tx_s_rst_fire"), bx + 100, by + 190);
+                gBottom.text(1, bx + 140, by + 198, "Fire Bite", gold);
+                gBottom.text(2, bx + 140, by + 212, "Cost 6, chance 100%", kWhite);
+            }
+
+            // The interface pass for this frame; true when it drew (the MyGUI pass is then skipped).
+            bool draw()
+            {
+                if (!loadAtlas())
+                    return false;
+                if (demo())
+                    buildDemo();
+                useProgram(&gFlatProgram);
+                C3D_AlphaTest(false, GPU_ALWAYS, 0);
+                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+                C3D_CullFace(GPU_CULL_NONE);
+                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA,
+                    GPU_ONE_MINUS_SRC_ALPHA);
+                C3D_TexBind(0, &gAtlas.mTex);
+                gBound.mTexture = &gAtlas.mTex;
+                gBound.mTexEnv = -1;
+                setTexEnv(TexEnv_Textured);
+
+                if (gAtlas.mChanged)
+                {
+                    gAtlas.mChanged = false;
+                    gBottomDrawn = 0; // the icons it shows changed under it
+                }
+                if (uploadCanvas(gTop, gTopBuffer))
+                    drawScreen(gTarget, gTopBuffer, 1.f, -1.f);
+                if (gGuiOwnsBottom && gBottomTarget != nullptr && gBottomDrawn != gBottom.mVersion)
+                {
+                    C3D_RenderTargetClear(gBottomTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
+                    if (uploadCanvas(gBottom, gBottomBuffer))
+                        drawScreen(gBottomTarget, gBottomBuffer,
+                            float(kGuiCanvasWidth) / float(kGuiCanvasWidth - 2 * kGuiBottomX), 1.f);
+                    gBottomDrawn = gBottom.mVersion;
+                    ++gStats.mGuiBottomFrames;
+                }
+                gBound = Bound{};
+                gSceneBuffer = nullptr;
+                return true;
+            }
+        }
+
         void drawGui()
         {
             // Only while the GUI owns the bottom screen: OpenMW's menus still go to the M6 text menus there, and
@@ -3198,7 +4785,12 @@ namespace Render3DS
             if (!gDrawsGui || !gGuiOwnsBottom || gGuiSource == nullptr || gFlatProjection < 0)
                 return;
             p3ds::perf::Phase phase("guiDraw");
+            if (ui3ds::enabled() && ui3ds::draw())
+                return;
             const uint64_t hash = prepareGuiDraws();
+            const bool soft = softGui();
+            if (soft)
+                drawSoftGui();
             if (gGuiDraws.empty())
                 return;
 
@@ -3234,7 +4826,7 @@ namespace Render3DS
             // Top screen: the canvas's upper half (y in [0, 1]).
             drawGuiOn(gTarget, 1.f, -1.f);
             // Bottom screen: x in [-0.8, 0.8] (canvas pixels 40..360), y in [-1, 0]; only when it changed.
-            if (!topOnly && gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
+            if (!soft && !topOnly && gGuiOwnsBottom && gBottomTarget != nullptr && hash != gBottomHash)
             {
                 C3D_RenderTargetClear(gBottomTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
                 drawGuiOn(gBottomTarget,
@@ -3555,7 +5147,7 @@ namespace Render3DS
     {
         if (owns == gGuiOwnsBottom || !gActive)
             return;
-        if (owns && gBottomTarget == nullptr)
+        if (owns && gBottomTarget == nullptr && !softGui())
         {
             gBottomTarget = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, -1);
             if (gBottomTarget == nullptr)
@@ -3568,7 +5160,8 @@ namespace Render3DS
         gGuiOwnsBottom = owns;
         gBottomHash = 0;
         p3ds::textfb::setGpuOwned(owns);
-        P3DS_LOGI("render3ds: bottom screen drawn by %s", owns ? "the GUI (GPU)" : "the text display (CPU)");
+        P3DS_LOGI("render3ds: bottom screen drawn by %s",
+            owns ? (softGui() ? "the GUI (CPU)" : "the GUI (GPU)") : "the text display (CPU)");
     }
 
     bool guiOwnsBottomScreen()
@@ -3584,5 +5177,59 @@ namespace Render3DS
     const FrameStats& getLastFrameStats()
     {
         return gLastStats;
+    }
+}
+
+namespace Render3DS::Ui3DS
+{
+    bool enabled()
+    {
+        return ui3ds::enabled();
+    }
+    bool active()
+    {
+        return ui3ds::enabled() && ui3ds::loadAtlas();
+    }
+    ui3ds::Canvas& canvas(Screen screen)
+    {
+        return screen == Top ? ui3ds::gTop : ui3ds::gBottom;
+    }
+    void begin(Screen screen)
+    {
+        canvas(screen).clear();
+    }
+    void image(Screen screen, std::string_view key, float x, float y, float w, float h, Rgba c)
+    {
+        canvas(screen).image(key, x, y, w, h, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+    }
+    void imageRotated(Screen screen, std::string_view key, float cx, float cy, float w, float h, float radians, Rgba c)
+    {
+        canvas(screen).imageRotated(key, cx, cy, w, h, radians, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+    }
+    void rect(Screen screen, float x, float y, float w, float h, Rgba c)
+    {
+        canvas(screen).rect(x, y, w, h, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+    }
+    float text(Screen screen, int font, float x, float y, std::string_view s, Rgba c)
+    {
+        return canvas(screen).text(font, x, y, s, ui3ds::Rgba{ c.r, c.g, c.b, c.a });
+    }
+    float textWidth(int font, std::string_view s)
+    {
+        return ui3ds::gTop.textWidth(font, s);
+    }
+    void frame(Screen screen, float x, float y, float w, float h, const char* style)
+    {
+        canvas(screen).frame(x, y, w, h, style);
+    }
+    void icon(Screen screen, std::string_view key, float x, float y, float size)
+    {
+        if (key.empty())
+            return;
+        canvas(screen).icon(ui3ds::iconSlot(key), x, y, size);
+    }
+    void releaseIcons()
+    {
+        ui3ds::releaseIcons();
     }
 }

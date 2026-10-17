@@ -452,7 +452,15 @@ namespace omw3ds
         }
         if (Render3DS::drawsGui())
             updateHud3DS();
-        if (Render3DS::guiOwnsBottomScreen())
+        if (Render3DS::guiOwnsBottomScreen() && Render3DS::Ui3DS::active())
+        {
+            touchPosition touch{};
+            const bool down = (hidKeysHeld() & KEY_TOUCH) != 0;
+            if (down)
+                hidTouchRead(&touch);
+            touchUi3DS(touch.px, touch.py, down);
+        }
+        else if (Render3DS::guiOwnsBottomScreen())
             injectTouchToGui();
         else if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
         {

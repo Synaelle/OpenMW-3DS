@@ -6,12 +6,15 @@
 
 #include <platform3ds/log.hpp>
 
+#include <osg/Texture2D>
+
 #include <3ds.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #ifndef GL_ETC1_RGB8_OES
@@ -27,7 +30,7 @@ namespace Render3DS
     {
         // tools/cook_textures.py
         constexpr char kMagic[4] = { 'O', '3', 'T', 'P' };
-        constexpr uint32_t kVersion = 1;
+        constexpr uint32_t kVersion = 2; // 2: the UI atlas (FLAG_ATLAS entries, "ui-atlas/<n>")
 
         struct PackHeader
         {
@@ -52,8 +55,8 @@ namespace Render3DS
             uint8_t mFormat;
             uint8_t mLevels;
             uint8_t mFlags;
-            uint8_t mReserved0;
-            uint32_t mReserved1;
+            uint8_t mAtlas; // FLAG_ATLAS: which "ui-atlas/<n>" entry also holds this image
+            uint32_t mAtlasPos; // FLAG_ATLAS: x | y << 16 in that atlas
         } __attribute__((packed));
         static_assert(sizeof(PackEntry) == 32);
 
@@ -122,7 +125,7 @@ namespace Render3DS
     }
 
     CookedImage::CookedImage(void* data, uint32_t size, uint16_t width, uint16_t height, uint16_t srcWidth,
-        uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags)
+        uint16_t srcHeight, GPU_TEXCOLOR format, uint8_t levels, uint8_t flags, uint8_t atlas, uint32_t atlasPos)
         : mGpuData(data)
         , mGpuSize(size)
         , mGpuFormat(format)
@@ -130,6 +133,8 @@ namespace Render3DS
         , mFlags(flags)
         , mSrcWidth(srcWidth)
         , mSrcHeight(srcHeight)
+        , mAtlas(atlas)
+        , mAtlasPos(atlasPos)
     {
         const GLenum glFormat = glFormatFor(format);
         setImage(width, height, 1, glFormat, glFormat, GL_UNSIGNED_BYTE, static_cast<unsigned char*>(data),
@@ -218,7 +223,7 @@ namespace Render3DS
 
             osg::ref_ptr<osg::Image> image = new CookedImage(data, entry.mSize, entry.mWidth, entry.mHeight,
                 entry.mSrcWidth, entry.mSrcHeight, static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels,
-                entry.mFlags);
+                entry.mFlags, entry.mAtlas, entry.mAtlasPos);
             image->setFileName(std::string(name));
             return image;
         }
@@ -244,6 +249,41 @@ namespace Render3DS
         if (it == gIndex.end() || it->mHash != hash)
             return nullptr;
         return loadEntry(*it, normalizedPath);
+    }
+
+    namespace
+    {
+        std::vector<osg::ref_ptr<osg::Texture2D>> gAtlasTextures;
+        std::vector<bool> gAtlasMissing;
+    }
+
+    osg::Texture* uiAtlasTexture(unsigned index)
+    {
+        if (index >= gAtlasTextures.size())
+        {
+            gAtlasTextures.resize(index + 1);
+            gAtlasMissing.resize(index + 1, false);
+        }
+        if (gAtlasTextures[index] != nullptr)
+            return gAtlasTextures[index].get();
+        if (gAtlasMissing[index])
+            return nullptr;
+        const std::string key = "ui-atlas/" + std::to_string(index);
+        osg::ref_ptr<osg::Image> image = loadCookedImage(key);
+        if (image == nullptr)
+        {
+            gAtlasMissing[index] = true;
+            P3DS_LOGW("render3ds: no UI atlas %u in the texture pack (interface textures bound one by one)", index);
+            return nullptr;
+        }
+        osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image);
+        texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+        texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+        texture->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
+        texture->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
+        gAtlasTextures[index] = texture;
+        P3DS_LOGI("render3ds: UI atlas %u: %dx%d", index, image->s(), image->t());
+        return texture.get();
     }
 
     osg::ref_ptr<osg::Image> loadCookedImageWithFormat(GPU_TEXCOLOR format)

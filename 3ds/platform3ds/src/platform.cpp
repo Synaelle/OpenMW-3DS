@@ -436,15 +436,22 @@ namespace p3ds
 
     // The previous two runs' logs stay: NAME-1.log (the last run), NAME-2.log (the one before). Several runs of a
     // hardware test then survive until the tester copies the folder (each launch used to overwrite them).
+    static char gLogDir[96] = "sdmc:/openmw/logs";
+
+    const char* logDir()
+    {
+        return gLogDir;
+    }
+
     static void rotateLogs()
     {
         static const char* const kNames[] = { "openmw3ds", "openmw", "MyGUI" };
         for (const char* name : kNames)
         {
             char current[96], older[96], oldest[96];
-            snprintf(current, sizeof(current), "%s/%s.log", kLogDir, name);
-            snprintf(older, sizeof(older), "%s/%s-1.log", kLogDir, name);
-            snprintf(oldest, sizeof(oldest), "%s/%s-2.log", kLogDir, name);
+            snprintf(current, sizeof(current), "%s/%s.log", gLogDir, name);
+            snprintf(older, sizeof(older), "%s/%s-1.log", gLogDir, name);
+            snprintf(oldest, sizeof(oldest), "%s/%s-2.log", gLogDir, name);
             // FAT can't rename onto an existing file.
             remove(oldest);
             rename(older, oldest);
@@ -461,13 +468,22 @@ namespace p3ds
         struct stat logDir;
         if (stat(kLogDir, &logDir) != 0)
             mkdir(kLogDir, 0777);
+        if (options.logSubdir != nullptr && options.logSubdir[0] != '\0')
+        {
+            snprintf(gLogDir, sizeof(gLogDir), "%s/%s", kLogDir, options.logSubdir);
+            if (stat(gLogDir, &logDir) != 0)
+                mkdir(gLogDir, 0777);
+        }
         remove(kAutorunDonePath);
         rotateLogs();
 
         textfb::setupBottomScreen();
 
-        log::init(kLogPath);
-        crash::install(kCrashPath);
+        char logPath[128], crashPath[128];
+        snprintf(logPath, sizeof(logPath), "%s/openmw3ds.log", gLogDir);
+        snprintf(crashPath, sizeof(crashPath), "%s/openmw3ds-crash.log", gLogDir);
+        log::init(logPath);
+        crash::install(crashPath);
 
         bool isNew = false;
         APT_CheckNew3DS(&isNew);

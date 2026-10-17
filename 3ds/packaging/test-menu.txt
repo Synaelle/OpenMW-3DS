@@ -1,0 +1,6 @@
+title Test #45: the port's own interface, the HUD - pick a run
+logs test45
+run A: new interface | ui3ds
+run B: MyGUI interface (CPU) |
+run C: MyGUI interface (GPU) | gpu-ui
+run Normal game |

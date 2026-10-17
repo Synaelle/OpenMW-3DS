@@ -67,6 +67,35 @@ namespace Render3DS
 
     // Who draws the bottom screen: MyGUI through the GPU (true) or the CPU text display (false: the debug display,
     // the M6 text menus). Switching to the GPU redraws it at the next frame.
+    // The port's own interface (backend.cpp, namespace ui3ds): everything drawn from one texture, one draw per
+    // screen; the game side is n3ds/hud3ds.cpp. Coordinates are canvas pixels (the top screen 400x240 at the
+    // top, the bottom screen's 320x240 under it at x 40..360, y 240..480). A screen's vertices are rebuilt only
+    // between begin() and the next begin(); the bottom screen is redrawn only when they changed.
+    namespace Ui3DS
+    {
+        struct Rgba
+        {
+            uint8_t r, g, b, a;
+        };
+        enum Screen
+        {
+            Top,
+            Bottom
+        };
+        bool enabled(); // sdmc:/openmw/ui3ds: the port's interface instead of MyGUI's
+        bool active(); // enabled and the atlas loaded
+        void begin(Screen screen);
+        void image(Screen screen, std::string_view key, float x, float y, float w, float h, Rgba colour);
+        void imageRotated(Screen screen, std::string_view key, float cx, float cy, float w, float h, float radians, Rgba colour);
+        void rect(Screen screen, float x, float y, float w, float h, Rgba colour);
+        float text(Screen screen, int font, float x, float y, std::string_view s, Rgba colour);
+        float textWidth(int font, std::string_view s);
+        void frame(Screen screen, float x, float y, float w, float h, const char* style);
+        // key: the icon's normalized path without its extension ("icons/w/tx_axe_steel"); 16 or 32 px cooked icons
+        void icon(Screen screen, std::string_view key, float x, float y, float size);
+        void releaseIcons();
+    }
+
     void setGuiOwnsBottomScreen(bool owns);
     bool guiOwnsBottomScreen();
 
@@ -89,7 +118,7 @@ namespace Render3DS
         uint32_t mParticleVertices = 0; // particle quads built on the CPU this frame (6 vertices each)
         uint32_t mBadParticles = 0; // particles left out: non-finite corners (a zero-scale effect, see buildParticles)
         uint32_t mDebugSkipped = 0; // draws and particles left out by the debug switches (backend.cpp debugSkips)
-        uint32_t mGuiDraws = 0; // MyGUI batches drawn (both screens)
+        uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
         uint32_t mGuiBottomFrames = 0; // frames in which the bottom screen was redrawn (0 or 1)
     };
     const FrameStats& getLastFrameStats();

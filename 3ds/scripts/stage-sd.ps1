@@ -112,8 +112,14 @@ if ($DataMode -eq 'junction') {
 # Textures cooked for the PICA (tools/cook_textures.py), cooked once from the Morrowind data (read only).
 $pack = Join-Path $cookedSrc 'textures.o3tp'
 if (-not (Test-Path $pack)) {
-    & python (Join-Path $RepoRoot 'tools\cook_textures.py') --data $DataFiles --out $pack
+    & python (Join-Path $RepoRoot 'tools\cook_textures.py') --data $DataFiles --resources (Join-Path $Build 'resources\vfs') --out $pack
     if ($LASTEXITCODE -ne 0) { throw 'texture cooking failed' }
+}
+# The port's own interface atlas (tools/cook_ui_atlas.py): the skins' images, the font's glyphs, an icon region.
+$uiAtlas = Join-Path $cookedSrc 'ui3ds.o3ua'
+if (-not (Test-Path $uiAtlas)) {
+    & python (Join-Path $RepoRoot 'tools\cook_ui_atlas.py') --data $DataFiles --resources (Join-Path $Build 'resourcesfs') --out $uiAtlas
+    if ($LASTEXITCODE -ne 0) { throw 'interface atlas cooking failed' }
 }
 $cooked = Join-Path $Dst 'cooked'
 if ($DataMode -eq 'junction') {
@@ -123,6 +129,7 @@ if ($DataMode -eq 'junction') {
 } else {
     New-Item -ItemType Directory -Force $cooked | Out-Null
     Copy-Item $pack $cooked -Force
+    Copy-Item $uiAtlas $cooked -Force
 }
 
 Write-Host "Staged $Dst (data: $DataMode)"

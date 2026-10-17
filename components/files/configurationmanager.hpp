@@ -1,6 +1,7 @@
 #ifndef COMPONENTS_FILES_CONFIGURATIONMANAGER_HPP
 #define COMPONENTS_FILES_CONFIGURATIONMANAGER_HPP
 
+#include <cstdlib>
 #include <optional>
 #include <stack>
 #include <string_view>
@@ -57,7 +58,9 @@ namespace Files
         // 3DS: with the port's logs (platform3ds kLogDir), not next to the user config.
         const std::filesystem::path& getLogPath() const
         {
-            static const std::filesystem::path logPath("/openmw/logs");
+            // main3ds.cpp sets OPENMW3DS_LOG_DIR to a hardware test run's own folder (platform3ds logDir).
+            static const std::filesystem::path logPath(
+                std::getenv("OPENMW3DS_LOG_DIR") != nullptr ? std::getenv("OPENMW3DS_LOG_DIR") : "/openmw/logs");
             return logPath;
         }
 #else

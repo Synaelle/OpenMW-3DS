@@ -46,6 +46,22 @@
 #include "../mwgui/windowmanagerimp.hpp"
 #include "../mwmechanics/actorutil.hpp"
 #include "../mwmechanics/creaturestats.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
+#include "../mwmechanics/activespells.hpp"
+#include "../mwmechanics/spellutil.hpp"
+#include "../mwworld/cellref.hpp"
+#include <components/esm3/loadweap.hpp>
+#include <components/esm3/loadnpc.hpp>
+#include <components/esm3/loadrace.hpp>
+#include <components/esm3/loadclas.hpp>
+#include <components/esm3/loadskil.hpp>
+#include <components/esm/attr.hpp>
+#include "../mwmechanics/npcstats.hpp"
+#include "../mwmechanics/spells.hpp"
+#include "../mwworld/containerstore.hpp"
+#include <cmath>
+#include <tuple>
+#include <vector>
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/inventorystore.hpp"
@@ -801,6 +817,841 @@ namespace omw3ds
         }
     }
 
+    // ------------------------------------------------------------------ the port's own interface (ui3ds)
+    //
+    // Hardware tests #34-#44: MyGUI's interface drawn through the GPU flashes nearby meshes (its texture changes),
+    // drawn by the CPU it is too slow; the port's own interface (components/render3ds, Render3DS::Ui3DS) draws
+    // everything from one texture, as one draw per screen. This is its game side: the same HUD as the M8 layout
+    // (packaging/ui3ds/mygui/openmw_hud.layout: the same places and sizes, Morrowind's frames and fonts), the tab
+    // bar (openmw_3ds_tabs.layout) and the crosshair's target label on the top screen. The screens are rebuilt
+    // only when what they show changes (a snapshot compared each frame); touches hit rectangles recorded while
+    // the bottom screen was built. The tabs' pages come in phase 3b; until then a tab shows its title.
+    namespace
+    {
+        namespace ui = Render3DS::Ui3DS;
+
+        constexpr ui::Rgba kGold{ 202, 165, 96, 255 }; // MW_Button's normal caption (fontcolour=normal)
+        constexpr ui::Rgba kActive{ 223, 201, 159, 255 }; // fontcolour=active
+        constexpr ui::Rgba kWhite{ 255, 255, 255, 255 };
+        constexpr ui::Rgba kBarBack{ 45, 40, 36, 255 };
+        constexpr ui::Rgba kHealth{ 141, 15, 15, 255 }; // MW_Progress_Red/Blue/Green's colours
+        constexpr ui::Rgba kMagicka{ 15, 15, 141, 255 };
+        constexpr ui::Rgba kFatigue{ 15, 141, 15, 255 };
+        constexpr ui::Rgba kWeaponBar{ 148, 128, 56, 255 }; // MW_EnergyBar_Weapon
+        constexpr ui::Rgba kMagicBar{ 56, 56, 200, 255 }; // MW_EnergyBar_Magic
+        constexpr ui::Rgba kLabelBack{ 0, 0, 0, 150 };
+        constexpr int kFontText = 0; // 16 px: tab captions, names
+        constexpr int kFontValue = 1; // 11 px: the bars' values
+        constexpr int kFontSmall = 2; // 10 px: the target label
+
+        enum class Action
+        {
+            None,
+            Home,
+            TabItems,
+            TabMagic,
+            TabStats,
+            TabDebug,
+            OpenStats,
+            OpenItems,
+            OpenMagic,
+            QuickKey1, // + slot
+            // the pages (phase 3b)
+            Filter, // arg: SortFilterItemModel category
+            Scroll, // arg: +1 / -1 (the open tab's list)
+            SelectItem, // arg: model index
+            UseItem,
+            DropItem,
+            AssignQuick, // arg: quick key slot 0-8 (the selected item, or the selected spell on the Magic tab)
+            SelectSpell, // arg: index in the spell list
+            Screenshot,
+        };
+
+        struct Zone
+        {
+            float mX, mY, mW, mH;
+            Action mAction;
+            int mArg;
+        };
+
+        struct UiState
+        {
+            Tab mTab = Tab::None;
+            bool mActive = false; // game mode, the GUI owns the bottom screen
+            std::array<int, 3> mCurrent{}, mMax{};
+            bool mWeaponShown = false, mSpellShown = false, mSneaking = false;
+            std::string mWeaponName, mSpellName, mWeaponIcon, mSpellIcon;
+            int mWeaponHealth = -1, mSpellChance = -1; // percent
+            std::vector<std::string> mEffectIcons;
+            std::array<std::string, kSlots> mQuickIcons;
+            float mYaw = 0;
+            std::string mPage; // what the open tab shows (its own signature), "" on the HUD
+            bool operator==(const UiState& o) const
+            {
+                if (mPage != o.mPage)
+                    return false;
+                return mTab == o.mTab && mActive == o.mActive && mCurrent == o.mCurrent && mMax == o.mMax
+                    && mWeaponShown == o.mWeaponShown && mSpellShown == o.mSpellShown && mSneaking == o.mSneaking
+                    && mWeaponName == o.mWeaponName && mSpellName == o.mSpellName && mWeaponIcon == o.mWeaponIcon
+                    && mSpellIcon == o.mSpellIcon && mWeaponHealth == o.mWeaponHealth
+                    && mSpellChance == o.mSpellChance && mEffectIcons == o.mEffectIcons
+                    && mQuickIcons == o.mQuickIcons && std::abs(mYaw - o.mYaw) < 0.02f;
+            }
+        };
+
+        UiState sUiShown;
+        bool sUiBuilt = false;
+        // the pages' own state
+        int sInvCategory = MWGui::SortFilterItemModel::Category_All;
+        int sInvScroll = 0; // first visible row
+        MWWorld::Ptr sInvSelected;
+        std::unique_ptr<MWGui::SortFilterItemModel> sInvModel;
+        int sMagicScroll = 0;
+        int sStatsScroll = 0;
+        std::string sDebugText;
+        unsigned sDebugFrame = 0;
+        constexpr int kInvColumns = 6, kInvRows = 2; // 12 icons of the 20 slots; the rest for the HUD boxes
+        constexpr int kMagicRows = 9, kSkillRows = 8;
+        std::vector<Zone> sZones;
+        std::string sTopLabel, sTopShown;
+        unsigned sTopLabelFrame = 0, sUiFrame = 0;
+        bool sTopBuilt = false;
+
+        std::string iconKey(VFS::Path::NormalizedView path)
+        {
+            std::string key(path.value());
+            const size_t dot = key.rfind('.');
+            if (dot != std::string::npos)
+                key.erase(dot);
+            return key;
+        }
+
+        std::string itemIconKey(const MWWorld::ConstPtr& item)
+        {
+            if (item.isEmpty())
+                return {};
+            const VFS::Manager& vfs = *MWBase::Environment::get().getResourceSystem()->getVFS();
+            return iconKey(Misc::ResourceHelpers::correctIconPath(item.getClass().getInventoryIcon(item), vfs));
+        }
+
+        std::string spellIconKey(const ESM::RefId& spellId, bool big)
+        {
+            const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+            const ESM::Spell* spell = store.get<ESM::Spell>().search(spellId);
+            if (spell == nullptr || spell->mEffects.mList.empty())
+                return {};
+            const ESM::MagicEffect* effect
+                = store.get<ESM::MagicEffect>().search(spell->mEffects.mList.front().mData.mEffectID);
+            if (effect == nullptr)
+                return {};
+            const VFS::Manager& vfs = *MWBase::Environment::get().getResourceSystem()->getVFS();
+            const auto icon = effect->mIcon.getNormalized();
+            return iconKey(big ? Misc::ResourceHelpers::correctBigIconPath(icon, vfs)
+                               : Misc::ResourceHelpers::correctIconPath(icon, vfs));
+        }
+
+        std::string effectIconKey(const ESM::RefId& effectId)
+        {
+            const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+            const ESM::MagicEffect* effect = store.get<ESM::MagicEffect>().search(effectId);
+            if (effect == nullptr)
+                return {};
+            const VFS::Manager& vfs = *MWBase::Environment::get().getResourceSystem()->getVFS();
+            return iconKey(Misc::ResourceHelpers::correctIconPath(effect->mIcon.getNormalized(), vfs));
+        }
+
+        std::string plainText(const std::string& tagged)
+        {
+            return MyGUI::LanguageManager::getInstance().replaceTags(tagged);
+        }
+
+        std::string pageSignature(Tab tab); // the pages, below
+
+        UiState readUiState()
+        {
+            UiState s;
+            s.mActive = Render3DS::guiOwnsBottomScreen() && !windows().isGuiMode();
+            s.mTab = s.mActive ? sTab : Tab::None;
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
+            const MWMechanics::DynamicStat<float> values[]
+                = { stats.getHealth(), stats.getMagicka(), stats.getFatigue() };
+            for (size_t i = 0; i < 3; ++i)
+            {
+                int current = static_cast<int>(values[i].getCurrent());
+                if (i != 2)
+                    current = std::max(0, current);
+                s.mCurrent[i] = current;
+                s.mMax[i] = std::max(1, static_cast<int>(values[i].getModified()));
+            }
+            std::tie(s.mWeaponShown, s.mSpellShown) = Hud3DS::boxesVisible();
+            const auto [weaponName, spellName] = Hud3DS::selectedNames();
+            s.mWeaponName = plainText(weaponName);
+            s.mSpellName = plainText(spellName);
+            s.mSneaking = MWBase::Environment::get().getMechanicsManager()->isSneaking(player);
+            s.mYaw = player.getRefData().getPosition().rot[2];
+
+            MWWorld::InventoryStore& inventory = player.getClass().getInventoryStore(player);
+            MWWorld::ContainerStoreIterator weapon = inventory.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
+            if (weapon != inventory.end() && weapon->getType() == ESM::Weapon::sRecordId)
+            {
+                s.mWeaponIcon = itemIconKey(*weapon);
+                if (weapon->getClass().hasItemHealth(*weapon))
+                    s.mWeaponHealth = static_cast<int>(weapon->getClass().getItemNormalizedHealth(*weapon) * 100.f);
+            }
+            else
+                s.mWeaponIcon = "icons/k/stealth_handtohand";
+
+            const ESM::RefId& spell = windows().getSelectedSpell();
+            const MWWorld::Ptr& enchanted = windows().getSelectedEnchantItem();
+            if (!spell.empty())
+            {
+                s.mSpellIcon = spellIconKey(spell, true);
+                if (const ESM::Spell* record
+                    = MWBase::Environment::get().getESMStore()->get<ESM::Spell>().search(spell))
+                    s.mSpellChance = static_cast<int>(MWMechanics::getSpellSuccessChance(record, player));
+            }
+            else if (!enchanted.isEmpty())
+            {
+                s.mSpellIcon = itemIconKey(enchanted);
+                const ESM::RefId& enchantmentId = enchanted.getClass().getEnchantment(enchanted);
+                const ESM::Enchantment* enchantment = enchantmentId.empty()
+                    ? nullptr
+                    : MWBase::Environment::get().getESMStore()->get<ESM::Enchantment>().search(enchantmentId);
+                if (enchantment != nullptr && enchantment->mData.mCharge > 0)
+                    s.mSpellChance = static_cast<int>(
+                        100.f * enchanted.getCellRef().getEnchantmentCharge() / enchantment->mData.mCharge);
+            }
+
+            for (const auto& params : stats.getActiveSpells())
+                for (const auto& effect : params.getEffects())
+                {
+                    if (!(effect.mFlags & ESM::ActiveEffect::Flag_Applied) || effect.mMagnitude <= 0)
+                        continue;
+                    std::string key = effectIconKey(effect.mEffectId);
+                    if (!key.empty() && std::find(s.mEffectIcons.begin(), s.mEffectIcons.end(), key) == s.mEffectIcons.end())
+                        s.mEffectIcons.push_back(std::move(key));
+                    if (s.mEffectIcons.size() >= 8)
+                        break;
+                }
+
+            if (s.mTab != Tab::None)
+                s.mPage = pageSignature(s.mTab);
+            for (int i = 0; i < kSlots; ++i)
+            {
+                ESM::QuickKeys::Type type;
+                ESM::RefId id;
+                Hud3DS::quickKeyState(i, type, id);
+                switch (type)
+                {
+                    case ESM::QuickKeys::Type::Item:
+                    case ESM::QuickKeys::Type::MagicItem:
+                        s.mQuickIcons[i] = itemIconKey(findItem(id));
+                        break;
+                    case ESM::QuickKeys::Type::Magic:
+                        s.mQuickIcons[i] = spellIconKey(id, true);
+                        break;
+                    case ESM::QuickKeys::Type::HandToHand:
+                        s.mQuickIcons[i] = "icons/k/stealth_handtohand";
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return s;
+        }
+
+        void zone(float x, float y, float w, float h, Action action, int arg = 0)
+        {
+            sZones.push_back(Zone{ x, y, w, h, action, arg });
+        }
+
+        // ---- the pages: what each tab shows, and a signature of it (the screen is rebuilt when it changes)
+
+        MWGui::SortFilterItemModel& invModel()
+        {
+            if (sInvModel == nullptr)
+            {
+                const MWWorld::Ptr player = MWMechanics::getPlayer();
+                sInvModel = std::make_unique<MWGui::SortFilterItemModel>(std::make_unique<MWGui::InventoryItemModel>(player));
+            }
+            sInvModel->setCategory(sInvCategory);
+            sInvModel->update();
+            return *sInvModel;
+        }
+
+        int invSelectedIndex(MWGui::SortFilterItemModel& model)
+        {
+            if (sInvSelected.isEmpty())
+                return -1;
+            for (size_t i = 0; i < model.getItemCount(); ++i)
+                if (model.getItem(i).mBase == sInvSelected)
+                    return static_cast<int>(i);
+            sInvSelected = MWWorld::Ptr();
+            return -1;
+        }
+
+        std::vector<const ESM::Spell*> playerSpells()
+        {
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            const MWMechanics::Spells& spells = player.getClass().getCreatureStats(player).getSpells();
+            std::vector<const ESM::Spell*> list(spells.begin(), spells.end());
+            std::sort(list.begin(), list.end(), [](const ESM::Spell* a, const ESM::Spell* b) {
+                return a->mData.mType != b->mData.mType ? a->mData.mType < b->mData.mType : a->mName < b->mName;
+            });
+            return list;
+        }
+
+        std::string pageSignature(Tab tab)
+        {
+            std::string sig = std::to_string(static_cast<int>(tab)) + ":";
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            switch (tab)
+            {
+                case Tab::Items:
+                {
+                    MWGui::SortFilterItemModel& model = invModel();
+                    sig += std::to_string(sInvCategory) + "/" + std::to_string(sInvScroll) + "/"
+                        + std::to_string(invSelectedIndex(model)) + "/" + std::to_string(model.getItemCount()) + "|";
+                    const size_t first = static_cast<size_t>(sInvScroll) * kInvColumns;
+                    for (size_t i = first; i < model.getItemCount() && i < first + kInvColumns * kInvRows; ++i)
+                    {
+                        const MWGui::ItemStack stack = model.getItem(i);
+                        sig += stack.mBase.getCellRef().getRefId().toDebugString() + "," + std::to_string(stack.mCount)
+                            + "," + std::to_string(static_cast<int>(stack.mType)) + ";";
+                    }
+                    sig += std::to_string(static_cast<int>(player.getClass().getEncumbrance(player)));
+                    break;
+                }
+                case Tab::Magic:
+                {
+                    sig += std::to_string(sMagicScroll) + "/" + windows().getSelectedSpell().toDebugString() + "|";
+                    const auto& spells = playerSpells();
+                    for (size_t i = static_cast<size_t>(sMagicScroll); i < spells.size() && i < static_cast<size_t>(sMagicScroll + kMagicRows); ++i)
+                        sig += spells[i]->mId.toDebugString() + ";";
+                    break;
+                }
+                case Tab::Stats:
+                {
+                    const MWMechanics::NpcStats& stats = player.getClass().getNpcStats(player);
+                    sig += std::to_string(sStatsScroll) + "/" + std::to_string(stats.getLevel()) + "|";
+                    for (int i = 0; i < ESM::Attribute::Length; ++i)
+                        sig += std::to_string(static_cast<int>(stats.getAttribute(ESM::Attribute::indexToRefId(i)).getModified())) + ",";
+                    for (int i = 0; i < ESM::Skill::Length; ++i)
+                        sig += std::to_string(static_cast<int>(stats.getSkill(ESM::Skill::indexToRefId(i)).getModified())) + ",";
+                    break;
+                }
+                case Tab::Debug:
+                    if (sUiFrame - sDebugFrame >= 15 || sDebugText.empty())
+                    {
+                        // without MyGUI's colour tags (#RRGGBB) and its tag references (#{...})
+                        const std::string raw = debugScreenText3DS();
+                        sDebugText.clear();
+                        for (size_t i = 0; i < raw.size(); ++i)
+                        {
+                            if (raw[i] == '#' && i + 1 < raw.size() && raw[i + 1] == '{')
+                            {
+                                const size_t close = raw.find('}', i);
+                                i = close == std::string::npos ? raw.size() : close;
+                            }
+                            else if (raw[i] == '#' && i + 6 < raw.size() + 0 && std::isxdigit(static_cast<unsigned char>(raw[i + 1])))
+                                i += 6;
+                            else
+                                sDebugText += raw[i];
+                        }
+                        sDebugFrame = sUiFrame;
+                    }
+                    sig += sDebugText;
+                    break;
+                default:
+                    break;
+            }
+            return sig;
+        }
+
+        void scrollArrows(float x, float y, float h, bool canUp, bool canDown)
+        {
+            // OpenMW's scroll arrows (textures/omw_menu_scroll_up/down)
+            ui::image(ui::Bottom, "textures/omw_menu_scroll_up", x, y, 16, 16, canUp ? kWhite : ui::Rgba{ 120, 120, 120, 255 });
+            ui::image(ui::Bottom, "textures/omw_menu_scroll_down", x, y + h - 16, 16, 16, canDown ? kWhite : ui::Rgba{ 120, 120, 120, 255 });
+            zone(x - 8, y - 8, 32, 32, Action::Scroll, -1);
+            zone(x - 8, y + h - 24, 32, 32, Action::Scroll, 1);
+        }
+
+        void quickSlotsRow(float x, float y)
+        {
+            for (int i = 0; i < kSlots; ++i)
+            {
+                const float sx = x + i * 33;
+                ui::frame(ui::Bottom, sx, y, 32, 24, "thin");
+                const std::string n = std::to_string(i + 1);
+                ui::text(ui::Bottom, kFontValue, sx + 16 - ui::textWidth(kFontValue, n) / 2, y + 6, n, kGold);
+                zone(sx, y, 32, 24, Action::AssignQuick, i);
+            }
+        }
+
+        void buildItemsPage(float px, float py)
+        {
+            // the filters (FilterAll3DS 2 2 52 22 ...)
+            const std::pair<const char*, int> filters[] = { { "All", MWGui::SortFilterItemModel::Category_All },
+                { "Weapon", MWGui::SortFilterItemModel::Category_Weapon },
+                { "Apparel", MWGui::SortFilterItemModel::Category_Apparel },
+                { "Magic", MWGui::SortFilterItemModel::Category_Magic },
+                { "Misc", MWGui::SortFilterItemModel::Category_Misc } };
+            const float fx[5] = { 2, 56, 124, 196, 256 }, fw[5] = { 52, 66, 70, 58, 54 };
+            for (int i = 0; i < 5; ++i)
+            {
+                ui::frame(ui::Bottom, px + fx[i], py + 2, fw[i], 22, "thin");
+                const float tw = ui::textWidth(kFontValue, filters[i].first);
+                ui::text(ui::Bottom, kFontValue, px + fx[i] + (fw[i] - tw) / 2, py + 7, filters[i].first,
+                    sInvCategory == filters[i].second ? kActive : kGold);
+                zone(px + fx[i], py + 2, fw[i], 22, Action::Filter, filters[i].second);
+            }
+            // the grid (ItemView3DS 2 26 308 128): kInvColumns x kInvRows cells of 48x60, the arrows at the right
+            MWGui::SortFilterItemModel& model = invModel();
+            const int selected = invSelectedIndex(model);
+            const int rows = (static_cast<int>(model.getItemCount()) + kInvColumns - 1) / kInvColumns;
+            sInvScroll = std::clamp(sInvScroll, 0, std::max(0, rows - kInvRows));
+            const size_t first = static_cast<size_t>(sInvScroll) * kInvColumns;
+            for (size_t i = first; i < model.getItemCount() && i < first + kInvColumns * kInvRows; ++i)
+            {
+                const MWGui::ItemStack stack = model.getItem(i);
+                const int cell = static_cast<int>(i - first);
+                const float cx = px + 4 + (cell % kInvColumns) * 48, cy = py + 28 + (cell / kInvColumns) * 62;
+                ui::frame(ui::Bottom, cx, cy, 46, 58, "thin");
+                if (static_cast<int>(i) == selected)
+                    ui::rect(ui::Bottom, cx + 2, cy + 2, 42, 54, ui::Rgba{ 120, 100, 50, 90 });
+                if (stack.mType == MWGui::ItemStack::Type_Equipped)
+                    ui::rect(ui::Bottom, cx + 2, cy + 2, 42, 3, kActive);
+                ui::icon(ui::Bottom, itemIconKey(stack.mBase), cx + 7, cy + 8, 32);
+                if (stack.mCount > 1)
+                {
+                    const std::string count = std::to_string(stack.mCount);
+                    ui::text(ui::Bottom, kFontSmall, cx + 42 - ui::textWidth(kFontSmall, count), cy + 44, count, kWhite);
+                }
+                zone(cx, cy, 46, 58, Action::SelectItem, static_cast<int>(i));
+            }
+            scrollArrows(px + 294, py + 28, 120, sInvScroll > 0, sInvScroll + kInvRows < rows);
+            // the details (Details3DS 2 156 308 52): name, weight and value, then Use / Drop / the quick keys
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            if (selected >= 0)
+            {
+                const MWGui::ItemStack stack = model.getItem(selected);
+                std::string name(sInvSelected.getClass().getName(sInvSelected));
+                if (stack.mCount > 1)
+                    name += " (" + std::to_string(stack.mCount) + ")";
+                ui::text(ui::Bottom, kFontValue, px + 8, py + 158, name, kGold);
+                const std::string info = "Weight " + MWGui::ToolTips::toString(sInvSelected.getClass().getWeight(sInvSelected))
+                    + "   Value " + MWGui::ToolTips::toString(sInvSelected.getClass().getValue(sInvSelected));
+                ui::text(ui::Bottom, kFontValue, px + 8 + ui::textWidth(kFontValue, name) + 12, py + 158, info, kWhite);
+                const bool equipped = stack.mType == MWGui::ItemStack::Type_Equipped;
+                ui::frame(ui::Bottom, px + 4, py + 180, 60, 24, "thin");
+                const char* use = equipped ? "Unequip" : "Use";
+                ui::text(ui::Bottom, kFontValue, px + 34 - ui::textWidth(kFontValue, use) / 2, py + 186, use, kGold);
+                zone(px + 4, py + 180, 60, 24, Action::UseItem);
+                ui::frame(ui::Bottom, px + 68, py + 180, 48, 24, "thin");
+                ui::text(ui::Bottom, kFontValue, px + 92 - ui::textWidth(kFontValue, "Drop") / 2, py + 186, "Drop", kGold);
+                zone(px + 68, py + 180, 48, 24, Action::DropItem);
+                // the quick keys 1-9, smaller, at the right (QuickSlots3DS)
+                for (int i = 0; i < kSlots; ++i)
+                {
+                    const float sx = px + 122 + i * 21;
+                    ui::frame(ui::Bottom, sx, py + 180, 20, 24, "thin");
+                    const std::string n = std::to_string(i + 1);
+                    ui::text(ui::Bottom, kFontValue, sx + 10 - ui::textWidth(kFontValue, n) / 2, py + 186, n, kGold);
+                    zone(sx, py + 180, 20, 24, Action::AssignQuick, i);
+                }
+            }
+            else
+            {
+                const std::string weight = "Weight " + std::to_string(static_cast<int>(player.getClass().getEncumbrance(player)))
+                    + " / " + std::to_string(static_cast<int>(player.getClass().getCapacity(player)));
+                ui::text(ui::Bottom, kFontValue, px + 8, py + 158, weight, kWhite);
+                ui::text(ui::Bottom, kFontSmall, px + 8, py + 186, "Touch an item: use, drop, or put it on a quick key.", kGold);
+            }
+        }
+
+        void buildMagicPage(float px, float py)
+        {
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            const auto& spells = playerSpells();
+            const ESM::RefId& selected = windows().getSelectedSpell();
+            ui::text(ui::Bottom, kFontValue, px + 6, py + 6, "Spell", kGold);
+            ui::text(ui::Bottom, kFontValue, px + 230, py + 6, "Cost / Chance", kGold);
+            sMagicScroll = std::clamp(sMagicScroll, 0, std::max(0, static_cast<int>(spells.size()) - kMagicRows));
+            for (int row = 0; row < kMagicRows; ++row)
+            {
+                const size_t i = static_cast<size_t>(sMagicScroll + row);
+                if (i >= spells.size())
+                    break;
+                const ESM::Spell* spell = spells[i];
+                const float y = py + 28 + row * 17;
+                const bool isSelected = spell->mId == selected;
+                if (isSelected)
+                    ui::rect(ui::Bottom, px + 4, y - 1, 282, 17, ui::Rgba{ 120, 100, 50, 90 });
+                ui::text(ui::Bottom, kFontValue, px + 8, y + 2, spell->mName, isSelected ? kActive : kGold);
+                if (spell->mData.mType == ESM::Spell::ST_Spell)
+                {
+                    const int chance = static_cast<int>(MWMechanics::getSpellSuccessChance(spell, player));
+                    const std::string right = std::to_string(spell->mData.mCost) + " / " + std::to_string(chance) + "%";
+                    ui::text(ui::Bottom, kFontValue, px + 282 - ui::textWidth(kFontValue, right), y + 2, right, kWhite);
+                }
+                else
+                    ui::text(ui::Bottom, kFontSmall, px + 230, y + 3, spell->mData.mType == ESM::Spell::ST_Power ? "power" : "ability", kWhite);
+                zone(px + 4, y - 1, 282, 17, Action::SelectSpell, static_cast<int>(i));
+            }
+            scrollArrows(px + 294, py + 28, 150, sMagicScroll > 0, sMagicScroll + kMagicRows < static_cast<int>(spells.size()));
+            // the selected spell on a quick key (QuickSlots3DS 2 184)
+            if (!selected.empty())
+            {
+                ui::text(ui::Bottom, kFontSmall, px + 4, py + 184, "Quick key:", kGold);
+                for (int i = 0; i < kSlots; ++i)
+                {
+                    const float sx = px + 60 + i * 27;
+                    ui::frame(ui::Bottom, sx, py + 182, 26, 24, "thin");
+                    const std::string n = std::to_string(i + 1);
+                    ui::text(ui::Bottom, kFontValue, sx + 13 - ui::textWidth(kFontValue, n) / 2, py + 188, n, kGold);
+                    zone(sx, py + 182, 26, 24, Action::AssignQuick, i);
+                }
+            }
+        }
+
+        void buildStatsPage(float px, float py)
+        {
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            const MWMechanics::NpcStats& stats = player.getClass().getNpcStats(player);
+            const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+            const ESM::NPC* npc = player.get<ESM::NPC>()->mBase;
+            const ESM::Race* race = store.get<ESM::Race>().search(npc->mRace);
+            const ESM::Class* cls = store.get<ESM::Class>().search(npc->mClass);
+            // the left pane: level, race, class, then the attributes
+            const std::pair<std::string, std::string> lines[] = { { "Level", std::to_string(stats.getLevel()) },
+                { "Race", race ? race->mName : std::string() }, { "Class", cls ? cls->mName : std::string() } };
+            for (int i = 0; i < 3; ++i)
+            {
+                ui::text(ui::Bottom, kFontValue, px + 6, py + 6 + i * 16, lines[i].first, kGold);
+                ui::text(ui::Bottom, kFontValue, px + 60, py + 6 + i * 16, lines[i].second, kWhite);
+            }
+            for (int i = 0; i < ESM::Attribute::Length; ++i)
+            {
+                const ESM::RefId id = ESM::Attribute::indexToRefId(i);
+                const ESM::Attribute* attribute = store.get<ESM::Attribute>().search(id);
+                const float y = py + 60 + i * 16;
+                ui::text(ui::Bottom, kFontValue, px + 6, y, attribute ? attribute->mName : id.toDebugString(), kGold);
+                const std::string value = std::to_string(static_cast<int>(stats.getAttribute(id).getModified()));
+                ui::text(ui::Bottom, kFontValue, px + 140 - ui::textWidth(kFontValue, value), y, value, kWhite);
+            }
+            // the right pane: the skills, scrolled
+            ui::text(ui::Bottom, kFontValue, px + 160, py + 6, "Skills", kGold);
+            sStatsScroll = std::clamp(sStatsScroll, 0, std::max(0, ESM::Skill::Length - kSkillRows));
+            for (int row = 0; row < kSkillRows; ++row)
+            {
+                const int i = sStatsScroll + row;
+                if (i >= ESM::Skill::Length)
+                    break;
+                const ESM::RefId id = ESM::Skill::indexToRefId(i);
+                const ESM::Skill* skill = store.get<ESM::Skill>().search(id);
+                const float y = py + 28 + row * 17;
+                ui::text(ui::Bottom, kFontValue, px + 160, y, skill ? skill->mName : id.toDebugString(), kGold);
+                const std::string value = std::to_string(static_cast<int>(stats.getSkill(id).getModified()));
+                ui::text(ui::Bottom, kFontValue, px + 284 - ui::textWidth(kFontValue, value), y, value, kWhite);
+            }
+            scrollArrows(px + 294, py + 28, 140, sStatsScroll > 0, sStatsScroll + kSkillRows < ESM::Skill::Length);
+        }
+
+        void buildDebugPage(float px, float py)
+        {
+            // DebugText3DS 6 4 296 82: the debug screen's rows; ScreenshotButton3DS 2 96 120 24
+            float y = py + 4;
+            size_t start = 0;
+            while (start < sDebugText.size() && y < py + 96)
+            {
+                size_t end = sDebugText.find('\n', start);
+                if (end == std::string::npos)
+                    end = sDebugText.size();
+                ui::text(ui::Bottom, kFontSmall, px + 6, y, std::string_view(sDebugText).substr(start, end - start), kWhite);
+                y += 11;
+                start = end + 1;
+            }
+            ui::frame(ui::Bottom, px + 2, py + 96, 120, 24, "thin");
+            ui::text(ui::Bottom, kFontValue, px + 62 - ui::textWidth(kFontValue, "Screenshot") / 2, py + 102, "Screenshot", kGold);
+            zone(px + 2, py + 96, 120, 24, Action::Screenshot);
+        }
+
+        // A button in Morrowind's style: a thin frame and a caption, lighter when selected.
+        void button(float x, float y, float w, float h, std::string_view caption, bool selected, Action action)
+        {
+            ui::frame(ui::Bottom, x, y, w, h, "thin");
+            const float tw = ui::textWidth(kFontText, caption);
+            ui::text(ui::Bottom, kFontText, x + (w - tw) / 2, y + 2, caption, selected ? kActive : kGold);
+            zone(x, y, w, h, action);
+        }
+
+        void bar(float x, float y, float w, float h, float fill, ui::Rgba colour)
+        {
+            ui::rect(ui::Bottom, x, y, w, h, kBarBack);
+            ui::rect(ui::Bottom, x + 1, y + 1, (w - 2) * std::clamp(fill, 0.f, 1.f), h - 2, colour);
+        }
+
+        void buildBottom(const UiState& s)
+        {
+            sZones.clear();
+            ui::releaseIcons(); // the icon slots are rebuilt with the screen
+            ui::begin(ui::Bottom);
+            if (!s.mActive)
+                return;
+            // the tab bar: openmw_3ds_tabs.layout
+            const float bx = kBottomX, by = kBottomY;
+            ui::rect(ui::Bottom, bx, by, 320, 22, ui::Rgba{ 0, 0, 0, 255 });
+            ui::frame(ui::Bottom, bx + 2, by + 1, 24, 21, "thin");
+            ui::image(ui::Bottom, "textures/omw_3ds_home", bx + 6, by + 3, 16, 16, s.mTab == Tab::None ? kActive : kGold);
+            zone(bx + 2, by + 1, 24, 21, Action::Home);
+            button(bx + 28, by + 1, 80, 21, "Inventory", s.mTab == Tab::Items, Action::TabItems);
+            button(bx + 110, by + 1, 68, 21, "Magic", s.mTab == Tab::Magic, Action::TabMagic);
+            button(bx + 180, by + 1, 68, 21, "Stats", s.mTab == Tab::Stats, Action::TabStats);
+#ifdef OPENMW3DS_DEBUG
+            button(bx + 250, by + 1, 68, 21, "Debug", s.mTab == Tab::Debug, Action::TabDebug);
+#endif
+            const float px = kBottomX, py = kPanelY; // the panel: openmw_hud.layout's Bottom3DS
+            ui::frame(ui::Bottom, px, py, kPageWidth, kPageHeight, "thick");
+            if (s.mTab != Tab::None)
+            {
+                switch (s.mTab)
+                {
+                    case Tab::Items:
+                        buildItemsPage(px, py);
+                        break;
+                    case Tab::Magic:
+                        buildMagicPage(px, py);
+                        break;
+                    case Tab::Stats:
+                        buildStatsPage(px, py);
+                        break;
+                    case Tab::Debug:
+                        buildDebugPage(px, py);
+                        break;
+                    default:
+                        break;
+                }
+                return;
+            }
+            // the bars, with their values (HealthFrame 4 4 230 18; the bar at +66, 164 wide)
+            const ui::Rgba colours[3] = { kHealth, kMagicka, kFatigue };
+            for (int i = 0; i < 3; ++i)
+            {
+                const float y = py + 4 + i * 18;
+                bar(px + 70, y, 164, 18, float(s.mCurrent[i]) / float(s.mMax[i]), colours[i]);
+                const std::string value = std::to_string(s.mCurrent[i]) + "/" + std::to_string(s.mMax[i]);
+                ui::text(ui::Bottom, kFontValue, px + 70 + 164 - 4 - ui::textWidth(kFontValue, value), y + 3, value, kWhite);
+                zone(px + 4, y, 230, 18, Action::OpenStats);
+            }
+            // the minimap box (240 4 68 68): black until the map comes; the compass turns with the player
+            ui::rect(ui::Bottom, px + 240, py + 4, 68, 68, ui::Rgba{ 0, 0, 0, 255 });
+            ui::frame(ui::Bottom, px + 240, py + 4, 68, 68, "thin");
+            ui::imageRotated(ui::Bottom, "textures/compass", px + 274, py + 38, 32, 32, -s.mYaw, kWhite);
+            // the weapon (WeapBox 4 78 36 42) and the spell (SpellBox 158 78), with their names beside them
+            if (s.mWeaponShown)
+            {
+                ui::frame(ui::Bottom, px + 4, py + 78, 36, 36, "thin");
+                ui::icon(ui::Bottom, s.mWeaponIcon, px + 6, py + 80, 32);
+                if (s.mWeaponHealth >= 0)
+                    bar(px + 4, py + 114, 36, 6, s.mWeaponHealth / 100.f, kWeaponBar);
+                ui::text(ui::Bottom, kFontValue, px + 44, py + 80, s.mWeaponName, kGold);
+                zone(px + 4, py + 78, 150, 42, Action::OpenItems);
+            }
+            if (s.mSpellShown)
+            {
+                ui::frame(ui::Bottom, px + 158, py + 78, 36, 36, "thin");
+                ui::icon(ui::Bottom, s.mSpellIcon, px + 160, py + 80, 32);
+                if (s.mSpellChance >= 0)
+                    bar(px + 158, py + 114, 36, 6, s.mSpellChance / 100.f, kMagicBar);
+                ui::text(ui::Bottom, kFontValue, px + 198, py + 80, s.mSpellName, kGold);
+                zone(px + 158, py + 78, 150, 42, Action::OpenMagic);
+            }
+            // sneaking (SneakBox 4 128 36 36) and the active effects (EffectBox 288 128, growing left)
+            if (s.mSneaking)
+                ui::icon(ui::Bottom, "icons/k/stealth_sneak", px + 6, py + 130, 32);
+            float ex = px + 288;
+            for (const std::string& key : s.mEffectIcons)
+            {
+                ui::icon(ui::Bottom, key, ex, py + 130, 16);
+                ex -= 18;
+            }
+            // the quick keys (QuickKeys3DS 3 174: nine 34x34 boxes)
+            for (int i = 0; i < kSlots; ++i)
+            {
+                const float x = px + 3 + i * 34, y = py + 174;
+                ui::frame(ui::Bottom, x, y, 34, 34, "thin");
+                if (!s.mQuickIcons[i].empty())
+                    ui::icon(ui::Bottom, s.mQuickIcons[i], x + 1, y + 1, 32);
+                zone(x, y, 34, 34, Action::QuickKey1, i);
+            }
+        }
+
+        void buildTop(const std::string& label)
+        {
+            ui::begin(ui::Top);
+            ui::image(ui::Top, "textures/target", 187, 107, 27, 27, kWhite); // HUD_Crosshair's place
+            if (!label.empty())
+            {
+                const float w = ui::textWidth(kFontSmall, label);
+                const float x = (Render3DS::kGuiCanvasWidth - w) / 2;
+                ui::rect(ui::Top, x - 4, kLabelTop, w + 8, 14, kLabelBack);
+                ui::text(ui::Top, kFontSmall, x, kLabelTop + 2, label, kGold);
+            }
+        }
+
+        void act(const Zone& z)
+        {
+            switch (z.mAction)
+            {
+                case Action::Home:
+                    sTab = Tab::None;
+                    break;
+                case Action::TabItems:
+                    sTab = sTab == Tab::Items ? Tab::None : Tab::Items;
+                    break;
+                case Action::TabMagic:
+                    sTab = sTab == Tab::Magic ? Tab::None : Tab::Magic;
+                    break;
+                case Action::TabStats:
+                    sTab = sTab == Tab::Stats ? Tab::None : Tab::Stats;
+                    break;
+                case Action::TabDebug:
+                    sTab = sTab == Tab::Debug ? Tab::None : Tab::Debug;
+                    break;
+                case Action::OpenStats:
+                    sTab = Tab::Stats;
+                    break;
+                case Action::OpenItems:
+                    sTab = Tab::Items;
+                    break;
+                case Action::OpenMagic:
+                    sTab = Tab::Magic;
+                    break;
+                case Action::QuickKey1:
+                    windows().activateQuickKey(z.mArg + 1);
+                    break;
+                case Action::Filter:
+                    sInvCategory = z.mArg;
+                    sInvScroll = 0;
+                    break;
+                case Action::Scroll:
+                    if (sTab == Tab::Items)
+                        sInvScroll = std::max(0, sInvScroll + z.mArg);
+                    else if (sTab == Tab::Magic)
+                        sMagicScroll = std::max(0, sMagicScroll + z.mArg);
+                    else if (sTab == Tab::Stats)
+                        sStatsScroll = std::max(0, sStatsScroll + z.mArg);
+                    break;
+                case Action::SelectItem:
+                {
+                    MWGui::SortFilterItemModel& model = invModel();
+                    if (z.mArg >= 0 && static_cast<size_t>(z.mArg) < model.getItemCount())
+                    {
+                        const MWWorld::Ptr item = model.getItem(z.mArg).mBase;
+                        sInvSelected = item == sInvSelected ? MWWorld::Ptr() : item;
+                    }
+                    break;
+                }
+                case Action::UseItem:
+                {
+                    if (sInvSelected.isEmpty())
+                        break;
+                    MWGui::SortFilterItemModel& model = invModel();
+                    const int index = invSelectedIndex(model);
+                    const MWWorld::Ptr player = MWMechanics::getPlayer();
+                    if (index >= 0 && model.getItem(index).mType == MWGui::ItemStack::Type_Equipped)
+                        player.getClass().getInventoryStore(player).unequipItem(sInvSelected);
+                    else if (MWGui::InventoryWindow* inventory = Hud3DS::inventory())
+                        inventory->useItem(sInvSelected);
+                    break;
+                }
+                case Action::DropItem:
+                {
+                    if (sInvSelected.isEmpty())
+                        break;
+                    MWGui::SortFilterItemModel& model = invModel();
+                    const int index = invSelectedIndex(model);
+                    if (index < 0)
+                        break;
+                    const int count = static_cast<int>(model.getItem(index).mCount);
+                    const MWWorld::Ptr player = MWMechanics::getPlayer();
+                    MWBase::World* world = MWBase::Environment::get().getWorld();
+                    world->breakInvisibility(player);
+                    world->dropObjectOnGround(player, sInvSelected, count);
+                    windows().playSound(sInvSelected.getClass().getDownSoundId(sInvSelected));
+                    player.getClass().getContainerStore(player).remove(sInvSelected, count);
+                    sInvSelected = MWWorld::Ptr();
+                    break;
+                }
+                case Action::AssignQuick:
+                    if (sTab == Tab::Items && !sInvSelected.isEmpty())
+                        Hud3DS::assignItem(z.mArg, sInvSelected);
+                    else if (sTab == Tab::Magic)
+                        Hud3DS::assignSelectedMagic(z.mArg);
+                    break;
+                case Action::SelectSpell:
+                {
+                    const auto& spells = playerSpells();
+                    if (z.mArg >= 0 && static_cast<size_t>(z.mArg) < spells.size())
+                    {
+                        const ESM::Spell* spell = spells[z.mArg];
+                        const MWWorld::Ptr player = MWMechanics::getPlayer();
+                        windows().setSelectedSpell(spell->mId, static_cast<int>(MWMechanics::getSpellSuccessChance(spell, player)));
+                    }
+                    break;
+                }
+                case Action::Screenshot:
+                    requestScreenshot3DS();
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        void updateUi3DS()
+        {
+            ++sUiFrame;
+            UiState s = readUiState();
+            if (!sUiBuilt || !(s == sUiShown))
+            {
+                buildBottom(s);
+                sUiShown = std::move(s);
+                sUiBuilt = true;
+            }
+            // the target label: tooltips.cpp sets it on the frames the crosshair has a target
+            const std::string label = sUiFrame - sTopLabelFrame <= 2 ? sTopLabel : std::string();
+            if (!sTopBuilt || label != sTopShown)
+            {
+                buildTop(label);
+                sTopShown = label;
+                sTopBuilt = true;
+            }
+        }
+    }
+
+    void touchUi3DS(int px, int py, bool down)
+    {
+        static bool sDown = false;
+        static int sX = 0, sY = 0;
+        if (down)
+        {
+            sX = px + kBottomX;
+            sY = py + kBottomY;
+        }
+        else if (sDown) // released: the zone under the last touch acts
+        {
+            for (const Zone& z : sZones)
+                if (sX >= z.mX && sX < z.mX + z.mW && sY >= z.mY && sY < z.mY + z.mH)
+                {
+                    act(z);
+                    break;
+                }
+        }
+        sDown = down;
+    }
+
     MyGUI::IntPoint targetLabel3DS(const MyGUI::IntSize& size)
     {
         return MyGUI::IntPoint((Render3DS::kGuiCanvasWidth - size.width) / 2, kLabelTop);
@@ -829,6 +1680,8 @@ namespace omw3ds
             continues = lower;
             label += line;
         }
+        sTopLabel = label;
+        sTopLabelFrame = sUiFrame;
         return label;
     }
 
@@ -836,6 +1689,11 @@ namespace omw3ds
     {
         if (!Hud3DS::ready())
             return;
+        if (Render3DS::Ui3DS::active())
+        {
+            updateUi3DS();
+            return;
+        }
         updateStrip();
         updatePanel();
         updateTabs();
