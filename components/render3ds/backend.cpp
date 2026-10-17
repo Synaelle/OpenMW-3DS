@@ -2310,6 +2310,12 @@ namespace Render3DS
             // target, no mid-frame clear). no-m8ui (frame3ds.cpp) removes the whole pass.
             bool mGuiSceneShader = false;
             bool mGuiTopOnly = false;
+            // Test #36: test #35 left the top-screen GUI draws as the trigger (no-m8ui clean, the other two
+            // flash). gui-no-rebind: the GUI pass doesn't re-select the top target (citro3d otherwise sends a
+            // framebuffer flush, an early-depth clear, a framebuffer invalidate and the framebuffer, viewport
+            // and scissor registers again, mid-frame). gui-no-quads: every state write of the pass, but no draw.
+            bool mGuiNoRebind = false;
+            bool mGuiNoQuads = false;
         };
 
         const DebugSkips& debugSkips()
@@ -2323,12 +2329,15 @@ namespace Render3DS
                 s.mArrayDraws = stat("sdmc:/openmw/array-draws", &st) == 0;
                 s.mGuiSceneShader = stat("sdmc:/openmw/gui-scene-shader", &st) == 0;
                 s.mGuiTopOnly = stat("sdmc:/openmw/gui-top-only", &st) == 0;
+                s.mGuiNoRebind = stat("sdmc:/openmw/gui-no-rebind", &st) == 0;
+                s.mGuiNoQuads = stat("sdmc:/openmw/gui-no-quads", &st) == 0;
                 if (s.mParticles || s.mFarParticles || s.mBigEffects || s.mArrayDraws || s.mGuiSceneShader
-                    || s.mGuiTopOnly)
-                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
+                    || s.mGuiTopOnly || s.mGuiNoRebind || s.mGuiNoQuads)
+                    P3DS_LOGW("render3ds: debug switches:%s%s%s%s%s%s%s%s", s.mParticles ? " skip-particles" : "",
                         s.mFarParticles ? " skip-far-particles" : "", s.mBigEffects ? " skip-big-effects" : "",
                         s.mArrayDraws ? " array-draws" : "", s.mGuiSceneShader ? " gui-scene-shader" : "",
-                        s.mGuiTopOnly ? " gui-top-only" : "");
+                        s.mGuiTopOnly ? " gui-top-only" : "", s.mGuiNoRebind ? " gui-no-rebind" : "",
+                        s.mGuiNoQuads ? " gui-no-quads" : "");
                 return s;
             }();
             return skips;
@@ -3089,7 +3098,13 @@ namespace Render3DS
         // setProjection) and the fixed depth z' = -0.5 (no depth test).
         void drawGuiOn(C3D_RenderTarget* target, float scaleX, float offsetY)
         {
-            drawOn(target);
+            bool noRebind = false, noQuads = false;
+#ifdef OPENMW3DS_DEBUG
+            noRebind = debugSkips().mGuiNoRebind;
+            noQuads = debugSkips().mGuiNoQuads;
+#endif
+            if (!noRebind || target != gLastTarget)
+                drawOn(target);
             C3D_FVec* projection = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gFlatProjection, 4);
             projection[0] = FVec4_New(0.f, 2.f, 0.f, offsetY);
             projection[1] = FVec4_New(-scaleX, 0.f, 0.f, 0.f);
@@ -3131,7 +3146,8 @@ namespace Render3DS
                             break;
                     }
                 }
-                drawTriangleList(draw.mFirst, draw.mCount);
+                if (!noQuads)
+                    drawTriangleList(draw.mFirst, draw.mCount);
                 ++gStats.mGuiDraws;
             }
         }

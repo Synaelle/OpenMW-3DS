@@ -54,20 +54,20 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #35: the flashing meshes, the interface pass taken apart):
-  Your video of test #34 run A showed the flash: for one frame the houses and the wall are drawn with their
-  vertices scrambled and their walls see-through, while the ground, the NPC and the tree are fine. And it still
-  happened with a single shader variant, so the variants are cleared. What the interface added per frame is now
-  split in three, one switch each (empty files in sdmc:/openmw/; delete every other test file first):
-    Run A: no-m8ui          the old text bottom screen, no interface drawn by the GPU at all.
-    Run B: gui-scene-shader the interface drawn with the scene's own shader (the GPU never changes shader
-                            during a frame). The interface should look the same.
-    Run C: gui-top-only     the bottom screen is drawn once and never refreshed (it will look stale: the bars
-                            won't move). The top screen's interface stays.
+What this tests (hardware test #36: the flashing meshes, the top-screen interface draw taken apart):
+  Test #35 said: no interface at all = clean; interface with the scene shader = flash; interface without the
+  bottom screen = flash. So the trigger is in the interface drawn on the TOP screen (the crosshair and the
+  target line). That draw does two kinds of things: it re-selects the screen's render target in the middle of
+  the frame (the GPU then flushes and invalidates its framebuffer cache and gets the framebuffer, viewport and
+  scissor registers again), and it draws a few small quads with their own state. One switch removes each
+  (empty files in sdmc:/openmw/; delete every other test file first):
+    Run A: gui-no-rebind    the target is not re-selected; everything else as usual. Interface unchanged.
+    Run B: gui-no-quads     every state change of the pass, but no quad drawn: no crosshair, no HUD, bottom
+                            screen black. That's expected.
   Same walk each time, two or three minutes around Seyda Neen, looking at the houses near you. For each run:
   did meshes flash, and roughly how often? A phone video like last time is perfect. The logs of the last three
-  runs are kept (openmw3ds.log = newest, -1, -2): after the three runs send the whole logs folder (run A is then
-  openmw3ds-2.log, run B openmw3ds-1.log, run C openmw3ds.log).
+  runs are kept (openmw3ds.log = newest, -1, -2): after both runs send the whole logs folder (run A is then
+  openmw3ds-1.log, run B openmw3ds.log).
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 
