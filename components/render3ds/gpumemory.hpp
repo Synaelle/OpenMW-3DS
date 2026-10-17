@@ -77,6 +77,24 @@ namespace Render3DS
     // The UI atlas texture (pack entry "ui-atlas/<index>", loaded on first use and kept: clamped, bilinear, no
     // mipmaps), or nullptr when the pack has none. Render thread.
     osg::Texture* uiAtlasTexture(unsigned index);
+
+    // A bitmap font whose glyphs the cooker cut into the UI atlas (tools/cook_textures.py FONTS): the rectangle of
+    // each of the .fnt's 256 codes in atlas texels, w = h = 0 for a code without a glyph.
+    struct CookedFont
+    {
+        struct Glyph
+        {
+            uint16_t mX, mY, mW, mH;
+        };
+        uint64_t mHash; // of "fonts/<name>"
+        uint32_t mPageWidth, mPageHeight; // the .tex page the glyphs were cut from
+        Glyph mGlyphs[256];
+    };
+    // The cooked font of a .fnt VFS path ("fonts/magic_cards_regular.fnt"), or nullptr. Any thread after the pack
+    // is open.
+    const CookedFont* cookedFont(std::string_view fntPath);
+    // The top-left texel of the atlas's reserved region (the icon slots, the map square under them).
+    void uiAtlasReservedRegion(unsigned& x, unsigned& y);
 }
 
 #endif

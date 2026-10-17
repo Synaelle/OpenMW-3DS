@@ -23,18 +23,27 @@ scales the texture coordinates by source / cooked size: flag 4), no mipmaps (MyG
 kept flashing with the 1024x512 atlas, while every clean run bound only textures of at most 256 per side, the cap
 of every scene texture): no cooked UI texture has a side above 256. A UI image longer than that on a side is
 resampled to a power of two of at most 256 on each side (it then fills its texture, no padding; the runtime still
-tells MyGUI the original size), the atlas pages are 256x256.
+tells MyGUI the original size); only the UI atlas is wider.
 
 UI atlas (hardware tests #34-#38: the interface's ~220 texture changes per frame, between tiny textures, make the
 New 3DS draw nearby scene meshes wrong for a frame): the small interface images (see is_atlas_candidate: menu
 frames, bars, buttons, cursors, the 512-long border strips; not the item icons, book art or level-up art) are also
-packed into RGBA8 atlas pages, "ui-atlas/<n>" (256x256, as many as needed; the renderer binds each batch's page),
-each with a 1-texel repeated-edge gutter so bilinear filtering never samples a neighbour (none along a side that
-spans the whole page: the page's clamped edge is the image's own edge). Strips taller
-than they are wide are stored transposed (flag 16), so every row of the atlas stays short. The image's entry keeps
-its own standalone texture (the runtime uses it for the rare skins whose texture coordinates leave [0, 1]) and
-records its atlas and position (flag 8, see the index), so the renderer maps the batch's texture coordinates into
-the atlas and binds one texture for the whole interface.
+packed into ONE RGBA8 atlas, "ui-atlas/0" (512x256: hardware tests #44-#46 drew a whole interface from a texture
+of that size without a flash; 1024x512 flashed), each with a 1-texel repeated-edge gutter so bilinear filtering
+never samples a neighbour (none along a side that spans the whole page: the page's clamped edge is the image's
+own edge). Strips taller than they are wide are stored transposed (flag 16), so every row of the atlas stays
+short. The image's entry keeps its own standalone texture (the runtime uses it for the rare skins whose texture
+coordinates leave [0, 1]) and records its atlas and position (flag 8, see the index), so the renderer maps the
+batch's texture coordinates into the atlas and binds one texture for the whole interface.
+
+The same atlas holds (version 3):
+  - the glyphs of Morrowind's bitmap fonts (FONTS: the game font and the scroll font, Fonts/<name>.fnt with its
+    .tex page), each glyph's cell cut from the page and placed with a gutter; the font table (see below) gives the
+    runtime each glyph's atlas rectangle, so the font loader builds MyGUI's manual fonts on the atlas instead of
+    uploading the pages: no font texture is ever bound;
+  - a reserved icon region (ICON_SLOTS slots of ICON_SIZE texels) the runtime fills with the item and effect
+    icons the interface shows, and a reserved MAP_SIZE square for the local map, both at the bottom right (the
+    regions' place is in the header). The runtime copies into them while the GPU is idle.
 
 Pack layout (little endian), read by components/render3ds/texturepack.cpp:
   header  (32 bytes): magic 'O3TP', version, entry count, index offset, data offset, 3 x reserved
@@ -53,7 +62,13 @@ image fills srcWidth x srcHeight of the cooked width x height, from the top left
 atlas (atlas, atlasPos), 16 = stored transposed in the atlas (atlas x runs along the image's rows: the image's
 (u, v) is at atlas texel (x + v * srcHeight, y + u * srcWidth)).
 
-Version 2 (the atlas); version 1 packs are refused by the runtime.
+  fonts   (font count x 2064 bytes, at the header's fonts offset): u64 hash of "fonts/<name>" (the .fnt's key),
+          u32 page width, u32 page height (the .tex, for checking), then 256 x (u16 x, y, w, h): the glyph of
+          each .fnt code in the atlas (w = h = 0: no glyph).
+  header reserved[0] = fonts offset, reserved[1] = font count, reserved[2] = icon region x | y << 16 (the icon
+  slots fill it row by row from the top left; the map square sits under them at the same x).
+
+Version 3 (one 512x256 atlas with the fonts and the reserved regions); older packs are refused by the runtime.
 
 Usage:
   python tools/cook_textures.py --data "D:/.../Morrowind/Data Files" --resources build/openmw/resources/vfs \
@@ -63,6 +78,7 @@ Usage:
 import argparse
 import io
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -74,7 +90,7 @@ import numpy as np
 from PIL import Image
 
 MAGIC = b"O3TP"
-VERSION = 2
+VERSION = 3
 HEADER_SIZE = 32
 ENTRY_SIZE = 32
 DATA_ALIGN = 128
@@ -96,9 +112,18 @@ UI_TEXTURE_NAMES = ("menu_", "tx_menu", "tx_cursor", "compass", "target", "scrol
 UI_MAX_SIZE = 256  # the longest side of any cooked UI texture (hardware test #40)
 # UI atlas (see the docstring): the images that go in, and its shape.
 ATLAS_KEY = "ui-atlas/"
-ATLAS_WIDTH = 256
-ATLAS_MAX_HEIGHT = 256
+ATLAS_WIDTH = 512
+ATLAS_HEIGHT = 256
 ATLAS_GUTTER = 1
+# The bitmap fonts whose glyphs go in the atlas: Morrowind.ini's Fonts_Font_0 (the game font) and Fonts_Font_2
+# (the scroll font), as OpenMW's font loader picks them.
+FONTS = ("magic_cards_regular", "daedric_font")
+FONT_RECORD_SIZE = 16 + 256 * 8
+# The reserved regions, bottom right: icon slots (an item icon is 32x32; the Inventory window shows 5x4, the quick
+# keys and the effects a few more) and the local map square under them.
+ICON_SIZE = 32
+ICON_SLOTS = (7, 3)
+MAP_SIZE = 64
 # Not atlased: the item icons (1,200 of them: two more atlases, 8 MB of linear memory for the Inventory tab alone),
 # book and level-up art, birthsigns (big pictures).
 ATLAS_EXCLUDED = ("icons/", "bookart/", "textures/levelup/", "textures/birthsigns/")
@@ -168,48 +193,87 @@ def is_atlas_candidate(key, width, height):
     return max(width, height) <= ATLAS_MAX_SIDE and width * height <= ATLAS_MAX_AREA
 
 
+def referenced_textures(folders):
+    """The texture names the MyGUI skins and layouts in `folders` reference (texture="..." in .xml/.layout/.skin)
+    and the ones OpenMW's interface code names ("textures/..." literals in .cpp), as normalized keys without
+    extension. Only these go in the UI atlas: the whole menu set (167 images) needs three pages."""
+    xml_pattern = re.compile(r'texture\s*=\s*"([^"]+)"', re.IGNORECASE)
+    code_pattern = re.compile(r'"(textures/[A-Za-z0-9_/]+)(?:\.(?:dds|tga|png))?"')
+    names = set()
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for file in os.listdir(folder):
+            path = os.path.join(folder, file)
+            if file.endswith((".xml", ".layout", ".skin")):
+                pattern = xml_pattern
+            elif file.endswith((".cpp", ".hpp")):
+                pattern = code_pattern
+            else:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for match in pattern.finditer(f.read()):
+                    names.add(stem_key(normalize(match.group(1))))
+    return names
+
+
 def atlas_gutters(width, height):
     """The gutter on each axis: none along a side that spans the whole page (the page edge clamps to it)."""
-    return (0 if width >= ATLAS_WIDTH else ATLAS_GUTTER), (0 if height >= ATLAS_MAX_HEIGHT else ATLAS_GUTTER)
+    return (0 if width >= ATLAS_WIDTH else ATLAS_GUTTER), (0 if height >= ATLAS_HEIGHT else ATLAS_GUTTER)
 
 
-def pack_atlases(images):
-    """images: [(key, rgba numpy array, transposed)] -> ([(atlas index, x, y) per image], [(width, height)] per atlas).
-    Shelf packing: rows of images sorted by height, each cell with its gutter; an atlas is ATLAS_WIDTH wide and as
-    high as its rows need, rounded to a power of two, and a new one starts when the rows pass ATLAS_MAX_HEIGHT."""
-    cells = sorted(range(len(images)), key=lambda i: (-images[i][1].shape[0], -images[i][1].shape[1], images[i][0]))
-    placements = [None] * len(images)
-    atlases = []
-    atlas = 0
-    x = y = row_height = 0
-    for i in cells:
-        h, w = images[i][1].shape[:2]
+def reserved_region():
+    """The reserved rectangle (x, y, w, h), bottom right: the icon slots with the map square under them."""
+    w = max(ICON_SLOTS[0] * ICON_SIZE, MAP_SIZE)
+    h = ICON_SLOTS[1] * ICON_SIZE + MAP_SIZE
+    return ATLAS_WIDTH - w, ATLAS_HEIGHT - h, w, h
+
+
+def pack_atlas(cells):
+    """cells: [(key, rgba numpy array)] -> {key: (x, y)} of each cell's top-left texel inside its gutter. Guillotine
+    packing of one ATLAS_WIDTH x ATLAS_HEIGHT page with the reserved region kept free: the page starts as two free
+    rectangles around the region; each cell (tallest first, then widest) takes the free rectangle whose shorter
+    leftover is the smallest and splits its remainder along the longer leftover; the long strips go first."""
+    rx, ry, rw, rh = reserved_region()
+    free = [(0, 0, ATLAS_WIDTH, ry), (0, ry, rx, ATLAS_HEIGHT - ry)]
+    sized = []
+    for key, texels in cells:
+        h, w = texels.shape[:2]
         gx, gy = atlas_gutters(w, h)
-        cw, ch = w + 2 * gx, h + 2 * gy
-        if cw > ATLAS_WIDTH or ch > ATLAS_MAX_HEIGHT:
-            raise RuntimeError(f"{images[i][0]}: {w}x{h} does not fit the UI atlas")
-        if x + cw > ATLAS_WIDTH:
-            x, y, row_height = 0, y + row_height, 0
-        if y + ch > ATLAS_MAX_HEIGHT:
-            atlases.append((ATLAS_WIDTH, pow2_ceil(y, ATLAS_MAX_HEIGHT)))
-            atlas += 1
-            x = y = row_height = 0
-        placements[i] = (atlas, x + gx, y + gy)
-        x += cw
-        row_height = max(row_height, ch)
-    if images:
-        atlases.append((ATLAS_WIDTH, pow2_ceil(y + row_height, ATLAS_MAX_HEIGHT)))
-    return placements, atlases
+        sized.append((key, w + 2 * gx, h + 2 * gy, gx, gy))
+    placements = {}
+    area = sum(w * h for _, w, h, _, _ in sized)
+    # The long strips first: they take whole rows at the top before the page fragments.
+    for key, w, h, gx, gy in sorted(sized, key=lambda c: (0 if c[1] > ATLAS_WIDTH // 4 else 1, -c[2], -c[1], c[0])):
+        best = None
+        for index, (fx, fy, fw, fh) in enumerate(free):
+            if w <= fw and h <= fh:
+                score = (min(fw - w, fh - h), max(fw - w, fh - h))
+                if best is None or score < best[0]:
+                    best = (score, index)
+        if best is None:
+            raise RuntimeError(f"the UI atlas is full at {key} ({w}x{h}): {len(placements)} of {len(cells)} cells "
+                               f"placed, {100 * area // (ATLAS_WIDTH * ATLAS_HEIGHT)}% of the page needed by the "
+                               f"cells alone")
+        fx, fy, fw, fh = free.pop(best[1])
+        placements[key] = (fx + gx, fy + gy)
+        if fw - w > fh - h:  # split vertically: the whole strip to the right, the rest under the cell
+            free.append((fx + w, fy, fw - w, fh))
+            free.append((fx, fy + h, w, fh - h))
+        else:
+            free.append((fx, fy + h, fw, fh - h))
+            free.append((fx + w, fy, fw - w, h))
+        free = [r for r in free if r[2] > 0 and r[3] > 0]
+    return placements
 
 
-def build_atlas(index, size, images, placements, tex3ds):
-    """Composes one atlas (each image with its repeated-edge gutter), flips it like every cooked texture and encodes
+def build_atlas(cells, placements, tex3ds):
+    """Composes the atlas (each cell with its repeated-edge gutter), flips it like every cooked texture and encodes
     it as RGBA8. Returns the pack entry tuple."""
-    width, height = size
+    width, height = ATLAS_WIDTH, ATLAS_HEIGHT
     canvas = np.zeros((height, width, 4), dtype=np.uint8)
-    for (key, texels, _), (atlas, x, y) in zip(images, placements):
-        if atlas != index:
-            continue
+    for key, texels in cells:
+        x, y = placements[key]
         h, w = texels.shape[:2]
         gx, gy = atlas_gutters(w, h)
         canvas[y - gy : y + h + gy, x - gx : x + w + gx] = np.pad(texels, ((gy, gy), (gx, gx), (0, 0)), mode="edge")
@@ -226,13 +290,40 @@ def build_atlas(index, size, images, placements, tex3ds):
             blob = f.read()
     data = blob[4:]
     if len(data) != width * height * 4:
-        raise RuntimeError(f"UI atlas {index}: {len(data)} bytes, expected {width * height * 4}")
-    alpha = canvas[..., 3]
-    flags = FLAG_ALPHA if alpha.min() < 255 else 0
-    if flags and not ((alpha > 0) & (alpha < 255)).any():
-        flags |= FLAG_ALPHA_BINARY
-    key = f"{ATLAS_KEY}{index}"
-    return (fnv1a64(key), key, data, width, height, width, height, GPU_RGBA8, 1, flags, 0, 0)
+        raise RuntimeError(f"UI atlas: {len(data)} bytes, expected {width * height * 4}")
+    key = f"{ATLAS_KEY}0"
+    return (fnv1a64(key), key, data, width, height, width, height, GPU_RGBA8, 1, FLAG_ALPHA, 0, 0), canvas
+
+
+def read_bitmap_font(data_dir, name):
+    """Morrowind's Fonts/<name>.fnt (OpenMW's FontLoader::loadBitmapFont: size, two ones, a 284-byte page name,
+    256 glyph records of 14 floats: unknown, four corners as page UVs, width, height, two kernings, ascent) and its
+    .tex page (width, height, RGBA rows top first). Returns (page width, page height, [(code, rgba cell)])."""
+    fonts = os.path.join(data_dir, "Fonts")
+    fnt = next((os.path.join(fonts, f) for f in os.listdir(fonts) if f.lower() == name + ".fnt"), None)
+    if fnt is None:
+        raise RuntimeError(f"font {name}.fnt not found in {fonts}")
+    with open(fnt, "rb") as f:
+        size, one_a, one_b = struct.unpack("<fii", f.read(12))
+        page_name = f.read(284).split(b"\0", 1)[0].decode("latin-1")
+        records = [struct.unpack("<14f", f.read(56)) for _ in range(256)]
+    if (one_a, one_b) != (1, 1):
+        raise RuntimeError(f"{fnt}: unexpected header")
+    tex = next((os.path.join(fonts, f) for f in os.listdir(fonts) if f.lower() == (page_name + ".tex").lower()), None)
+    if tex is None:
+        raise RuntimeError(f"font page {page_name}.tex not found in {fonts}")
+    with open(tex, "rb") as f:
+        width, height = struct.unpack("<ii", f.read(8))
+        page = np.frombuffer(f.read(width * height * 4), dtype=np.uint8).reshape(height, width, 4)
+    glyphs = []
+    for code, r in enumerate(records):
+        x1, y1 = r[1] * width, r[2] * height
+        x2, y2 = r[3] * width, r[6] * height  # top right x, bottom left y
+        x1, y1, x2, y2 = (int(round(v)) for v in (x1, y1, x2, y2))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        glyphs.append((code, np.ascontiguousarray(page[y1:y2, x1:x2])))
+    return width, height, glyphs
 
 
 def collect_sources(data_dir, archives, prefixes, resources=None):
@@ -337,7 +428,7 @@ def pow2_ceil(n, max_size):
 
 
 def cook_one(job):
-    key, name, raw, max_size, tex3ds, quality = job
+    key, name, raw, max_size, tex3ds, quality, referenced = job
     image = Image.open(io.BytesIO(raw))
     image.load()
     if key.startswith(GLYPH_PREFIX) and max(image.size) > GLYPH_SIZE:
@@ -392,7 +483,7 @@ def cook_one(job):
             rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
 
     atlas_texels = None
-    if ui and is_atlas_candidate(key, src_w, src_h):
+    if ui and referenced and is_atlas_candidate(key, src_w, src_h):
         # The image itself (no padding, top row first); strips taller than wide are stored transposed.
         atlas_texels = np.array(rgba) if resampled else np.array(rgba)[:src_h, :src_w].copy()
         if atlas_texels.shape[0] > atlas_texels.shape[1] and atlas_texels.shape[0] > 64:
@@ -451,12 +542,19 @@ def main():
     parser.add_argument("--tex3ds", default=DEFAULT_TEX3DS)
     parser.add_argument("--jobs", type=int, default=os.cpu_count())
     parser.add_argument("--limit", type=int, default=0, help="cook only the first N textures (testing)")
+    parser.add_argument("--atlas-preview", default="", help="also write the UI atlas as this PNG (top row first)")
+    parser.add_argument("--layouts", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                                          "packaging", "ui3ds", "mygui"),
+                        help="comma-separated folders of the port's own MyGUI layouts and skins")
     args = parser.parse_args()
 
     started = time.time()
     archives = [a.strip() for a in args.archives.split(",") if a.strip()]
     prefixes = tuple(normalize(p.strip()) for p in args.prefixes.split(",") if p.strip())
     sources = collect_sources(args.data, archives, prefixes, args.resources)
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    referenced = referenced_textures([os.path.join(args.resources, "mygui")] + args.layouts.split(",")
+                                     + [os.path.join(repo, "openmw", "apps", "openmw", "mwgui")])
     keys = sorted(sources)
     if args.limit:
         keys = keys[: args.limit]
@@ -468,7 +566,7 @@ def main():
             name, (path, offset, size) = sources[key]
             f = handles.get(path) or handles.setdefault(path, open(path, "rb"))
             f.seek(offset)
-            yield key, name, f.read(size), args.max_size, args.tex3ds, args.quality
+            yield key, name, f.read(size), args.max_size, args.tex3ds, args.quality, key in referenced
         for f in handles.values():
             f.close()
 
@@ -480,33 +578,53 @@ def main():
             if (i + 1) % 250 == 0:
                 print(f"  {i + 1}/{len(keys)}", flush=True)
 
-    # The UI atlas: pack the candidates, then give each its atlas and position.
-    atlas_images = [(key, texels, bool(flags & FLAG_ATLAS_TRANSPOSED))
-                    for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results if texels is not None]
-    placements, atlas_sizes = pack_atlases(atlas_images)
-    placed = {key: placement for (key, _, _), placement in zip(atlas_images, placements)}
+    # The UI atlas: the candidate images and the fonts' glyphs packed into one page.
+    cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
+             if texels is not None]
+    fonts = []
+    for font in FONTS:
+        page_w, page_h, glyphs = read_bitmap_font(args.data, font)
+        fonts.append((font, page_w, page_h, glyphs))
+        cells += [(f"glyph:{font}:{code}", texels) for code, texels in glyphs]
+    placements = pack_atlas(cells)
     entries = []
     for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
-        atlas, x, y = placed.get(key, (0, 0, 0))
-        entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, atlas, x | (y << 16)))
-    for index, size in enumerate(atlas_sizes):
-        entries.append(build_atlas(index, size, atlas_images, placements, args.tex3ds))
-        used = sum((t.shape[0] + 2 * ATLAS_GUTTER) * (t.shape[1] + 2 * ATLAS_GUTTER)
-                   for (_, t, _), (a, _, _) in zip(atlas_images, placements) if a == index)
-        print(f"  UI atlas {index}: {size[0]}x{size[1]} RGBA8, {sum(1 for p in placements if p[0] == index)} images, "
-              f"{100 * used // (size[0] * size[1])}% used")
+        x, y = placements.get(key, (0, 0))
+        entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
+    atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
+    entries.append(atlas_entry)
+    if args.atlas_preview:
+        Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
+    font_table = bytearray()
+    for font, page_w, page_h, glyphs in fonts:
+        font_table += struct.pack("<QII", fnv1a64(f"fonts/{font}"), page_w, page_h)
+        rects = [(0, 0, 0, 0)] * 256
+        for code, texels in glyphs:
+            x, y = placements[f"glyph:{font}:{code}"]
+            rects[code] = (x, y, texels.shape[1], texels.shape[0])
+        for rect in rects:
+            font_table += struct.pack("<HHHH", *rect)
+    assert len(font_table) == FONT_RECORD_SIZE * len(fonts)
+    rx, ry, rw, rh = reserved_region()
+    used = sum((t.shape[0] + 2 * ATLAS_GUTTER) * (t.shape[1] + 2 * ATLAS_GUTTER) for _, t in cells)
+    print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells) - sum(len(f[3]) for f in fonts)} images, "
+          f"{sum(len(f[3]) for f in fonts)} glyphs of {len(fonts)} fonts, reserved {rw}x{rh} at {rx},{ry} "
+          f"({ICON_SLOTS[0]}x{ICON_SLOTS[1]} icon slots, {MAP_SIZE}x{MAP_SIZE} map), "
+          f"{100 * (used + rw * rh) // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
     entries.sort(key=lambda e: e[0])
     for a, b in zip(entries, entries[1:]):
         if a[0] == b[0]:
             raise RuntimeError(f"hash collision: {a[1]} / {b[1]}")
 
     index_offset = HEADER_SIZE
-    data_offset = (index_offset + ENTRY_SIZE * len(entries) + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN
+    fonts_offset = index_offset + ENTRY_SIZE * len(entries)
+    data_offset = (fonts_offset + len(font_table) + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     tmp_out = args.out + ".tmp"
     by_format = {}
     with open(tmp_out, "wb") as f:
-        f.write(struct.pack("<4sIIII3I", MAGIC, VERSION, len(entries), index_offset, data_offset, 0, 0, 0))
+        f.write(struct.pack("<4sIIII3I", MAGIC, VERSION, len(entries), index_offset, data_offset, fonts_offset,
+                            len(fonts), rx | (ry << 16)))
         offset = data_offset
         index = bytearray()
         for hash_, key, data, w, h, src_w, src_h, fmt, levels, flags, atlas, atlas_pos in entries:
@@ -516,6 +634,7 @@ def main():
             count, total = by_format.get(fmt, (0, 0))
             by_format[fmt] = (count + 1, total + len(data))
         f.write(index)
+        f.write(font_table)
         for hash_, key, data, *_ in entries:
             f.seek((f.tell() + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN)
             f.write(data)
@@ -524,9 +643,10 @@ def main():
 
     ui_count = sum(1 for e in entries if e[9] & FLAG_PADDED)
     print(f"  UI images padded to a power of two (no mipmaps): {ui_count}")
-    ui_max = max((max(e[3], e[4]) for e in entries if is_ui(e[1]) or e[1].startswith(ATLAS_KEY)), default=0)
-    all_max = max(max(e[3], e[4]) for e in entries)
-    print(f"  largest cooked side: UI textures {ui_max}, every texture {all_max} (hardware test #40: UI <= 256)")
+    ui_max = max((max(e[3], e[4]) for e in entries if is_ui(e[1])), default=0)
+    all_max = max(max(e[3], e[4]) for e in entries if not e[1].startswith(ATLAS_KEY))
+    print(f"  largest cooked side: UI textures {ui_max}, every texture {all_max} (hardware test #40: UI <= 256), "
+          f"the UI atlas {ATLAS_WIDTH}x{ATLAS_HEIGHT}")
     if ui_max > UI_MAX_SIZE:
         raise RuntimeError(f"a UI texture has a side of {ui_max} > {UI_MAX_SIZE}")
     names = {GPU_RGBA8: "RGBA8", GPU_ETC1: "ETC1", GPU_ETC1A4: "ETC1A4"}
