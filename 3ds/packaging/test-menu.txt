@@ -1,6 +1,5 @@
-title Test #45: the port's own interface, the HUD - pick a run
-logs test45
-run A: new interface | lumiere
+title Test #46: Lumiere, polished - pick a run
+logs test46
+run A: Lumiere | lumiere
 run B: MyGUI interface (CPU) |
-run C: MyGUI interface (GPU) | gpu-ui
 run Normal game |
