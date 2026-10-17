@@ -654,6 +654,11 @@ namespace MyGUIPlatform
         return &it->second;
     }
 
+    bool RenderManager::hasTexture(const std::string& name) const
+    {
+        return mTextures.count(name) != 0;
+    }
+
     void RenderManager::destroyTexture(MyGUI::ITexture* texture)
     {
         if (texture == nullptr)

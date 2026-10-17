@@ -329,7 +329,7 @@ namespace Gui
             }
             constexpr const char* atlasName = "ui-atlas/0";
             auto& renderManager = static_cast<MyGUIPlatform::RenderManager&>(MyGUI::RenderManager::getInstance());
-            if (renderManager.getTexture(atlasName) == nullptr)
+            if (!renderManager.hasTexture(atlasName))
                 renderManager.createTextureFor(atlasName, atlas, atlas->getImage()->s(), atlas->getImage()->t());
 
             MyGUI::xml::Document document;

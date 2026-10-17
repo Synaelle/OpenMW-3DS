@@ -39,6 +39,7 @@
 #include <sys/stat.h>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <string>
@@ -2928,6 +2929,105 @@ namespace Render3DS
             return gGuiBuffer != nullptr;
         }
 
+        // Item and effect icons in the UI atlas: the reserved region's slots (tools/cook_textures.py ICON_SIZE,
+        // ICON_SLOTS, MAP_SIZE: the icon rows, the local map's square under them) take the cooked 32x32 (or 16x16)
+        // RGBA8 icons the interface shows, copied tile by tile (the atlas and the icons are tiled and stored
+        // bottom-up alike), so the whole interface still samples one texture. A slot is reused once the GPU can't
+        // be reading it any more (two frames after its last draw); when every slot is that recent, the icon binds
+        // its own texture for this frame. The copy bumps gTextureGeneration: the CPU interface decodes the atlas
+        // again.
+        constexpr unsigned kAtlasIconSize = 32, kAtlasIconColumns = 7, kAtlasIconRows = 2;
+        struct AtlasIconSlot
+        {
+            const osg::Image* mImage = nullptr;
+            unsigned mModified = 0;
+            uint32_t mLastFrame = 0;
+            uint16_t mPixels = 0;
+        };
+        AtlasIconSlot gAtlasIcons[kAtlasIconColumns * kAtlasIconRows];
+#ifdef OPENMW3DS_DEBUG
+        std::unordered_map<const C3D_Tex*, std::string> gGuiTextureNames; // what the GUI passes bind (the log)
+#endif
+
+        // Whether a small runtime image is one colour all over (then `rgba` is it). Cached per image.
+        bool uniformImage(const osg::Image& image, uint8_t* rgba)
+        {
+            struct Known
+            {
+                unsigned mModified;
+                bool mUniform;
+                uint8_t mRgba[4];
+            };
+            static std::unordered_map<const osg::Image*, Known> known;
+            Known& k = known[&image];
+            if (k.mModified != image.getModifiedCount() || known.size() == 1)
+            {
+                k.mModified = image.getModifiedCount();
+                k.mUniform = false;
+                const unsigned texels = static_cast<unsigned>(image.s()) * image.t();
+                const unsigned bytes = image.getPixelFormat() == GL_RGBA ? 4 : image.getPixelFormat() == GL_RGB ? 3 : 0;
+                if (bytes != 0 && image.getDataType() == GL_UNSIGNED_BYTE && texels <= 64 && image.data() != nullptr)
+                {
+                    const uint8_t* p = image.data();
+                    k.mUniform = true;
+                    for (unsigned i = 1; i < texels && k.mUniform; ++i)
+                        k.mUniform = std::memcmp(p, p + i * bytes, bytes) == 0;
+                    std::memcpy(k.mRgba, p, bytes);
+                    if (bytes == 3)
+                        k.mRgba[3] = 255;
+                }
+            }
+            if (k.mUniform)
+                std::memcpy(rgba, k.mRgba, 4);
+            return k.mUniform;
+        }
+
+        bool isAtlasIcon(const CookedImage& image)
+        {
+            return image.gpuFormat() == GPU_RGBA8 && image.s() == image.t() && image.levels() <= 1
+                && !image.padded() && (image.s() == kAtlasIconSize || image.s() == kAtlasIconSize / 2);
+        }
+
+        // The slot drawing this icon (its texels copied in when the icon is new there), or -1.
+        int atlasIconSlot(const CookedImage& icon, C3D_Tex& atlas)
+        {
+            int slot = -1;
+            for (unsigned i = 0; i < std::size(gAtlasIcons) && slot < 0; ++i)
+                if (gAtlasIcons[i].mImage == &icon && gAtlasIcons[i].mModified == icon.getModifiedCount())
+                    slot = static_cast<int>(i);
+            if (slot < 0)
+            {
+                for (unsigned i = 0; i < std::size(gAtlasIcons) && slot < 0; ++i)
+                    if (gAtlasIcons[i].mImage == nullptr || gAtlasIcons[i].mLastFrame + 2 <= gFrame)
+                        slot = static_cast<int>(i);
+                if (slot < 0)
+                    return -1;
+                unsigned regionX, regionY;
+                uiAtlasReservedRegion(regionX, regionY);
+                AtlasIconSlot& s = gAtlasIcons[slot];
+                s.mImage = &icon;
+                s.mModified = icon.getModifiedCount();
+                s.mPixels = static_cast<uint16_t>(icon.s());
+                const unsigned col = static_cast<unsigned>(slot) % kAtlasIconColumns;
+                const unsigned row = static_cast<unsigned>(slot) / kAtlasIconColumns;
+                const unsigned x = regionX + col * kAtlasIconSize;
+                // Both stored bottom-up: the slot's rows are counted from the bottom of the atlas, and a 16 px icon
+                // takes the slot's top-left quarter (the quad samples s.mPixels).
+                const unsigned yStored = atlas.height - (regionY + row * kAtlasIconSize) - s.mPixels;
+                const unsigned tiles = s.mPixels / 8u, tilesPerRow = atlas.width / 8u;
+                auto* dst = static_cast<uint8_t*>(atlas.data);
+                const auto* src = static_cast<const uint8_t*>(icon.gpuData());
+                for (unsigned ty = 0; ty < tiles; ++ty)
+                    for (unsigned tx = 0; tx < tiles; ++tx)
+                        std::memcpy(dst + ((yStored / 8u + ty) * tilesPerRow + x / 8u + tx) * 256u,
+                            src + (ty * tiles + tx) * 256u, 256u);
+                GSPGPU_FlushDataCache(atlas.data, atlas.size);
+                ++gTextureGeneration;
+            }
+            gAtlasIcons[slot].mLastFrame = gFrame;
+            return slot;
+        }
+
         // Copies this frame's batches into the GUI buffer and returns a hash of what they draw.
         //
         // Texture coordinates: a padded UI texture's are scaled to the image; an image in the UI atlas (hardware
@@ -2971,6 +3071,7 @@ namespace Render3DS
                 uint32_t mCount;
                 float mScaleU, mScaleV, mOffsetU, mOffsetV;
                 bool mTransposed, mFlipV;
+                uint8_t mTint[4]; // multiplied into the vertex colours (a uniform image drawn untextured)
                 Box mBox;
                 uint32_t mFirstTriangle; // into triangles
                 int mNext; // next batch of the same draw, or -1
@@ -3007,12 +3108,26 @@ namespace Render3DS
                 const auto* in = static_cast<const GuiVertex*>(batch.mVertices);
                 C3D_Tex* texture = nullptr;
                 bool atlased = false;
-                if (cooked != nullptr && cooked->inAtlas())
+                int iconSlot = -1;
+                uint8_t tint[4] = { 255, 255, 255, 255 };
+                bool inside = cooked != nullptr;
+                for (uint32_t i = 0; i < batch.mCount && inside; ++i)
+                    inside = in[i].mTexCoord[0] >= -kUvSlack && in[i].mTexCoord[0] <= 1.f + kUvSlack
+                        && in[i].mTexCoord[1] >= -kUvSlack && in[i].mTexCoord[1] <= 1.f + kUvSlack;
+                if (cooked != nullptr && !cooked->inAtlas() && inside && isAtlasIcon(*cooked))
                 {
-                    bool inside = true;
-                    for (uint32_t i = 0; i < batch.mCount && inside; ++i)
-                        inside = in[i].mTexCoord[0] >= -kUvSlack && in[i].mTexCoord[0] <= 1.f + kUvSlack
-                            && in[i].mTexCoord[1] >= -kUvSlack && in[i].mTexCoord[1] <= 1.f + kUvSlack;
+                    osg::Texture* atlasTexture = uiAtlasTexture(0);
+                    C3D_Tex* atlas = atlasTexture != nullptr ? textureFor(*atlasTexture) : nullptr;
+                    if (atlas != nullptr)
+                        iconSlot = atlasIconSlot(*cooked, *atlas);
+                    if (iconSlot >= 0)
+                    {
+                        texture = atlas;
+                        atlased = true;
+                    }
+                }
+                else if (cooked != nullptr && cooked->inAtlas())
+                {
                     if (inside)
                     {
                         if (osg::Texture* atlas = uiAtlasTexture(cooked->atlasIndex()))
@@ -3027,13 +3142,46 @@ namespace Render3DS
                 if (!atlased)
                 {
                     texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
+                    // A uniform runtime image (OpenMW's "white", "black" and "transparent" 8x8 fills): no texture,
+                    // its colour multiplied into the vertices instead.
+                    if (texture != nullptr && cooked == nullptr && uniformImage(*image, tint))
+                        texture = nullptr;
+#ifdef OPENMW3DS_DEBUG
+                    // What still binds a texture of its own in the interface pass (the rule: only the UI atlas).
+                    if (texture != nullptr && gGuiTextureNames.count(texture) == 0)
+                        gGuiTextureNames[texture] = image->getFileName().empty()
+                            ? "(runtime " + std::to_string(image->s()) + "x" + std::to_string(image->t()) + ")"
+                            : image->getFileName();
+                    static std::set<const osg::Image*> loggedOwn;
+                    if (texture != nullptr && image != nullptr && loggedOwn.insert(image).second)
+                        P3DS_LOGI("render3ds: GUI: %s drawn from its own texture (%dx%d%s%s, format %x type %x, first "
+                                  "texel %02x%02x%02x%02x)",
+                            image->getFileName().empty() ? "(runtime image)" : image->getFileName().c_str(),
+                            image->s(), image->t(), cooked != nullptr ? ", cooked" : "",
+                            !inside ? ", tiled coordinates" : "", (unsigned)image->getPixelFormat(),
+                            (unsigned)image->getDataType(), image->data() ? image->data()[0] : 0,
+                            image->data() ? image->data()[1] : 0, image->data() ? image->data()[2] : 0,
+                            image->data() ? image->data()[3] : 0);
+#endif
                     // A texture the GPU can't show (the local map's render-to-texture tiles until M8 step 5): left
                     // out rather than drawn as a plain white quad.
                     if (batch.mTexture != nullptr && texture == nullptr)
                         continue;
                 }
-                Record record{ in, batch.mCount, 1.f, 1.f, 0.f, 0.f, false, false, Box{}, 0, -1 };
-                if (atlased)
+                Record record{ in, batch.mCount, 1.f, 1.f, 0.f, 0.f, false, false, {}, Box{}, 0, -1 };
+                std::memcpy(record.mTint, tint, 4);
+                if (iconSlot >= 0)
+                {
+                    unsigned regionX, regionY;
+                    uiAtlasReservedRegion(regionX, regionY);
+                    const float atlasWidth = float(texture->width), atlasHeight = float(texture->height);
+                    const float pixels = float(gAtlasIcons[iconSlot].mPixels);
+                    record.mOffsetU = float(regionX + (iconSlot % kAtlasIconColumns) * kAtlasIconSize) / atlasWidth;
+                    record.mOffsetV = float(regionY + (iconSlot / kAtlasIconColumns) * kAtlasIconSize) / atlasHeight;
+                    record.mScaleU = pixels / atlasWidth;
+                    record.mScaleV = pixels / atlasHeight;
+                }
+                else if (atlased)
                 {
                     record.mTransposed = cooked->atlasTransposed();
                     const float atlasWidth = float(texture->width), atlasHeight = float(texture->height);
@@ -3041,8 +3189,9 @@ namespace Render3DS
                     record.mOffsetV = float(cooked->atlasY()) / atlasHeight;
                     // The image's extent in texels: its source size, or its whole texture when the cooker resampled
                     // it (a side above 256, test #40; then it isn't padded).
-                    const float extentW = float(cooked->padded() ? cooked->sourceWidth() : cooked->s());
-                    const float extentH = float(cooked->padded() ? cooked->sourceHeight() : cooked->t());
+                    const float halved = cooked->atlasHalved() ? 0.5f : 1.f;
+                    const float extentW = float(cooked->padded() ? cooked->sourceWidth() : cooked->s()) * halved;
+                    const float extentH = float(cooked->padded() ? cooked->sourceHeight() : cooked->t()) * halved;
                     record.mScaleU = (record.mTransposed ? extentH : extentW) / atlasWidth;
                     record.mScaleV = (record.mTransposed ? extentW : extentH) / atlasHeight;
                 }
@@ -3125,7 +3274,8 @@ namespace Render3DS
                         std::memcpy(out[i].mPosition, in[i].mPosition, 12);
                         out[i].mNormal[0] = out[i].mNormal[1] = 0.f;
                         out[i].mNormal[2] = 1.f;
-                        std::memcpy(out[i].mColor, in[i].mColor, 4);
+                        for (int k = 0; k < 4; ++k)
+                            out[i].mColor[k] = static_cast<uint8_t>((unsigned(in[i].mColor[k]) * record.mTint[k] + 127) / 255);
                         const float u = record.mTransposed ? in[i].mTexCoord[1] : in[i].mTexCoord[0];
                         const float v = record.mTransposed ? in[i].mTexCoord[0] : in[i].mTexCoord[1];
                         out[i].mTexCoord[0] = record.mOffsetU + u * record.mScaleU;
@@ -3158,11 +3308,18 @@ namespace Render3DS
 
             C3D_Tex* bound = reinterpret_cast<C3D_Tex*>(1);
             int blend = -1;
+            static std::vector<C3D_Tex*> seen; // the distinct textures of this pass (the stats)
+            seen.clear();
             for (const GuiDraw& draw : gGuiDraws)
             {
                 if (draw.mTexture != bound)
                 {
                     bound = draw.mTexture;
+                    if (std::find(seen.begin(), seen.end(), bound) == seen.end())
+                    {
+                        seen.push_back(bound);
+                        ++gStats.mGuiTextureBinds;
+                    }
                     if (bound != nullptr)
                         C3D_TexBind(0, bound);
                     gBound.mTexEnv = -1;
@@ -4557,6 +4714,31 @@ namespace Render3DS
                 gBottomHash = hash;
                 ++gStats.mGuiBottomFrames;
             }
+#ifdef OPENMW3DS_DEBUG
+            // The rule since hardware test #38: one texture for the whole interface pass. Logged when it changes.
+            if (!soft)
+            {
+                static uint32_t lastBinds = 0, lastDraws = 0;
+                if (gStats.mGuiTextureBinds != lastBinds || gStats.mGuiDraws != lastDraws)
+                {
+                    lastBinds = gStats.mGuiTextureBinds;
+                    lastDraws = gStats.mGuiDraws;
+                    std::string names;
+                    std::vector<C3D_Tex*> listed;
+                    for (const GuiDraw& draw : gGuiDraws)
+                    {
+                        if (std::find(listed.begin(), listed.end(), draw.mTexture) != listed.end())
+                            continue;
+                        listed.push_back(draw.mTexture);
+                        const auto it = gGuiTextureNames.find(draw.mTexture);
+                        names += ' ';
+                        names += draw.mTexture == nullptr ? "(none)" : it != gGuiTextureNames.end() ? it->second : "?";
+                    }
+                    P3DS_LOGI("render3ds: GUI passes: %lu draws, %lu distinct textures:%s", (unsigned long)lastDraws,
+                        (unsigned long)lastBinds, names.c_str());
+                }
+            }
+#endif
 
             // The rest of the frame's state is the scene's: rebind it when the next frame starts (beginFrame).
             gBound = Bound{};

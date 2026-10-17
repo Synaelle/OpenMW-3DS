@@ -55,6 +55,7 @@ namespace Render3DS
         // surrounds it. This image's own data is still the standalone texture (for skins that tile).
         bool inAtlas() const { return (mFlags & 8) != 0; }
         bool atlasTransposed() const { return (mFlags & 16) != 0; }
+        bool atlasHalved() const { return (mFlags & 32) != 0; } // the atlas copy is half the size on each side
         uint8_t atlasIndex() const { return mAtlas; }
         uint16_t atlasX() const { return static_cast<uint16_t>(mAtlasPos & 0xFFFF); }
         uint16_t atlasY() const { return static_cast<uint16_t>(mAtlasPos >> 16); }

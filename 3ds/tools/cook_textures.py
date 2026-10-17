@@ -63,7 +63,8 @@ Pack layout (little endian), read by components/render3ds/texturepack.cpp:
 Flags: 1 = has alpha (some texel < 255), 2 = alpha is only 0/255 (good for alpha testing), 4 = padded (UI: the
 image fills srcWidth x srcHeight of the cooked width x height, from the top left; no mipmaps), 8 = also in a UI
 atlas (atlas, atlasPos), 16 = stored transposed in the atlas (atlas x runs along the image's rows: the image's
-(u, v) is at atlas texel (x + v * srcHeight, y + u * srcWidth)).
+(u, v) is at atlas texel (x + v * srcHeight, y + u * srcWidth)), 32 = the atlas copy is half the size on each
+side (the item frames, ATLAS_HALVED_PREFIX).
 
   fonts   (at the header's fonts offset: font count x 24 bytes, then all the glyphs, 32 bytes each)
           font:  u64 hash of the .omwfont's key ("fonts/mysticcards"), u16 ppem (the pixel size), u16 line height
@@ -113,6 +114,10 @@ FLAG_ALPHA_BINARY = 2
 FLAG_PADDED = 4
 FLAG_ATLAS = 8
 FLAG_ATLAS_TRANSPOSED = 16
+FLAG_ATLAS_HALVED = 32
+# ItemWidget's frames over the icons (named by concatenation in the code, so not found by the reference scan),
+# 64x64 drawn at about 40 px: their atlas copy is halved (flag 32; their own texture keeps the full size).
+ATLAS_HALVED_PREFIX = "textures/menu_icon_"
 
 # UI images (see the docstring). Prefixes of normalized paths, then basename prefixes under textures/.
 UI_PREFIXES = ("icons/", "bookart/", "textures/omw_", "textures/levelup/", "textures/birthsigns/")
@@ -219,7 +224,7 @@ def referenced_textures(folders):
     and the ones OpenMW's interface code names ("textures/..." literals in .cpp), as normalized keys without
     extension. Only these go in the UI atlas: the whole menu set (167 images) needs three pages."""
     xml_pattern = re.compile(r'texture\s*=\s*"([^"]+)"', re.IGNORECASE)
-    code_pattern = re.compile(r'"(textures/[A-Za-z0-9_/]+)(?:\.(?:dds|tga|png))?"')
+    code_pattern = re.compile(r'"(textures[/\\][A-Za-z0-9_/\\]+?)(?:\.(?:dds|tga|png))?"')
     names = set()
     for folder in folders:
         if not folder or not os.path.isdir(folder):
@@ -274,19 +279,28 @@ def pack_atlas(cells):
         gl, gt, gr, gb, _ = cell_gutters(key, w, h)
         sized.append((key, w + gl + gr, h + gt + gb, gl, gt))
     placements = {}
+    transposed = set()
     area = sum(w * h for _, w, h, _, _ in sized)
     # The long strips first: they take whole rows at the top before the page fragments.
     for key, w, h, gx, gy in sorted(sized, key=lambda c: (0 if c[1] > ATLAS_WIDTH // 4 else 1, -c[2], -c[1], c[0])):
         best = None
-        for index, (fx, fy, fw, fh) in enumerate(free):
-            if w <= fw and h <= fh:
-                score = (min(fw - w, fh - h), max(fw - w, fh - h))
-                if best is None or score < best[0]:
-                    best = (score, index)
+        # A skin image may also go in turned on its side (flag 16) when that is the only way it still fits.
+        for turned in ((False, True) if not key.startswith(("glyph:", "ui/")) and w != h else (False,)):
+            cw, ch = (h, w) if turned else (w, h)
+            for index, (fx, fy, fw, fh) in enumerate(free):
+                if cw <= fw and ch <= fh:
+                    score = (min(fw - cw, fh - ch), max(fw - cw, fh - ch))
+                    if best is None or score < best[0]:
+                        best = (score, index, turned)
+            if best is not None:
+                break
         if best is None:
             raise RuntimeError(f"the UI atlas is full at {key} ({w}x{h}): {len(placements)} of {len(cells)} cells "
                                f"placed, {100 * area // (ATLAS_WIDTH * ATLAS_HEIGHT)}% of the page needed by the "
                                f"cells alone")
+        if best[2]:
+            transposed.add(key)
+            w, h, gx, gy = h, w, gy, gx
         fx, fy, fw, fh = free.pop(best[1])
         placements[key] = (fx + gx, fy + gy)
         if fw - w > fh - h:  # split vertically: the whole strip to the right, the rest under the cell
@@ -296,7 +310,7 @@ def pack_atlas(cells):
             free.append((fx, fy + h, fw, fh - h))
             free.append((fx + w, fy, fw - w, h))
         free = [r for r in free if r[2] > 0 and r[3] > 0]
-    return placements
+    return placements, transposed
 
 
 def build_atlas(cells, placements, tex3ds):
@@ -437,28 +451,30 @@ def render_truetype(fonts_dir, name, ppem):
     return line_height, glyphs
 
 
-def collect_sources(data_dir, archives, prefixes, resources=None):
+def collect_sources(data_dir, archives, prefixes, resources=None, after=()):
     """name -> (file, offset, size). Later archives and loose files override earlier ones (VFS order); OpenMW's own
-    resources (resources/vfs) come first, as OpenMW adds them before the game's data."""
+    resources (resources/vfs) come first, as OpenMW adds them before the game's data, and the folders in `after`
+    (the port's own interface, packaging/ui3ds) last, as the port's openmw.cfg adds them after it."""
     sources = {}
-    if resources:
-        for root, _, files in os.walk(resources):
+
+    def walk(folder):
+        for root, _, files in os.walk(folder):
             for file in files:
                 full = os.path.join(root, file)
-                name = normalize(os.path.relpath(full, resources))
+                name = normalize(os.path.relpath(full, folder))
                 if name.startswith(prefixes) and name.endswith(IMAGE_EXTENSIONS):
                     sources[name] = (full, 0, os.path.getsize(full))
+
+    if resources:
+        walk(resources)
     for archive in archives:
         bsa = os.path.join(data_dir, archive)
         for name, src in read_bsa_index(bsa).items():
             if name.startswith(prefixes) and name.endswith(IMAGE_EXTENSIONS):
                 sources[name] = src
-    for root, _, files in os.walk(data_dir):
-        for file in files:
-            full = os.path.join(root, file)
-            name = normalize(os.path.relpath(full, data_dir))
-            if name.startswith(prefixes) and name.endswith(IMAGE_EXTENSIONS):
-                sources[name] = (full, 0, os.path.getsize(full))
+    walk(data_dir)
+    for folder in after:
+        walk(folder)
     # One texture per key; OpenMW prefers .dds when both exist.
     by_key = {}
     for name in sorted(sources):
@@ -545,7 +561,7 @@ def cook_one(job):
     if key.startswith(GLYPH_PREFIX) and max(image.size) > GLYPH_SIZE:
         image = image.resize((GLYPH_SIZE, GLYPH_SIZE), Image.Resampling.LANCZOS)
     src_w, src_h = image.size
-    ui = is_ui(key)
+    ui = is_ui(key) or referenced  # a skin's texture is an interface image whatever its name (door_icon)
 
     if name.endswith(".tga") and tga_kill_alpha(raw):
         image = image.convert("RGB")
@@ -597,6 +613,10 @@ def cook_one(job):
     if ui and referenced and is_atlas_candidate(key, src_w, src_h):
         # The image itself (no padding, top row first); strips taller than wide are stored transposed.
         atlas_texels = np.array(rgba) if resampled else np.array(rgba)[:src_h, :src_w].copy()
+        if key.startswith(ATLAS_HALVED_PREFIX) and max(src_w, src_h) > 32:
+            half = Image.fromarray(atlas_texels, "RGBA").resize((src_w // 2, src_h // 2), Image.Resampling.LANCZOS)
+            atlas_texels = np.array(half)
+            flags |= FLAG_ATLAS_HALVED
         if atlas_texels.shape[0] > atlas_texels.shape[1] and atlas_texels.shape[0] > 64:
             atlas_texels = np.ascontiguousarray(atlas_texels.transpose(1, 0, 2))
             flags |= FLAG_ATLAS_TRANSPOSED
@@ -656,16 +676,20 @@ def main():
     parser.add_argument("--atlas-preview", default="", help="also write the UI atlas as this PNG (top row first)")
     parser.add_argument("--layouts", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                           "packaging", "ui3ds", "mygui"),
-                        help="comma-separated folders of the port's own MyGUI layouts and skins")
+                        help="comma-separated folders of the port's own MyGUI layouts and skins (their parent "
+                             "folders are VFS roots read last: the port's own textures)")
     args = parser.parse_args()
 
     started = time.time()
     archives = [a.strip() for a in args.archives.split(",") if a.strip()]
     prefixes = tuple(normalize(p.strip()) for p in args.prefixes.split(",") if p.strip())
-    sources = collect_sources(args.data, archives, prefixes, args.resources)
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    referenced = referenced_textures([os.path.join(args.resources, "mygui")] + args.layouts.split(",")
+    layouts = [folder for folder in args.layouts.split(",") if folder]
+    sources = collect_sources(args.data, archives, prefixes, args.resources,
+                              after=[os.path.dirname(folder) for folder in layouts])
+    referenced = referenced_textures([os.path.join(args.resources, "mygui")] + layouts
                                      + [os.path.join(repo, "openmw", "apps", "openmw", "mwgui")])
+    referenced.update(key for key in sources if key.startswith(ATLAS_HALVED_PREFIX))
     keys = sorted(sources)
     if args.limit:
         keys = keys[: args.limit]
@@ -700,10 +724,13 @@ def main():
             cells += [(f"glyph:{font}:{ppem}:{g[0]}", g[1]) for g in glyphs if isinstance(g[1], np.ndarray)]
     for key, alpha in SPECIAL_CELLS.items():
         cells.append((key, np.array([[[255, 255, 255, alpha]]], dtype=np.uint8)))
-    placements = pack_atlas(cells)
+    placements, turned = pack_atlas(cells)
+    cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
     entries = []
     for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
         x, y = placements.get(key, (0, 0))
+        if key in turned:
+            flags |= FLAG_ATLAS_TRANSPOSED
         entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
     atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
     entries.append(atlas_entry)

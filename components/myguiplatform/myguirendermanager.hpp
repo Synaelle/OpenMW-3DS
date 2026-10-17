@@ -94,6 +94,8 @@ namespace MyGUIPlatform
 
         /// Registers `name` as a texture over an existing OSG texture of the given size (the 3DS's UI atlas).
         MyGUI::ITexture* createTextureFor(const std::string& name, osg::Texture2D* texture, int width, int height);
+        /// Whether `name` is registered (getTexture would load a missing one).
+        bool hasTexture(const std::string& name) const;
         /** @see RenderManager::destroyTexture */
         void destroyTexture(MyGUI::ITexture* texture) override;
         /** @see RenderManager::getTexture */

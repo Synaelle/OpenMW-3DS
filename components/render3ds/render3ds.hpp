@@ -118,6 +118,7 @@ namespace Render3DS
         uint32_t mParticleVertices = 0; // particle quads built on the CPU this frame (6 vertices each)
         uint32_t mBadParticles = 0; // particles left out: non-finite corners (a zero-scale effect, see buildParticles)
         uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
+        uint32_t mGuiTextureBinds = 0; // distinct textures of the GUI passes, summed (one per screen: the UI atlas)
         uint32_t mGuiBottomFrames = 0; // frames in which the bottom screen was redrawn (0 or 1)
     };
     const FrameStats& getLastFrameStats();
