@@ -54,22 +54,21 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #33: the fireball, one more try):
-  The old builds you ran (m7, t19) showed the bug is as old as the particles. The particles (and the interface)
-  were the only things drawn in the GPU's "array" mode; everything else uses its "indexed" mode, and the GPU
-  switched between the two right behind the huge blast meshes. This build draws everything in the indexed mode.
-  First DELETE every test file in sdmc:/openmw/ (full-program-switch, skip-big-effects, skip-particles,
-  skip-far-particles, no-m8ui... if any is there). Two runs:
-    Run A: no file. The fix. Cast at your feet 3 times or more (wait for the explosion to finish each time), then
-           a few times at a wall or an NPC a few steps away. Then walk around Seyda Neen for a minute.
-    Run B: one empty file, array-draws (the old way back, same build). Cast at your feet until the screens break
-           (or 5 casts). This checks that the bug still happens on this console today.
-  If a run breaks the screens: quit with L + R + START + SELECT (or hold POWER), no screenshot.
-  Each cast: Magic tab -> Fireball -> house icon -> Y -> look at the ground a few steps ahead -> ZR.
-  (The test character now has Destruction 100 and 300 magicka, so casts shouldn't fail.)
+What this tests (hardware test #34: the flashing meshes):
+  The fireball fix (test #33) showed the GPU can be reconfigured while it is still busy with the previous draw.
+  The renderer also switches the vertex shader between three variants (0, 1 or 8 point lights) about 45 times a
+  frame, right between draws; if that switch lands on a busy GPU, part of a nearby lit mesh is shaded by the
+  wrong variant for one frame: a flash. This build can run with a single variant for the whole frame.
+  First DELETE every test file in sdmc:/openmw/ (array-draws, full-program-switch, skip-*, no-m8ui... if any is
+  there). Two runs, same walk each time: out of Arrille's, around Seyda Neen for two or three minutes, past the
+  lamps and fires, looking at the houses and trees near you:
+    Run A: one empty file, one-variant. Expected: no flashing (and a somewhat lower frame rate).
+    Run B: no file (the current behaviour). Expected: flashing as before.
+  Say for each run whether meshes flashed, roughly how often, and what a flash looks like (the mesh vanishes for
+  a frame? goes bright or dark? part of it only?). If you can catch one: L + D-pad LEFT takes a screenshot.
   The logs of the last three runs are kept (openmw3ds.log = newest, -1, -2): after both runs, send the whole logs
-  folder (run A is then openmw3ds-1.log, run B openmw3ds.log), and say for each run whether the screens broke,
-  and after how many casts.
+  folder (run A is then openmw3ds-1.log, run B openmw3ds.log).
+  The fireball itself: fixed since test #33, cast it whenever you like.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

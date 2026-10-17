@@ -1523,6 +1523,23 @@ namespace Render3DS
             }();
             return on;
         }
+
+        // Hardware test #34 (the flashing meshes): every scene draw through the 8-light variant, so the frame's
+        // only entry point switch is the GUI's at the end. The light variants (0, 1 or 8 point lights) switch the
+        // vertex shader's entry point between draws, ~45 times a frame, and the suspicion is the fireball's
+        // mechanism again (test #33): under a heavy draw, vertices still in the pipeline run the next draw's
+        // variant, and a nearby lit mesh comes out wrong for one frame. Empty file sdmc:/openmw/one-variant.
+        bool oneVariant()
+        {
+            static const bool on = [] {
+                struct stat st;
+                const bool exists = stat("sdmc:/openmw/one-variant", &st) == 0;
+                if (exists)
+                    P3DS_LOGW("render3ds: debug switch: one-variant");
+                return exists;
+            }();
+            return on;
+        }
 #endif
 
         // The fireball corruption (docs/FIREBALL_CORRUPTION.md): on hardware, from a big explosion on, the shader
@@ -1597,7 +1614,11 @@ namespace Render3DS
                 count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
             gDrawLights = count;
 
-            const shaderProgram_s* program = !gVariants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
+            bool variants = gVariants;
+#ifdef OPENMW3DS_DEBUG
+            variants = variants && !oneVariant();
+#endif
+            const shaderProgram_s* program = !variants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
             useProgram(program);
             if (program == &gProgram0)
                 return;
