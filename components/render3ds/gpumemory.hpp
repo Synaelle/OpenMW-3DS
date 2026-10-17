@@ -78,21 +78,27 @@ namespace Render3DS
     // mipmaps), or nullptr when the pack has none. Render thread.
     osg::Texture* uiAtlasTexture(unsigned index);
 
-    // A bitmap font whose glyphs the cooker cut into the UI atlas (tools/cook_textures.py FONTS): the rectangle of
-    // each of the .fnt's 256 codes in atlas texels, w = h = 0 for a code without a glyph.
+    // A TrueType font at one pixel size whose glyphs the cooker rendered into the UI atlas (tools/cook_textures.py
+    // FONTS, FONT_SIZES), with MyGUI's GlyphInfo metrics; the special codes (tab, selection, cursor, substitute)
+    // are MyGUI's FontCodeType values.
+    struct CookedGlyph
+    {
+        uint32_t mCode;
+        uint16_t mX, mY, mW, mH; // the cell in the atlas; w = h = 0: nothing drawn
+        float mWidth, mHeight, mAdvance, mBearingX, mBearingY;
+    };
     struct CookedFont
     {
-        struct Glyph
-        {
-            uint16_t mX, mY, mW, mH;
-        };
-        uint64_t mHash; // of "fonts/<name>"
-        uint32_t mPageWidth, mPageHeight; // the .tex page the glyphs were cut from
-        Glyph mGlyphs[256];
+        uint64_t mHash; // of "fonts/<name>" (the .omwfont's key)
+        uint16_t mPpem;
+        uint16_t mLineHeight; // MyGUI's DefaultHeight
+        uint32_t mGlyphCount;
+        uint32_t mFirstGlyph; // into the pack's glyph table
+        uint32_t mReserved;
     };
-    // The cooked font of a .fnt VFS path ("fonts/magic_cards_regular.fnt"), or nullptr. Any thread after the pack
-    // is open.
-    const CookedFont* cookedFont(std::string_view fntPath);
+    // The cooked font of an .omwfont VFS path ("fonts/mysticcards.omwfont") at a pixel size, with its glyphs, or
+    // nullptr. Any thread after the pack is open.
+    const CookedFont* cookedFont(std::string_view omwfontPath, unsigned ppem, const CookedGlyph** glyphs);
     // The top-left texel of the atlas's reserved region (the icon slots, the map square under them).
     void uiAtlasReservedRegion(unsigned& x, unsigned& y);
 }

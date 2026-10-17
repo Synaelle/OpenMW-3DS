@@ -37,6 +37,18 @@ namespace MyGUIPlatform
     {
     }
 
+    OSGTexture::OSGTexture(const std::string& name, osg::Texture2D* texture, int width, int height)
+        : mName(name)
+        , mImageManager(nullptr)
+        , mTexture(texture)
+        , mFormat(MyGUI::PixelFormat::Unknow)
+        , mUsage(MyGUI::TextureUsage::Default)
+        , mNumElemBytes(0)
+        , mWidth(width)
+        , mHeight(height)
+    {
+    }
+
     OSGTexture::~OSGTexture() {}
 
     void OSGTexture::createManual(int width, int height, MyGUI::TextureUsage usage, MyGUI::PixelFormat format)

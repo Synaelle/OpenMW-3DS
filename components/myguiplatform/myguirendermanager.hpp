@@ -26,6 +26,7 @@ namespace osg
     class Camera;
     class RenderInfo;
     class StateSet;
+    class Texture2D;
 }
 
 namespace MyGUIPlatform
@@ -90,6 +91,9 @@ namespace MyGUIPlatform
 
         /** @see RenderManager::createTexture */
         MyGUI::ITexture* createTexture(const std::string& name) override;
+
+        /// Registers `name` as a texture over an existing OSG texture of the given size (the 3DS's UI atlas).
+        MyGUI::ITexture* createTextureFor(const std::string& name, osg::Texture2D* texture, int width, int height);
         /** @see RenderManager::destroyTexture */
         void destroyTexture(MyGUI::ITexture* texture) override;
         /** @see RenderManager::getTexture */

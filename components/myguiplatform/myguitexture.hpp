@@ -38,6 +38,8 @@ namespace MyGUIPlatform
     public:
         OSGTexture(const std::string& name, Resource::ImageManager* imageManager);
         OSGTexture(osg::Texture2D* texture, osg::StateSet* injectState = nullptr);
+        // A named texture over an existing one whose size OSG hasn't computed (no GL context on the 3DS).
+        OSGTexture(const std::string& name, osg::Texture2D* texture, int width, int height);
         ~OSGTexture() override;
 
         osg::StateSet* getInjectState() { return mInjectState; }

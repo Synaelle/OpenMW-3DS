@@ -30,9 +30,9 @@ namespace Render3DS
     {
         // tools/cook_textures.py
         constexpr char kMagic[4] = { 'O', '3', 'T', 'P' };
-        // 2: the UI atlas (FLAG_ATLAS entries, "ui-atlas/<n>"); 3: one 512x256 atlas with the bitmap fonts' glyphs
-        // (the font table) and the reserved icon and map regions.
-        constexpr uint32_t kVersion = 3;
+        // 2: the UI atlas (FLAG_ATLAS entries, "ui-atlas/<n>"); 3: one 512x256 atlas with the reserved icon and map
+        // regions; 4: the TrueType fonts' glyphs in it (the font and glyph tables).
+        constexpr uint32_t kVersion = 4;
 
         struct PackHeader
         {
@@ -66,6 +66,7 @@ namespace Render3DS
         FILE* gPack = nullptr;
         std::vector<PackEntry> gIndex;
         std::vector<CookedFont> gFonts;
+        std::vector<CookedGlyph> gGlyphs;
         uint32_t gReservedPos = 0;
 
         uint64_t fnv1a64(std::string_view text)
@@ -184,7 +185,7 @@ namespace Render3DS
         }
         std::vector<PackEntry> index(header.mCount);
         std::vector<CookedFont> fonts(header.mReserved[1]);
-        static_assert(sizeof(CookedFont) == 16 + 256 * 8);
+        static_assert(sizeof(CookedFont) == 24 && sizeof(CookedGlyph) == 32);
         if (std::fseek(file, static_cast<long>(header.mIndexOffset), SEEK_SET) != 0
             || std::fread(index.data(), sizeof(PackEntry), index.size(), file) != index.size()
             || std::fseek(file, static_cast<long>(header.mReserved[0]), SEEK_SET) != 0
@@ -194,24 +195,39 @@ namespace Render3DS
             std::fclose(file);
             return false;
         }
+        size_t glyphCount = 0;
+        for (const CookedFont& font : fonts)
+            glyphCount = std::max<size_t>(glyphCount, font.mFirstGlyph + font.mGlyphCount);
+        std::vector<CookedGlyph> glyphs(glyphCount);
+        if (std::fread(glyphs.data(), sizeof(CookedGlyph), glyphs.size(), file) != glyphs.size())
+        {
+            P3DS_LOGE("render3ds: %s: truncated glyph table", path);
+            std::fclose(file);
+            return false;
+        }
         gFonts = std::move(fonts);
+        gGlyphs = std::move(glyphs);
         gReservedPos = header.mReserved[2];
         // Every texture is one read straight into linear memory: no stdio buffering in between.
         std::setvbuf(file, nullptr, _IONBF, 0);
         gPack = file;
         gIndex = std::move(index);
-        P3DS_LOGI("render3ds: texture pack %s: %u textures, %u fonts in the UI atlas, its reserved region at %u,%u",
-            path, (unsigned)gIndex.size(), (unsigned)gFonts.size(), (unsigned)(gReservedPos & 0xFFFF),
-            (unsigned)(gReservedPos >> 16));
+        P3DS_LOGI("render3ds: texture pack %s: %u textures, %u fonts (%u glyphs) in the UI atlas, its reserved "
+                  "region at %u,%u",
+            path, (unsigned)gIndex.size(), (unsigned)gFonts.size(), (unsigned)gGlyphs.size(),
+            (unsigned)(gReservedPos & 0xFFFF), (unsigned)(gReservedPos >> 16));
         return true;
     }
 
-    const CookedFont* cookedFont(std::string_view fntPath)
+    const CookedFont* cookedFont(std::string_view omwfontPath, unsigned ppem, const CookedGlyph** glyphs)
     {
-        const uint64_t hash = fnv1a64(stripExtension(fntPath));
+        const uint64_t hash = fnv1a64(stripExtension(omwfontPath));
         for (const CookedFont& font : gFonts)
-            if (font.mHash == hash)
+            if (font.mHash == hash && font.mPpem == ppem)
+            {
+                *glyphs = gGlyphs.data() + font.mFirstGlyph;
                 return &font;
+            }
         return nullptr;
     }
 

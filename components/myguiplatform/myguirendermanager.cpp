@@ -647,6 +647,13 @@ namespace MyGUIPlatform
         return &it->second;
     }
 
+    MyGUI::ITexture* RenderManager::createTextureFor(
+        const std::string& name, osg::Texture2D* texture, int width, int height)
+    {
+        const auto it = mTextures.insert_or_assign(name, OSGTexture(name, texture, width, height)).first;
+        return &it->second;
+    }
+
     void RenderManager::destroyTexture(MyGUI::ITexture* texture)
     {
         if (texture == nullptr)

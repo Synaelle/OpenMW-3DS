@@ -28,6 +28,13 @@
 
 #include <components/settings/values.hpp>
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <osg/Texture2D>
+
+#include <components/myguiplatform/myguirendermanager.hpp>
+#include <components/render3ds/gpumemory.hpp>
+#endif
+
 namespace
 {
     MyGUI::xml::ElementPtr getProperty(MyGUI::xml::ElementPtr resourceNode, std::string_view propertyName)
@@ -293,6 +300,89 @@ namespace Gui
         Log(Debug::Error) << "Font '" << fileName << "' is not found.";
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        // The pixel size FreeType gives MyGUI's ResourceTrueTypeFont for FT_Set_Char_Size(size * 64, 0, dpi, dpi):
+        // the nominal width in 26.6 at that resolution, rounded to whole pixels (TrueType faces round their ppem).
+        unsigned trueTypePpem(int size, int resolution)
+        {
+            const long scaled = (long(size) * 64 * resolution + 36) / 72;
+            return static_cast<unsigned>((scaled + 32) >> 6);
+        }
+
+        // A MyGUI manual font over the UI atlas from the pack's glyphs (tools/cook_textures.py FONTS: rendered as
+        // ResourceTrueTypeFont would, so the text is the same; hardware tests #34-#46: the interface pass binds
+        // one texture, never a font page), or nullptr when the pack has no such font at this size.
+        MyGUI::ResourceManualFont* cookedTrueTypeFont(
+            const std::string& name, const VFS::Path::Normalized& path, int size, int resolution)
+        {
+            const unsigned ppem = trueTypePpem(size, resolution);
+            const Render3DS::CookedGlyph* glyphs = nullptr;
+            const Render3DS::CookedFont* cooked = Render3DS::cookedFont(path.value(), ppem, &glyphs);
+            osg::Texture2D* atlas = static_cast<osg::Texture2D*>(Render3DS::uiAtlasTexture(0));
+            if (cooked == nullptr || atlas == nullptr || atlas->getImage() == nullptr)
+            {
+                Log(Debug::Info) << "Font " << name << " (" << path << " at " << ppem
+                                 << " px): not in the UI atlas, rendered by MyGUI";
+                return nullptr;
+            }
+            constexpr const char* atlasName = "ui-atlas/0";
+            auto& renderManager = static_cast<MyGUIPlatform::RenderManager&>(MyGUI::RenderManager::getInstance());
+            if (renderManager.getTexture(atlasName) == nullptr)
+                renderManager.createTextureFor(atlasName, atlas, atlas->getImage()->s(), atlas->getImage()->t());
+
+            MyGUI::xml::Document document;
+            MyGUI::xml::ElementPtr root = document.createRoot("ResourceManualFont");
+            root->addAttribute("name", name);
+            MyGUI::xml::ElementPtr property = root->createChild("Property");
+            property->addAttribute("key", "DefaultHeight");
+            property->addAttribute("value", static_cast<int>(cooked->mLineHeight));
+            property = root->createChild("Property");
+            property->addAttribute("key", "Source");
+            property->addAttribute("value", atlasName);
+            MyGUI::xml::ElementPtr codes = root->createChild("Codes");
+            for (uint32_t i = 0; i < cooked->mGlyphCount; ++i)
+            {
+                const Render3DS::CookedGlyph& glyph = glyphs[i];
+                MyGUI::xml::ElementPtr code = codes->createChild("Code");
+                switch (glyph.mCode)
+                {
+                    case MyGUI::FontCodeType::Cursor:
+                        code->addAttribute("index", "cursor");
+                        break;
+                    case MyGUI::FontCodeType::Selected:
+                        code->addAttribute("index", "selected");
+                        break;
+                    case MyGUI::FontCodeType::SelectedBack:
+                        code->addAttribute("index", "selected_back");
+                        break;
+                    case MyGUI::FontCodeType::NotDefined:
+                        code->addAttribute("index", "substitute");
+                        break;
+                    default:
+                        code->addAttribute("index", glyph.mCode);
+                        break;
+                }
+                code->addAttribute("coord",
+                    MyGUI::utility::toString(glyph.mX) + " " + MyGUI::utility::toString(glyph.mY) + " "
+                        + MyGUI::utility::toString(glyph.mW) + " " + MyGUI::utility::toString(glyph.mH));
+                code->addAttribute("advance", glyph.mAdvance);
+                code->addAttribute(
+                    "bearing", MyGUI::utility::toString(glyph.mBearingX) + " " + MyGUI::utility::toString(glyph.mBearingY));
+                code->addAttribute(
+                    "size", MyGUI::utility::toString(glyph.mWidth) + " " + MyGUI::utility::toString(glyph.mHeight));
+            }
+            MyGUI::ResourceManualFont* font = static_cast<MyGUI::ResourceManualFont*>(
+                MyGUI::FactoryManager::getInstance().createObject("Resource", "ResourceManualFont"));
+            font->deserialization(root, MyGUI::Version(3, 2, 0));
+            Log(Debug::Info) << "Font " << name << " (" << path << " at " << ppem << " px): " << cooked->mGlyphCount
+                             << " glyphs from the UI atlas";
+            return font;
+        }
+    }
+#endif
+
     void FontLoader::loadTrueTypeFont(FontId fontId, const VFS::Path::Normalized& path, std::istream& stream)
     {
         Log(Debug::Info) << "Loading TrueType font file " << path;
@@ -363,19 +453,37 @@ namespace Gui
         sizeNode->addAttribute("key", "Size");
         sizeNode->addAttribute("value", std::to_string(Settings::gui().mFontSize));
 
-        MyGUI::ResourceTrueTypeFont* font = static_cast<MyGUI::ResourceTrueTypeFont*>(
-            MyGUI::FactoryManager::getInstance().createObject("Resource", "ResourceTrueTypeFont"));
-        font->deserialization(resourceNode.current(), MyGUI::Version(3, 2, 0));
+        const std::string bookFontName = std::format("Journalbook {}", fontId.mValue);
+        const int bookResolution = static_cast<int>(resolution * bookScale * mScalingFactor);
+#ifdef OPENMW_PLATFORM_3DS
+        MyGUI::IFont* font = cookedTrueTypeFont(
+            std::string(fontId.mValue), path, Settings::gui().mFontSize,
+            static_cast<int>(resolution * std::ceil(mScalingFactor)));
+        MyGUI::IFont* bookFont = cookedTrueTypeFont(bookFontName, path, Settings::gui().mFontSize, bookResolution);
+        if (font == nullptr)
+#else
+        MyGUI::IFont* font = nullptr;
+        MyGUI::IFont* bookFont = nullptr;
+#endif
+        {
+            MyGUI::ResourceTrueTypeFont* trueType = static_cast<MyGUI::ResourceTrueTypeFont*>(
+                MyGUI::FactoryManager::getInstance().createObject("Resource", "ResourceTrueTypeFont"));
+            trueType->deserialization(resourceNode.current(), MyGUI::Version(3, 2, 0));
+            font = trueType;
+        }
         font->setResourceName(fontId.mValue);
         MyGUI::ResourceManager::getInstance().addResource(font);
 
-        resolutionNode->setAttribute(
-            "value", MyGUI::utility::toString(static_cast<int>(resolution * bookScale * mScalingFactor)));
+        resolutionNode->setAttribute("value", MyGUI::utility::toString(bookResolution));
 
-        MyGUI::ResourceTrueTypeFont* bookFont = static_cast<MyGUI::ResourceTrueTypeFont*>(
-            MyGUI::FactoryManager::getInstance().createObject("Resource", "ResourceTrueTypeFont"));
-        bookFont->deserialization(resourceNode.current(), MyGUI::Version(3, 2, 0));
-        bookFont->setResourceName(std::format("Journalbook {}", fontId.mValue));
+        if (bookFont == nullptr)
+        {
+            MyGUI::ResourceTrueTypeFont* trueType = static_cast<MyGUI::ResourceTrueTypeFont*>(
+                MyGUI::FactoryManager::getInstance().createObject("Resource", "ResourceTrueTypeFont"));
+            trueType->deserialization(resourceNode.current(), MyGUI::Version(3, 2, 0));
+            bookFont = trueType;
+        }
+        bookFont->setResourceName(bookFontName);
         MyGUI::ResourceManager::getInstance().addResource(bookFont);
 
         dataManagerPtr.reset();
