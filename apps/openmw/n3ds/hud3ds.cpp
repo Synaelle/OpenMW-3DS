@@ -184,6 +184,7 @@ namespace omw3ds
 
         std::array<Slot, kSlots> sSlots;
         const MWGui::HUD* sStripBoundTo = nullptr;
+        MyGUI::TextBox* sFps = nullptr; // the frame rate under the minimap
 
         void onStripSlotClicked(MyGUI::Widget* sender)
         {
@@ -208,8 +209,29 @@ namespace omw3ds
                 hud->getWidget(slot.mIcon, "QuickKey3DSIcon" + n);
                 slot.mButton->eventMouseButtonClick += MyGUI::newDelegate(&onStripSlotClicked);
             }
+            hud->getWidget(sFps, "Fps3DS");
             sStripBoundTo = hud;
             return true;
+        }
+
+        // The frame rate once a second under the minimap (the bottom screen redraws it as a small rect; a caption
+        // changing on the top overlay broke its redraw in test #61).
+        void updateFps()
+        {
+            static uint64_t lastTick = 0;
+            static unsigned frames = 0;
+            ++frames;
+            const uint64_t now = svcGetSystemTick();
+            if (lastTick == 0)
+                lastTick = now;
+            const uint64_t elapsed = now - lastTick;
+            if (elapsed < SYSCLOCK_ARM11)
+                return;
+            const double fps = double(frames) * double(SYSCLOCK_ARM11) / double(elapsed);
+            frames = 0;
+            lastTick = now;
+            if (sFps != nullptr)
+                sFps->setCaption(std::to_string(int(fps + 0.5))); // the number alone (test #69)
         }
 
         MWWorld::Ptr findItem(const ESM::RefId& id)
@@ -248,6 +270,7 @@ namespace omw3ds
         {
             if (!bindStrip())
                 return;
+            updateFps();
             for (int i = 0; i < kSlots; ++i)
             {
                 Slot& slot = sSlots[i];
@@ -476,8 +499,8 @@ namespace omw3ds
                     name += " (" + std::to_string(count) + ")";
                 mName->setCaption(name);
                 // As the item's tooltip words them. (Not a char array: MyGUI::UString takes those whole, as literals.)
-                mInfo->setCaptionWithReplacing("#{sWeight}: "
-                    + MWGui::ToolTips::toString(mSelected.getClass().getWeight(mSelected)) + "   #{sValue}: "
+                mInfo->setCaptionWithReplacing("W: " // "W: / V:" (test #67, the tester)
+                    + MWGui::ToolTips::toString(mSelected.getClass().getWeight(mSelected)) + "  V: "
                     + MWGui::ToolTips::toString(mSelected.getClass().getValue(mSelected)));
                 const bool wearable = !mSelected.getClass().getEquipmentSlots(mSelected).first.empty();
                 mUse->setCaptionWithReplacing(
@@ -487,7 +510,21 @@ namespace omw3ds
             void onItemClicked(MWGui::ItemModel::ModelIndex index)
             {
                 const MWWorld::Ptr item = mModel->getItem(index).mBase;
-                select(item == mSelected ? MWWorld::Ptr() : item); // a second touch clears the selection
+                // A quick second touch on the selected item uses or equips it (test #67, the tester); a slow one
+                // clears the selection.
+                static uint64_t lastTick = 0;
+                static MWWorld::Ptr lastItem;
+                const uint64_t now = svcGetSystemTick();
+                const bool quick = item == lastItem && now - lastTick < SYSCLOCK_ARM11 / 2;
+                lastTick = now;
+                lastItem = item;
+                if (item == mSelected && quick)
+                {
+                    lastTick = 0;
+                    onUse(nullptr);
+                    return;
+                }
+                select(item == mSelected ? MWWorld::Ptr() : item);
             }
 
             void onFilter(MyGUI::Widget* sender)
@@ -642,7 +679,7 @@ namespace omw3ds
             }
             sTabBar->getWidget(sHomeIcon, "TabHomeIcon3DS");
             sHomeColours = { fontColour("#{fontcolour=normal}"), fontColour("#{fontcolour=active}") };
-#ifdef OPENMW3DS_DEBUG
+#if 0 // The Debug tab is gone (test #67, the tester): the frame rate is under the minimap; the page stays.
             sDebug = std::make_unique<DebugPage>();
 #else
             // No Debug tab: the other three share the bar, after Home.
@@ -679,8 +716,10 @@ namespace omw3ds
                 return;
             // In game mode, while the GUI draws the bottom screen; OpenMW's menus (dialogue, containers...) still go
             // to the M6 text menus.
-            const bool active = Render3DS::guiOwnsBottomScreen() && !windows().isGuiMode();
-            const Tab tab = active ? sTab : Tab::None;
+            // ... and while a container is open (M8: its window on the top screen, the Inventory tab below).
+            const bool looting = windows().isGuiMode() && windows().getMode() == MWGui::GM_Container;
+            const bool active = Render3DS::guiOwnsBottomScreen() && (!windows().isGuiMode() || looting);
+            const Tab tab = !active ? Tab::None : looting ? Tab::Items : sTab;
             sTabBar->setVisible(active);
             for (MyGUI::Button* button : sTabButtons)
                 button->setStateSelected(*button->getUserData<Tab>() == sTab);
@@ -720,11 +759,27 @@ namespace omw3ds
                 == MWBase::StateManager::State_NoGame; // the main menu before a game: nothing of the HUD
             // ... and under every window that pauses the game (the character creation ones, dialogue, containers:
             // Morrowind's HUD is not drawn under them on the small screen).
-            const bool hideHud = noGame || windows().isGuiMode() || (active && tab != Tab::None);
+            const bool hideHud = noGame || windows().isGuiMode();
             if (hideHud != hudHidden)
             {
                 windows().setHudVisibility(!hideHud);
                 hudHidden = hideHud;
+            }
+            // A page replaces only the HUD's bottom panel: the top screen keeps the crosshair, the cell name and
+            // the target label (test #67, the tester).
+            static MyGUI::Widget* bottomPanel = nullptr;
+            static const MWGui::HUD* panelBoundTo = nullptr;
+            if (MWGui::HUD* hud = Hud3DS::hud(); hud != panelBoundTo)
+            {
+                bottomPanel = nullptr;
+                hud->getWidget(bottomPanel, "Bottom3DS");
+                panelBoundTo = hud;
+            }
+            if (bottomPanel != nullptr)
+            {
+                const bool showPanel = !(active && tab != Tab::None);
+                if (bottomPanel->getVisible() != showPanel)
+                    bottomPanel->setVisible(showPanel);
             }
             if (tab == Tab::Items)
                 sItems->tick();

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The spellmaking window on the top screen (M8, the tester's design): 400x240 at 0,0. The widget names are
+     those of spellcreationdialog.cpp. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 400 240" name="_Main">
+        <Widget type="TextBox" skin="NormalText" position="8 6 50 20">
+            <Property key="Caption" value="#{sName}"/>
+            <Property key="TextAlign" value="Left VCenter"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sSpellmakingHelp1}"/>
+        </Widget>
+        <!-- A touch opens the system keyboard (spellcreationdialog.cpp) -->
+        <Widget type="EditBox" skin="MW_TextEdit" position="60 5 138 22" name="NameEdit">
+            <Property key="Static" value="true"/>
+        </Widget>
+
+        <Widget type="TextBox" skin="NormalText" position="204 4 188 18">
+            <Property key="Caption" value="#{sEnchantmentMenu4}"/>
+            <Property key="TextAlign" value="Left HCenter"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sSpellmakingHelp2}"/>
+        </Widget>
+        <Widget type="TextBox" skin="SandText" position="204 4 188 18" name="MagickaCost">
+            <Property key="TextAlign" value="Right HCenter"/>
+            <Property key="NeedMouse" value="false"/>
+        </Widget>
+        <Widget type="TextBox" skin="NormalText" position="204 22 188 18">
+            <Property key="Caption" value="#{sSpellmakingMenu1}"/>
+            <Property key="TextAlign" value="Left HCenter"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sSpellmakingHelp3}"/>
+        </Widget>
+        <Widget type="TextBox" skin="SandText" position="204 22 188 18" name="SuccessChance">
+            <Property key="TextAlign" value="Right HCenter"/>
+            <Property key="NeedMouse" value="false"/>
+        </Widget>
+
+        <Widget type="TextBox" skin="NormalText" position="8 32 150 18">
+            <Property key="Caption" value="#{sMagicEffects}"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sSpellmakingHelp5}"/>
+        </Widget>
+        <Widget type="MWList" skin="MW_SimpleList" position="8 50 150 152" name="AvailableEffects">
+        </Widget>
+
+        <Widget type="TextBox" skin="NormalText" position="166 32 226 18">
+            <Property key="Caption" value="#{sEffects}"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sSpellmakingHelp6}"/>
+        </Widget>
+        <Widget type="Widget" skin="MW_Box" position="166 50 226 152">
+            <Widget type="ScrollView" skin="MW_ScrollViewH" position="4 4 218 144" name="UsedEffects">
+                <Property key="CanvasAlign" value="Left Top"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="HBox" position="8 206 384 26">
+            <Property key="Padding" value="6"/>
+            <Widget type="AutoSizedTextBox" skin="NormalText" name="PlayerGoldTextBox">
+                <Property key="Caption" value="#{sGold}"/>
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="TextToolTip"/>
+            </Widget>
+            <Widget type="AutoSizedTextBox" skin="SandText" name="PlayerGold"/>
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedTextBox" skin="NormalText">
+                <Property key="Caption" value="#{sBarterDialog7}"/>
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                <UserString key="Caption_Text" value="#{sSpellmakingHelp4}"/>
+            </Widget>
+            <Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="BuyButton">
+                <Property key="Caption" value="#{sBuy}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                <Property key="Caption" value="#{Interface:Cancel}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

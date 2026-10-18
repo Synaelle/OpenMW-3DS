@@ -1,50 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- The save/load dialog on the two 3DS screens (M8): the save's picture and details on the top screen, the
-     character choice (loading), the saves list, the name box (saving: a touch opens the system keyboard) and
-     Delete/OK/Cancel on the bottom one. The widget names are those of savegamedialog.cpp. -->
+<!-- The save/load dialog on the top screen (M8, the tester's design): the character box (loading) and the
+     saves list on the left, the save's picture and details on the right, the name box (saving: a touch opens
+     the system keyboard) and Delete/OK/Cancel along the bottom. The widget names are those of
+     savegamedialog.cpp. -->
 <MyGUI type="Layout">
-    <Widget type="Window" skin="" layer="Modal" position="0 0 400 480" name="_Main">
-
-        <!-- Top screen -->
-        <Widget type="Widget" skin="MW_DialogNoTransp" position="0 0 400 240">
-            <Widget type="Widget" skin="MW_Box" position="8 8 263 137">
-                <Widget type="ImageBox" skin="ImageBox" position="2 2 259 133" name="Screenshot"/>
-            </Widget>
-            <Widget type="AutoSizedEditBox" skin="NormalText" position="8 150 384 20" name="CellName">
-                <Property key="Static" value="true"/>
-                <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
-            </Widget>
-            <Widget type="AutoSizedEditBox" skin="SandText" position="8 172 384 64" name="InfoText">
-                <Property key="Static" value="true"/>
-                <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
-            </Widget>
+    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 400 240" name="_Main">
+        <Widget type="ComboBox" skin="MW_ComboBox" position="8 6 190 22" name="SelectCharacter">
+            <Property key="Caption" value="#{OMWEngine:SelectCharacter}"/>
+            <Property key="ModeDrop" value="true"/>
+        </Widget>
+        <Widget type="ListBox" skin="MW_List" position="8 32 190 142" name="SaveList">
         </Widget>
 
-        <!-- Bottom screen -->
-        <Widget type="Widget" skin="MW_DialogNoTransp" position="40 240 320 240">
-            <Widget type="ComboBox" skin="MW_ComboBox" position="8 6 304 24" name="SelectCharacter">
-                <Property key="Caption" value="#{OMWEngine:SelectCharacter}"/>
-                <Property key="ModeDrop" value="true"/>
+        <Widget type="Widget" skin="MW_Box" position="206 6 186 98">
+            <Widget type="ImageBox" skin="ImageBox" position="2 2 182 94" name="Screenshot"/>
+        </Widget>
+        <Widget type="AutoSizedEditBox" skin="NormalText" position="206 108 186 18" name="CellName">
+            <Property key="Static" value="true"/>
+            <Property key="WordWrap" value="true"/>
+            <Property key="TextAlign" value="Left Top"/>
+        </Widget>
+        <Widget type="AutoSizedEditBox" skin="SandText" position="206 128 186 46" name="InfoText">
+            <Property key="Static" value="true"/>
+            <Property key="WordWrap" value="true"/>
+            <Property key="TextAlign" value="Left Top"/>
+        </Widget>
+
+        <Widget type="EditBox" skin="MW_TextEdit" position="8 180 384 22" name="SaveNameEdit">
+            <Property key="Static" value="true"/>
+        </Widget>
+        <Widget type="HBox" skin="" position="8 206 384 26">
+            <Widget type="AutoSizedButton" skin="MW_Button" name="DeleteButton">
+                <Property key="Caption" value="#{OMWEngine:DeleteGame}"/>
             </Widget>
-            <Widget type="ListBox" skin="MW_List" position="8 34 304 140" name="SaveList">
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="OkButton">
+                <Property key="Caption" value="#{Interface:OK}"/>
             </Widget>
-            <Widget type="EditBox" skin="MW_TextEdit" position="8 178 304 24" name="SaveNameEdit">
-                <Property key="Static" value="true"/>
-            </Widget>
-            <Widget type="HBox" skin="" position="8 206 304 28">
-                <Widget type="AutoSizedButton" skin="MW_Button" name="DeleteButton">
-                    <Property key="Caption" value="#{OMWEngine:DeleteGame}"/>
-                </Widget>
-                <Widget type="Spacer"/>
-                <Widget type="AutoSizedButton" skin="MW_Button" name="OkButton">
-                    <Property key="Caption" value="#{Interface:OK}"/>
-                </Widget>
-                <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
-                    <Property key="Caption" value="#{Interface:Cancel}"/>
-                </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                <Property key="Caption" value="#{Interface:Cancel}"/>
             </Widget>
         </Widget>
     </Widget>

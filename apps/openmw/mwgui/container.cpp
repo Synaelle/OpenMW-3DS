@@ -57,7 +57,9 @@ namespace MWGui
         mCloseButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ContainerWindow::onCloseButtonClicked);
         mTakeButton->eventMouseButtonClick += MyGUI::newDelegate(this, &ContainerWindow::onTakeAllButtonClicked);
 
-        setCoord(200, 0, 600, 300);
+#ifndef OPENMW_PLATFORM_3DS
+        setCoord(200, 0, 600, 300); // 3DS (M8): the layout's place, the top screen
+#endif
 
         mControllerButtons.mA = "#{Interface:Take}";
         mControllerButtons.mB = "#{Interface:Close}";

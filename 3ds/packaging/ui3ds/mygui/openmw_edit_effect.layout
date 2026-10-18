@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The spell effect editor on the top screen (M8): 400x240 at 0,0. The widget names are those of
+     spellcreationdialog.cpp (EditEffectDialog). -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 400 240" name="_Main">
+        <Widget type="ImageBox" skin="ImageBox" position="8 6 16 16" name="EffectImage">
+        </Widget>
+        <Widget type="TextBox" skin="NormalText" position="30 4 362 20" name="EffectName">
+            <Property key="TextAlign" value="Left HCenter"/>
+        </Widget>
+
+        <Widget type="AutoSizedTextBox" skin="NormalText" position="8 28 200 22">
+            <Property key="Caption" value="#{sRange}"/>
+            <Property key="TextAlign" value="Left HCenter"/>
+            <UserString key="ToolTipType" value="Layout"/>
+            <UserString key="ToolTipLayout" value="TextToolTip"/>
+            <UserString key="Caption_Text" value="#{sRangeDes}"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="130 28 0 22" name="RangeButton">
+            <Property key="Caption" value="#{sRangeTouch}"/>
+        </Widget>
+
+        <Widget type="Widget" position="8 54 384 58" name="MagnitudeBox">
+            <Widget type="AutoSizedTextBox" skin="NormalText" position="0 0 110 20">
+                <Property key="Caption" value="#{sMagnitude}"/>
+                <Property key="TextAlign" value="Left HCenter"/>
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                <UserString key="Caption_Text" value="#{sMagnitudeDes}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="122 0 262 16" name="MagnitudeMinValue">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Caption" value="0"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="122 16 262 13" name="MagnitudeMinSlider">
+                <Property key="Range" value="100"/>
+                <Property key="Page" value="1"/>
+                <Property key="WheelPage" value="1"/>
+                <Property key="ViewPage" value="10"/>
+                <Property key="MoveToClick" value="false"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="122 30 262 16" name="MagnitudeMaxValue">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Caption" value="0"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="122 45 262 13" name="MagnitudeMaxSlider">
+                <Property key="Range" value="100"/>
+                <Property key="Page" value="1"/>
+                <Property key="WheelPage" value="1"/>
+                <Property key="ViewPage" value="10"/>
+                <Property key="MoveToClick" value="false"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="Widget" position="8 116 384 32" name="DurationBox">
+            <Widget type="AutoSizedTextBox" skin="NormalText" position="0 8 110 20">
+                <Property key="Caption" value="#{sDuration}"/>
+                <Property key="TextAlign" value="Left Top"/>
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                <UserString key="Caption_Text" value="#{sDurationDes}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="122 0 262 16" name="DurationValue">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Caption" value="0"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="122 16 262 13" name="DurationSlider">
+                <Property key="Range" value="1440"/>
+                <Property key="Page" value="1"/>
+                <Property key="WheelPage" value="1"/>
+                <Property key="ViewPage" value="20"/>
+                <Property key="MoveToClick" value="false"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="Widget" position="8 152 384 32" name="AreaBox">
+            <Widget type="AutoSizedTextBox" skin="NormalText" position="0 8 110 20" name="AreaText">
+                <Property key="Caption" value="#{sArea}"/>
+                <Property key="TextAlign" value="Left Top"/>
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="TextToolTip"/>
+                <UserString key="Caption_Text" value="#{sAreaDes}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="122 0 262 16" name="AreaValue">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="Caption" value="0"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="122 16 262 13" name="AreaSlider">
+                <Property key="Range" value="51"/>
+                <Property key="Page" value="1"/>
+                <Property key="WheelPage" value="1"/>
+                <Property key="ViewPage" value="5"/>
+                <Property key="MoveToClick" value="false"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="HBox" position="8 206 384 26">
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="DeleteButton">
+                <Property key="Caption" value="#{sDelete}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="OkButton">
+                <Property key="Caption" value="#{Interface:OK}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                <Property key="Caption" value="#{Interface:Cancel}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

@@ -179,6 +179,7 @@ namespace MWGui
 
         void onCancelButtonClicked(MyGUI::Widget* sender);
         void onBuyButtonClicked(MyGUI::Widget* sender);
+        void onNameClicked3DS(MyGUI::Widget* sender); // 3DS: the system keyboard types the name
         void onAccept(MyGUI::EditBox* sender);
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
 

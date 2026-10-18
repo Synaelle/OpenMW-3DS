@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The options window on the bottom screen (M8, the tester's design): only Prefs (the difficulty) and Audio.
+     settingswindow.cpp binds many more widgets by name: they live hidden in Hidden3DS, where its code can
+     set them up without showing them. The root's coordinates are the canvas's (the bottom screen at 40,240). -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Window" layer="Settings" position="40 240 320 240" name="_Main">
+        <Widget type="TabControl" skin="TabControl" position="4 4 292 176" name="SettingsTab" align="Left Top">
+            <Widget type="TabItem">
+                <Property key="Caption" value=" #{OMWEngine:Preferences} "/>
+                <Widget type="TextBox" skin="NormalText" position="4 8 284 18" align="Left Top" name="DifficultyText">
+                    <Property key="Caption" value="#{OMWEngine:Difficulty}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 30 284 16" align="Left Top">
+                    <Property key="Range" value="201"/>
+                    <Property key="Page" value="1"/>
+                    <Property key="WheelPage" value="1"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Game"/>
+                    <UserString key="SettingName" value="difficulty"/>
+                    <UserString key="SettingValueType" value="Integer"/>
+                    <UserString key="SettingMin" value="-100"/>
+                    <UserString key="SettingMax" value="100"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="4 48 140 16" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:DifficultyEasy}"/>
+                    <Property key="TextAlign" value="Left"/>
+                </Widget>
+                <Widget type="TextBox" skin="SandText" position="130 48 150 16" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:DifficultyHard}"/>
+                    <Property key="TextAlign" value="Right"/>
+                </Widget>
+            </Widget>
+            <Widget type="TabItem">
+                <Property key="Caption" value=" #{OMWEngine:Audio} "/>
+                <Widget type="TextBox" skin="NormalText" position="4 8 100 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:AudioMaster}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="108 9 186 16" align="Left Top">
+                    <Property key="Range" value="10000"/>
+                    <Property key="Page" value="300"/>
+                    <Property key="WheelPage" value="300"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Sound"/>
+                    <UserString key="SettingName" value="master volume"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+                <Widget type="TextBox" skin="NormalText" position="4 38 100 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:AudioVoice}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="108 39 186 16" align="Left Top">
+                    <Property key="Range" value="10000"/>
+                    <Property key="Page" value="300"/>
+                    <Property key="WheelPage" value="300"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Sound"/>
+                    <UserString key="SettingName" value="voice volume"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+                <Widget type="TextBox" skin="NormalText" position="4 68 100 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:AudioEffects}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="108 69 186 16" align="Left Top">
+                    <Property key="Range" value="10000"/>
+                    <Property key="Page" value="300"/>
+                    <Property key="WheelPage" value="300"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Sound"/>
+                    <UserString key="SettingName" value="sfx volume"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+                <Widget type="TextBox" skin="NormalText" position="4 98 100 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:AudioFootsteps}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="108 99 186 16" align="Left Top">
+                    <Property key="Range" value="10000"/>
+                    <Property key="Page" value="300"/>
+                    <Property key="WheelPage" value="300"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Sound"/>
+                    <UserString key="SettingName" value="footsteps volume"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+                <Widget type="TextBox" skin="NormalText" position="4 128 100 18" align="Left Top">
+                    <Property key="Caption" value="#{OMWEngine:AudioMusic}"/>
+                </Widget>
+                <Widget type="ScrollBar" skin="MW_HScroll" position="108 129 186 16" align="Left Top">
+                    <Property key="Range" value="10000"/>
+                    <Property key="Page" value="300"/>
+                    <Property key="WheelPage" value="300"/>
+                    <UserString key="SettingType" value="Slider"/>
+                    <UserString key="SettingCategory" value="Sound"/>
+                    <UserString key="SettingName" value="music volume"/>
+                    <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+            </Widget>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="236 184 60 24" name="OkButton" align="Left Top">
+            <Property key="ExpandDirection" value="Left"/>
+            <Property key="Caption" value="#{Interface:OK}"/>
+        </Widget>
+        <!-- settingswindow.cpp's other widgets, never shown -->
+        <Widget type="Widget" skin="" position="0 0 2 2" name="Hidden3DS">
+            <Property key="Visible" value="false"/>
+            <Widget type="ListBox" skin="MW_List" position="0 0 2 2" name="ResolutionList"/>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="WindowModeList">
+                <Property key="AddItem" value="#{OMWEngine:WindowModeFullscreen}"/>
+                <Property key="AddItem" value="#{OMWEngine:WindowModeWindowedFullscreen}"/>
+                <Property key="AddItem" value="#{OMWEngine:WindowModeWindowed}"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="VSyncModeList">
+                <Property key="AddItem" value="#{Interface:Off}"/>
+                <Property key="AddItem" value="#{Interface:On}"/>
+                <Property key="AddItem" value="#{OMWEngine:VSyncAdaptive}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="WindowBorderButton"/>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="TextureFilteringButton">
+                <Property key="AddItem" value="#{OMWEngine:TextureFilteringBilinear}"/>
+                <Property key="AddItem" value="#{OMWEngine:TextureFilteringTrilinear}"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="Anisotropy">
+                <Property key="AddItem" value="#{Interface:Off}"/>
+                <Property key="AddItem" value="2x"/>
+                <Property key="AddItem" value="4x"/>
+                <Property key="AddItem" value="8x"/>
+                <Property key="AddItem" value="16x"/>
+            </Widget>
+            <Widget type="ScrollView" skin="MW_ScrollView" position="0 0 2 2" name="ControlsBox"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="ResetControlsButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="KeyboardButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="ControllerButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="WaterRefractionButton"/>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="WaterTextureSize">
+                <Property key="AddItem" value="#{OMWEngine:QualityLow}"/>
+                <Property key="AddItem" value="#{OMWEngine:QualityMedium}"/>
+                <Property key="AddItem" value="#{OMWEngine:QualityHigh}"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="WaterReflectionDetail">
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailSky}"/>
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailTerrain}"/>
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailWorld}"/>
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailObjects}"/>
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailActors}"/>
+                <Property key="AddItem" value="#{OMWEngine:ReflectionShaderDetailGroundcover}"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="WaterRainRippleDetail">
+                <Property key="AddItem" value="#{OMWEngine:RainRippleDetailSimple}"/>
+                <Property key="AddItem" value="#{OMWEngine:RainRippleDetailSparse}"/>
+                <Property key="AddItem" value="#{OMWEngine:RainRippleDetailDense}"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="PrimaryLanguage" />
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="SecondaryLanguage" />
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="GmstOverridesL10nButton"/>
+            <Widget type="AutoSizedTextBox" skin="SandText" position="0 0 2 2" name="WindowModeHint"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="ClusteredLightingButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="LightsResetButton"/>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="MaxLights">
+                <Property key="AddItem" value="8"/>
+                <Property key="AddItem" value="16"/>
+                <Property key="AddItem" value="24"/>
+                <Property key="AddItem" value="32"/>
+                <Property key="AddItem" value="40"/>
+                <Property key="AddItem" value="48"/>
+                <Property key="AddItem" value="56"/>
+                <Property key="AddItem" value="64"/>
+            </Widget>
+            <Widget type="EditBox" skin="MW_TextEdit" position="0 0 2 2" name="ScriptFilter"/>
+            <Widget type="ListBox" skin="MW_List" position="0 0 2 2" name="ScriptList"/>
+            <Widget type="Widget" skin="" position="0 0 2 2" name="ScriptBox"/>
+            <Widget type="ScrollView" skin="MW_ScrollViewVH" position="0 0 2 2" name="ScriptView"/>
+            <Widget type="LuaAdapter" skin="" position="0 0 2 2" name="ScriptAdapter"/>
+            <Widget type="EditBox" skin="SandText" position="0 0 2 2" name="ScriptDisabled"/>
+            <Widget type="HBox" skin="" position="0 0 2 2" name="ClassicFalloffWidget"/>
+            <Widget type="TextBox" skin="NormalText" position="0 0 2 2" name="MinimumBrightnessText"/>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="0 0 2 2" name="MinimumBrightnessScroll"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="ActorShadowsButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="PlayerShadowsButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="TerrainShadowsButton"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 2 2" name="ObjectShadowsButton"/>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="ShadowMapResolution">
+                <Property key="AddItem" value="512"/>
+                <Property key="AddItem" value="1024"/>
+                <Property key="AddItem" value="2048"/>
+                <Property key="AddItem" value="4096"/>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="0 0 2 2" name="GammaSlider"/>
+            <Widget type="TextBox" skin="NormalText" position="0 0 2 2" name="GammaText"/>
+            <Widget type="TextBox" skin="SandText" position="0 0 2 2" name="GammaTextDark"/>
+            <Widget type="TextBox" skin="SandText" position="0 0 2 2" name="GammaTextLight"/>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="0 0 2 2" name="RenderingDistanceSlider"/>
+            <Widget type="ScrollBar" skin="MW_HScroll" position="0 0 2 2" name="LargeRenderingDistanceSlider"/>
+        </Widget>
+    </Widget>
+</MyGUI>

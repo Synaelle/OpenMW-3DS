@@ -726,20 +726,17 @@ namespace omw3ds
                 case MWGui::GM_Inventory:
                     inventory();
                     return;
-                case MWGui::GM_Container:
-                    if (container())
-                        return;
-                    break;
+                case MWGui::GM_Container: // M8: MyGUI's container window on the top screen, the Inventory tab below
+                    return;
                 case MWGui::GM_Barter:
                     if (barter())
                         return;
                     break;
                 case MWGui::GM_Travel: // M8: MyGUI's travel window on the bottom screen
                     return;
-                case MWGui::GM_Training:
-                    if (training())
-                        return;
-                    break;
+                case MWGui::GM_Training: // M8: MyGUI's training window, centred on the bottom screen
+                case MWGui::GM_SpellCreation: // M8: MyGUI's spellmaking window on the top screen
+                    return;
                 case MWGui::GM_SpellBuying:
                     if (spellBuying())
                         return;

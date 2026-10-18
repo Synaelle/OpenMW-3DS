@@ -36,12 +36,12 @@
 
         <!-- The touched item, or the gold and encumbrance -->
         <Widget type="Widget" skin="MW_Box" position="2 156 308 52" name="Details3DS">
-            <Widget type="TextBox" skin="SandText" position="6 2 296 18" name="ItemName3DS">
+            <Widget type="TextBox" skin="SandText" position="6 2 186 18" name="ItemName3DS">
                 <Property key="TextAlign" value="Left"/>
                 <Property key="NeedMouse" value="false"/>
             </Widget>
-            <!-- Weight and value, in the small font (n3ds/hud3ds.hpp kSmallFont3DS) -->
-            <Widget type="TextBox" skin="NormalText" position="6 2 296 18" name="ItemInfo3DS">
+            <!-- Weight and value ("W: / V:", test #67), in the small font (n3ds/hud3ds.hpp kSmallFont3DS) -->
+            <Widget type="TextBox" skin="NormalText" position="194 2 108 18" name="ItemInfo3DS">
                 <Property key="FontName" value="Journalbook DefaultFont"/>
                 <Property key="TextAlign" value="Right Bottom"/>
                 <Property key="NeedMouse" value="false"/>

@@ -36,6 +36,7 @@
 #include <components/esm/refid.hpp>
 #include <components/esm/util.hpp>
 #include <components/esm3/loadbook.hpp>
+#include <components/esm3/loadcont.hpp>
 #include <components/esm3/loaddial.hpp>
 #include <components/esm3/loaddoor.hpp>
 #include <components/esm3/loadnpc.hpp>
@@ -592,7 +593,35 @@ namespace omw3ds::debug
                     dialog->setVisible(true);
                     found = true;
                 }
-                if (!found && (mode == "dialogue" || mode == "travel"))
+                if (!found && mode == "settings")
+                {
+                    P3DS_LOGI("autorun: the options window");
+                    MWBase::Environment::get().getWindowManager()->toggleSettingsWindow();
+                    found = true;
+                }
+                if (!found && mode == "container")
+                {
+                    const MWWorld::Ptr player = MWMechanics::getPlayer();
+                    const osg::Vec3f at = player.getRefData().getPosition().asVec3();
+                    MWWorld::Ptr nearest;
+                    float best = 0.f;
+                    player.getCell()->forEachType<ESM::Container>([&](const MWWorld::Ptr& ptr) {
+                        const float d = (ptr.getRefData().getPosition().asVec3() - at).length();
+                        if (nearest.isEmpty() || d < best)
+                        {
+                            nearest = ptr;
+                            best = d;
+                        }
+                        return true;
+                    });
+                    if (!nearest.isEmpty())
+                    {
+                        P3DS_LOGI("autorun: opening '%s'", nearest.getCellRef().getRefId().toDebugString().c_str());
+                        MWBase::Environment::get().getWindowManager()->pushGuiMode(MWGui::GM_Container, nearest);
+                        found = true;
+                    }
+                }
+                if (!found && (mode == "dialogue" || mode == "travel" || mode == "spellmaking" || mode == "training"))
                 {
                     const MWWorld::Ptr player = MWMechanics::getPlayer();
                     MWWorld::Ptr nearest;
@@ -614,8 +643,11 @@ namespace omw3ds::debug
                     if (!nearest.isEmpty())
                     {
                         P3DS_LOGI("autorun: %s with '%s'", mode.c_str(), nearest.getCellRef().getRefId().toDebugString().c_str());
-                        MWBase::Environment::get().getWindowManager()->pushGuiMode(
-                            mode == "travel" ? MWGui::GM_Travel : MWGui::GM_Dialogue, nearest);
+                        const MWGui::GuiMode gm = mode == "travel" ? MWGui::GM_Travel
+                            : mode == "spellmaking"                ? MWGui::GM_SpellCreation
+                            : mode == "training"                   ? MWGui::GM_Training
+                                                                   : MWGui::GM_Dialogue;
+                        MWBase::Environment::get().getWindowManager()->pushGuiMode(gm, nearest);
                         found = true;
                     }
                 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The magic selection list (spellmaking, enchanting) on the top screen (M8): 400x240 at 0,0. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_DialogNoTransp" position="0 0 400 240" layer="Modal" name="_Main">
+        <Widget type="TextBox" skin="SandText" position="8 4 384 20">
+            <Property key="Caption" value="#{sMagicSelectTitle}"/>
+        </Widget>
+        <Widget type="SpellView" skin="MW_SpellView" position="8 26 384 178" name="MagicList">
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton" position="340 208 52 24">
+            <Property key="ExpandDirection" value="Left"/>
+            <Property key="Caption" value="#{Interface:Cancel}"/>
+        </Widget>
+    </Widget>
+</MyGUI>

@@ -3786,7 +3786,7 @@ namespace Render3DS
 
         // Interface textures unpacked once for the CPU: RGBA8 words (r, g, b, a from the low byte), row r being
         // what the GPU samples for v in [r / height, (r + 1) / height). Dropped when a runtime texture changes
-        // (gTextureGeneration) or when they pass 6 MB.
+        // (gTextureGeneration), when they pass 3 MB, or at a loading screen.
         struct DecodedTexture
         {
             const void* mData = nullptr;
@@ -3799,7 +3799,7 @@ namespace Render3DS
 
         const DecodedTexture& decodedTexture(const C3D_Tex& tex)
         {
-            if (gDecodedGeneration != gTextureGeneration || gDecodedBytes > (6u << 20))
+            if (gDecodedGeneration != gTextureGeneration || gDecodedBytes > (3u << 20))
             {
                 gDecoded.clear();
                 gDecodedBytes = 0;
@@ -5403,6 +5403,13 @@ namespace Render3DS
         if (hold != gHoldTop)
             P3DS_LOGI("render3ds: top screen %s", hold ? "held (loading)" : "released");
         gHoldTop = hold;
+        if (hold && !gDecoded.empty())
+        {
+            // A loading screen: the interface's decoded textures go (the creation windows' pictures and the
+            // like, up to 3 MB on a heap that test #67 ran out of).
+            gDecoded.clear();
+            gDecodedBytes = 0;
+        }
     }
 
     void setGuiOwnsBottomScreen(bool owns)

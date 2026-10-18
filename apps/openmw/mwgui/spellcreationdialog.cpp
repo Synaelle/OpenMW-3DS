@@ -32,6 +32,10 @@
 #include "textcolours.hpp"
 #include "tooltips.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/frame3ds.hpp"
+#endif
+
 namespace
 {
 
@@ -578,6 +582,9 @@ namespace MWGui
         , EffectEditorBase(EffectEditorBase::Spellmaking)
     {
         getWidget(mNameEdit, "NameEdit");
+#ifdef OPENMW_PLATFORM_3DS
+        mNameEdit->eventMouseButtonClick += MyGUI::newDelegate(this, &SpellCreationDialog::onNameClicked3DS);
+#endif
         getWidget(mMagickaCost, "MagickaCost");
         getWidget(mSuccessChance, "SuccessChance");
         getWidget(mAvailableEffectsList, "AvailableEffects");
@@ -615,6 +622,17 @@ namespace MWGui
         mPlayerGold->setCaptionWithReplacing(MyGUI::utility::toString(playerGold));
 
         startEditing();
+    }
+
+    void SpellCreationDialog::onNameClicked3DS(MyGUI::Widget* /*sender*/)
+    {
+#ifdef OPENMW_PLATFORM_3DS
+        omw3ds::deferToFrame([this] {
+            std::string text = mNameEdit->getCaption().asUTF8();
+            if (omw3ds::systemKeyboard("Spell name", text, 32))
+                mNameEdit->setCaption(MyGUI::UString(text));
+        });
+#endif
     }
 
     void SpellCreationDialog::onCancelButtonClicked(MyGUI::Widget* /*sender*/)

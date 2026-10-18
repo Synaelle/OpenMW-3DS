@@ -57,16 +57,10 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #67: saving and loading):
-  The main menu (START) has Save Game and Load Game. The save dialog is on the two screens: the save's
-  details on the top one (no picture: the 3DS saves carry none for now), the saves list, the name box (a
-  touch opens the keyboard; a name is proposed) and OK/Cancel on the bottom one. Load Game lists the
-  characters (the box at the top, Y cycles them) and the saves; OK loads after a confirmation box. Saves go
-  to sdmc:/openmw/saves/.
-  New: the CIA, openmw/ui3ds (the save dialog layout) and openmw/test-menu.txt (uploaded).
-  Save once in the office, play on, then load that save; and start the game again and load it from the
-  title screen. Photos of the save dialog; a note on how long the save and the load take. Logs:
-  logs/test67-.../.
+What this tests (hardware test #70: test #69 plus the two notes):
+  The button hint bar is gone from the bottom screen (it covered the item details while looting); the
+  frame rate under the minimap is the number alone. Everything else as in test #69.
+  New: the CIA and openmw/test-menu.txt (uploaded). Logs: logs/test70-.../.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

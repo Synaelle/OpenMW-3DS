@@ -403,7 +403,9 @@ namespace MWGui
         auto containerWindow = std::make_unique<ContainerWindow>(*mDragAndDrop, *mItemTransfer);
         mContainerWindow = containerWindow.get();
         mWindows.push_back(std::move(containerWindow));
-        trackWindow(mContainerWindow, makeContainerWindowSettingValues());
+#ifndef OPENMW_PLATFORM_3DS
+        trackWindow(mContainerWindow, makeContainerWindowSettingValues()); // 3DS (M8): its layout places it
+#endif
         mGuiModeStates[GM_Container] = GuiModeState({ mContainerWindow, mInventoryWindow });
 
         auto hud = std::make_unique<HUD>(mCustomMarkers, mDragAndDrop.get(), mLocalMapRender.get());
@@ -429,7 +431,9 @@ namespace MWGui
         auto settingsWindow = std::make_unique<SettingsWindow>(mCfgMgr);
         mSettingsWindow = settingsWindow.get();
         mWindows.push_back(std::move(settingsWindow));
-        trackWindow(mSettingsWindow, makeSettingsWindowSettingValues());
+#ifndef OPENMW_PLATFORM_3DS
+        trackWindow(mSettingsWindow, makeSettingsWindowSettingValues()); // 3DS (M8): its layout places it
+#endif
 
         auto confirmationDialog = std::make_unique<ConfirmationDialog>();
         mConfirmationDialog = confirmationDialog.get();
@@ -720,8 +724,12 @@ namespace MWGui
             mStatsWindow->setVisible(false);
             mSpellWindow->setVisible(false);
             mHud->setDrowningBarVisible(false);
+#ifdef OPENMW_PLATFORM_3DS
+            mInventoryWindow->setVisible(false); // the bottom screen's Inventory tab stands in (M8)
+#else
             mInventoryWindow->setVisible(
                 getMode() == GM_Container || getMode() == GM_Barter || getMode() == GM_Companion);
+#endif
         }
 
         GuiMode mode = mGuiModes.back();
@@ -2806,6 +2814,13 @@ namespace MWGui
     {
         if (!Settings::gui().mControllerMenus || !mControllerButtonsOverlay)
             return;
+#ifdef OPENMW_PLATFORM_3DS
+        // No button hint bar on the 3DS (test #69, the tester): it covered the bottom screen's item details.
+        mControllerButtonsOverlay->setVisible(false);
+        if (mInventoryTabsOverlay)
+            mInventoryTabsOverlay->setVisible(false);
+        return;
+#endif
 
         if (mWindows.empty())
             return;

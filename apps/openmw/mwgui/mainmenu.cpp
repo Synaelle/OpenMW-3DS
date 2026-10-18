@@ -399,8 +399,17 @@ namespace MWGui
 #ifdef OPENMW_PLATFORM_3DS
         // The canvas is both screens (400x480, the bottom screen's 320x240 at 40,240): the buttons centred on
         // the bottom screen, the title picture on the top one (showBackground), the version at the bottom right.
-        mButtonBox->setCoord(40 + (320 - maxwidth) / 2, 240 + (240 - curH) / 2, maxwidth, curH + 8);
-        mVersionText->setCoord(40, 240 + 2, 320 - 4, 18);
+        if (state == MWBase::StateManager::State_NoGame)
+        {
+            mButtonBox->setCoord(40 + (320 - maxwidth) / 2, 240 + (240 - curH) / 2, maxwidth, curH + 8);
+            mVersionText->setCoord(40, 240 + 2, 320 - 4, 18);
+        }
+        else
+        {
+            // The pause menu over the scene on the top screen (the tester's design, test #69).
+            mButtonBox->setCoord((400 - maxwidth) / 2, (240 - curH) / 2, maxwidth, curH + 8);
+            mVersionText->setCoord(0, 240 - 18, 400 - 4, 18);
+        }
 #else
         if (state == MWBase::StateManager::State_NoGame)
         {

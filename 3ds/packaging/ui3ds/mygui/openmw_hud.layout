@@ -32,18 +32,14 @@
 
         <Widget type="Widget" skin="MW_DialogNoTransp" position="40 262 320 218" align="Left Top" name="Bottom3DS">
 
-            <!-- Health, magicka and fatigue, with their values (n3ds/hud3ds.cpp) -->
+            <!-- Health, magicka and fatigue bars with their values (n3ds/hud3ds.cpp); no captions (test #67) -->
             <Widget type="Button" skin="" position="4 4 230 18" align="Left Top" name="HealthFrame">
                 <UserString key="ToolTipType" value="Layout"/>
                 <UserString key="ToolTipLayout" value="HealthToolTip"/>
                 <UserString key="ImageTexture_HealthImage" value="icons\k\health.dds"/>
-                <Widget type="TextBox" skin="NormalText" position="0 0 64 18" align="Left Top">
-                    <Property key="Caption" value="#{sHealth}"/>
+                <Widget type="ProgressBar" skin="MW_Progress_Red" position="0 0 230 18" align="Left Top" name="Health">
                     <Property key="NeedMouse" value="false"/>
-                </Widget>
-                <Widget type="ProgressBar" skin="MW_Progress_Red" position="66 0 164 18" align="Left Top" name="Health">
-                    <Property key="NeedMouse" value="false"/>
-                    <Widget type="TextBox" skin="ProgressText" position="0 0 164 14" align="Right VCenter" name="HealthValue3DS">
+                    <Widget type="TextBox" skin="ProgressText" position="0 0 230 14" align="Right VCenter" name="HealthValue3DS">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
@@ -52,13 +48,9 @@
                 <UserString key="ToolTipType" value="Layout"/>
                 <UserString key="ToolTipLayout" value="HealthToolTip"/>
                 <UserString key="ImageTexture_HealthImage" value="icons\k\magicka.dds"/>
-                <Widget type="TextBox" skin="NormalText" position="0 0 64 18" align="Left Top">
-                    <Property key="Caption" value="#{sMagic}"/>
+                <Widget type="ProgressBar" skin="MW_Progress_Blue" position="0 0 230 18" align="Left Top" name="Magicka">
                     <Property key="NeedMouse" value="false"/>
-                </Widget>
-                <Widget type="ProgressBar" skin="MW_Progress_Blue" position="66 0 164 18" align="Left Top" name="Magicka">
-                    <Property key="NeedMouse" value="false"/>
-                    <Widget type="TextBox" skin="ProgressText" position="0 0 164 14" align="Right VCenter" name="MagickaValue3DS">
+                    <Widget type="TextBox" skin="ProgressText" position="0 0 230 14" align="Right VCenter" name="MagickaValue3DS">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
@@ -67,16 +59,18 @@
                 <UserString key="ToolTipType" value="Layout"/>
                 <UserString key="ToolTipLayout" value="HealthToolTip"/>
                 <UserString key="ImageTexture_HealthImage" value="icons\k\fatigue.dds"/>
-                <Widget type="TextBox" skin="NormalText" position="0 0 64 18" align="Left Top">
-                    <Property key="Caption" value="#{sFatigue}"/>
+                <Widget type="ProgressBar" skin="MW_Progress_Green" position="0 0 230 18" align="Left Top" name="Stamina">
                     <Property key="NeedMouse" value="false"/>
-                </Widget>
-                <Widget type="ProgressBar" skin="MW_Progress_Green" position="66 0 164 18" align="Left Top" name="Stamina">
-                    <Property key="NeedMouse" value="false"/>
-                    <Widget type="TextBox" skin="ProgressText" position="0 0 164 14" align="Right VCenter" name="FatigueValue3DS">
+                    <Widget type="TextBox" skin="ProgressText" position="0 0 230 14" align="Right VCenter" name="FatigueValue3DS">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
+            </Widget>
+            <!-- The frame rate, under the minimap (test #67, the tester), in the small font, once a second -->
+            <Widget type="TextBox" skin="SandText" position="240 73 68 12" align="Left Top" name="Fps3DS">
+                <Property key="FontName" value="Journalbook DefaultFont"/>
+                <Property key="TextAlign" value="Right Top"/>
+                <Property key="NeedMouse" value="false"/>
             </Widget>
             <!-- The current enemy's health, under the player's -->
             <Widget type="ProgressBar" skin="MW_EnergyBar_Yellow" position="70 62 164 10" align="Left Top" name="EnemyHealth">

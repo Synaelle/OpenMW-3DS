@@ -499,7 +499,12 @@ namespace MWGui
         captionWidget->setNeedKeyFocus(false);
 #ifdef OPENMW_PLATFORM_3DS
         if (sTargetLabel3DS)
-            captionWidget->setFontName(omw3ds::kSmallFont3DS);
+        {
+            // The normal font, wrapped at 300 px (test #67: the small font was hard to read on the top screen).
+            captionWidget->setEditMultiLine(true);
+            captionWidget->setEditWordWrap(true);
+            captionWidget->setTextAlign(MyGUI::Align::HCenter | MyGUI::Align::Top);
+        }
 #endif
         captionWidget->setCaptionWithReplacing(caption);
         MyGUI::IntSize captionSize = captionWidget->getTextSize();
@@ -512,10 +517,6 @@ namespace MWGui
         textWidget->setEditStatic(true);
         textWidget->setEditMultiLine(true);
         textWidget->setEditWordWrap(info.wordWrap);
-#ifdef OPENMW_PLATFORM_3DS
-        if (sTargetLabel3DS)
-            textWidget->setFontName(omw3ds::kSmallFont3DS);
-#endif
         textWidget->setCaptionWithReplacing(text);
         textWidget->setTextAlign(MyGUI::Align::HCenter | MyGUI::Align::Top);
         textWidget->setNeedKeyFocus(false);

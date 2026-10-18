@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The container (loot) window on the top screen (M8, the tester's split): the container's items here, the
+     player's inventory as the bottom screen's Inventory tab (n3ds/hud3ds.cpp switches to it). A touch on an
+     item takes it (controller menus: no drag). The widget names are those of container.cpp. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Window" layer="Windows" position="0 0 400 240" name="_Main">
+        <Widget type="ItemView" skin="MW_ItemView" position="4 4 372 174" name="ItemView" align="Left Top"/>
+        <Widget type="HBox" position="0 182 376 26" align="Left Top">
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="DisposeCorpseButton">
+                <Property key="Caption" value="#{sDisposeofCorpse}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="TakeButton">
+                <Property key="Caption" value="#{sTakeAll}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="CloseButton">
+                <Property key="Caption" value="#{Interface:Close}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>
