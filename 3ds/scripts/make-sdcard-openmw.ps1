@@ -57,19 +57,17 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #46: Lumiere, polished):
-  The port's own interface is now called Lumiere. Since test #45 it was matched to the old interface screen by
-  screen (labelled bars, Morrowind's buttons, the 16 px font everywhere, the inventory's grid, details, Use /
-  Drop / Quick key buttons, encumbrance and gold, the Magic page's Powers and Spells groups, the Stats page's
-  bars and Major/Minor/Misc skills), and the old interface's hidden per-frame work was switched off under it
-  (about 4 ms a frame). Expected: 24-28 fps outdoors where MyGUI by the CPU gave 16-22.
-  New: the CIA, openmw/cooked/lumiere.o3ua (the interface's texture, renamed) and openmw/test-menu.txt (uploaded).
+What this tests (hardware test #48: the two fixes from your test #47 screenshots):
+  Test #47 showed no flashing: the interface on the GPU from one texture is now the default. Fixed since:
+  the dark box behind the top screen's target label and the windows' translucent backgrounds were not drawn
+  (one bug: the plain-colour fills were left out), and a tab's page now hides the HUD panel instead of
+  showing over it. Lumiere is gone from the builds (kept in the repository).
+  New: the CIA and openmw/test-menu.txt (uploaded).
   At startup, choose a run with UP/DOWN and A:
-    Run A: Lumiere. Walk around Seyda Neen for 3 minutes, open every tab, use an item, assign a quick key from
-           the Inventory and from the Magic tab, cast. Does anything flash? Frame rate? Anything that looks
-           different from the old interface, or doesn't respond to touch?
-    Run B: the old interface drawn by the CPU, for comparison.
-    Logs: logs/test46-A, -B. A phone video of run A is perfect.
+    Run A: the interface by the GPU, one texture (the default now). Look at a door or an NPC: the label at the
+           top has a dark translucent box. Open the tabs: the page replaces the HUD. Walk 3 minutes: any flash?
+    Run B: the interface by the CPU, for comparison only.
+    Logs: logs/test48-A, -B.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

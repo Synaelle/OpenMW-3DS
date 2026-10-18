@@ -709,6 +709,8 @@ namespace omw3ds
             }
             showWindow(Hud3DS::magic(), tab == Tab::Magic);
             showWindow(Hud3DS::stats(), tab == Tab::Stats);
+            // A page replaces the HUD panel (hardware test #47: the bars and boxes showed through the pages).
+            showWindow(Hud3DS::hud(), tab == Tab::None);
             if (tab == Tab::Items)
                 sItems->tick();
             else if (tab == Tab::Debug && sDebug != nullptr)
@@ -817,6 +819,8 @@ namespace omw3ds
         }
     }
 
+#ifdef OPENMW3DS_LUMIERE
+    // Deprecated 18/10/2026 (see backend.cpp): compiled only with OPENMW3DS_LUMIERE.
     // ------------------------------------------------------------------ the port's own interface (Lumiere)
     //
     // Hardware tests #34-#44: MyGUI's interface drawn through the GPU flashes nearby meshes (its texture changes),
@@ -1750,6 +1754,7 @@ namespace omw3ds
         }
         sDown = down;
     }
+#endif // OPENMW3DS_LUMIERE
 
     MyGUI::IntPoint targetLabel3DS(const MyGUI::IntSize& size)
     {
@@ -1779,8 +1784,10 @@ namespace omw3ds
             continues = lower;
             label += line;
         }
+#ifdef OPENMW3DS_LUMIERE
         sTopLabel = label;
         sTopLabelFrame = sUiFrame;
+#endif // OPENMW3DS_LUMIERE
         return label;
     }
 
@@ -1788,11 +1795,13 @@ namespace omw3ds
     {
         if (!Hud3DS::ready())
             return;
+#ifdef OPENMW3DS_LUMIERE
         if (Render3DS::Lumiere::active())
         {
             updateLumiere();
             return;
         }
+#endif // OPENMW3DS_LUMIERE
         updateStrip();
         updatePanel();
         updateTabs();

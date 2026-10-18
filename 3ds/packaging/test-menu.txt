@@ -1,5 +1,5 @@
-title Test #46: Lumiere, polished - pick a run
-logs test46
-run A: Lumiere | lumiere
-run B: MyGUI interface (CPU) |
+title Test #48: label box, pages, no Lumiere - pick a run
+logs test48
+run A: GPU interface (default) |
+run B: CPU interface | soft-gui
 run Normal game |

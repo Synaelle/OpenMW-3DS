@@ -31,6 +31,11 @@ target_compile_definitions(platform3ds PUBLIC
 # undefined). The log file, crash reports, the watchdog, the GPU self-test and the 5 s perf/memory summary
 # lines stay either way.
 option(OPENMW3DS_DEBUG "3DS debug tools (debug bottom screen, autorun, detailed profiling)" ON)
+# Lumiere, the port's own interface (deprecated 18/10/2026, kept to borrow from): not in the builds.
+option(OPENMW3DS_LUMIERE "Compile Lumiere, the port's own interface (deprecated)" OFF)
+if (OPENMW3DS_LUMIERE)
+    target_compile_definitions(platform3ds PUBLIC OPENMW3DS_LUMIERE=1)
+endif()
 if (OPENMW3DS_DEBUG)
     target_compile_definitions(platform3ds PUBLIC OPENMW3DS_DEBUG=1)
 endif()

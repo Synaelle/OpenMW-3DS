@@ -452,6 +452,7 @@ namespace omw3ds
         }
         if (Render3DS::drawsGui())
             updateHud3DS();
+#ifdef OPENMW3DS_LUMIERE
         if (Render3DS::guiOwnsBottomScreen() && Render3DS::Lumiere::active())
         {
             touchPosition touch{};
@@ -460,7 +461,9 @@ namespace omw3ds
                 hidTouchRead(&touch);
             touchLumiere(touch.px, touch.py, down);
         }
-        else if (Render3DS::guiOwnsBottomScreen())
+        else
+#endif // OPENMW3DS_LUMIERE
+        if (Render3DS::guiOwnsBottomScreen())
             injectTouchToGui();
         else if (gBottomReady && (hidKeysDown() & KEY_TOUCH))
         {

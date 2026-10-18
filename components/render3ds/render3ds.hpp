@@ -67,6 +67,8 @@ namespace Render3DS
 
     // Who draws the bottom screen: MyGUI through the GPU (true) or the CPU text display (false: the debug display,
     // the M6 text menus). Switching to the GPU redraws it at the next frame.
+#ifdef OPENMW3DS_LUMIERE
+    // Deprecated 18/10/2026, compiled only with OPENMW3DS_LUMIERE (see backend.cpp).
     // The port's own interface (backend.cpp, namespace lumiere): everything drawn from one texture, one draw per
     // screen; the game side is n3ds/hud3ds.cpp. Coordinates are canvas pixels (the top screen 400x240 at the
     // top, the bottom screen's 320x240 under it at x 40..360, y 240..480). A screen's vertices are rebuilt only
@@ -95,6 +97,7 @@ namespace Render3DS
         void icon(Screen screen, std::string_view key, float x, float y, float size);
         void releaseIcons();
     }
+#endif // OPENMW3DS_LUMIERE
 
     void setGuiOwnsBottomScreen(bool owns);
     bool guiOwnsBottomScreen();

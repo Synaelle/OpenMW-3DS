@@ -2675,10 +2675,12 @@ namespace Render3DS
         void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
         void captureAll(const std::string& path); // likewise
 
+#ifdef OPENMW3DS_LUMIERE
         namespace lumiere
         {
             void uploadPendingIcons(); // the port's own interface, below
         }
+#endif // OPENMW3DS_LUMIERE
 
         bool beginFrame()
         {
@@ -2709,7 +2711,9 @@ namespace Render3DS
             gSceneBuffer = nullptr;
             gTransientUsed = 0;
             processPendingDeletes();
+#ifdef OPENMW3DS_LUMIERE
             lumiere::uploadPendingIcons(); // the GPU is idle: the atlas's icon region can change
+#endif // OPENMW3DS_LUMIERE
             C3D_TexBind(0, nullptr); // the bound C3D_Tex may have been freed with its texture
             if (gSelfTestDone) // the self-test's first steps keep the exact M0 setup: unit 1 never bound
             {
@@ -3144,8 +3148,12 @@ namespace Render3DS
                     texture = batch.mTexture != nullptr ? textureFor(*batch.mTexture) : nullptr;
                     // A uniform runtime image (OpenMW's "white", "black" and "transparent" 8x8 fills): no texture,
                     // its colour multiplied into the vertices instead.
+                    bool uniform = false;
                     if (texture != nullptr && cooked == nullptr && uniformImage(*image, tint))
+                    {
                         texture = nullptr;
+                        uniform = true;
+                    }
 #ifdef OPENMW3DS_DEBUG
                     // What still binds a texture of its own in the interface pass (the rule: only the UI atlas).
                     if (texture != nullptr && gGuiTextureNames.count(texture) == 0)
@@ -3165,7 +3173,7 @@ namespace Render3DS
 #endif
                     // A texture the GPU can't show (the local map's render-to-texture tiles until M8 step 5): left
                     // out rather than drawn as a plain white quad.
-                    if (batch.mTexture != nullptr && texture == nullptr)
+                    if (batch.mTexture != nullptr && texture == nullptr && !uniform)
                         continue;
                 }
                 Record record{ in, batch.mCount, 1.f, 1.f, 0.f, 0.f, false, false, {}, Box{}, 0, -1 };
@@ -3355,15 +3363,15 @@ namespace Render3DS
         // for every quad (#38). So the CPU draws the interface (MyGUI's batches, the same layouts and textures):
         // straight into the bottom screen's framebuffer, and into one overlay texture for the top screen that the
         // GPU draws as a single quad: one texture bind per frame for the whole interface. Each screen is redrawn
-        // only when what it shows changes. sdmc:/openmw/gpu-ui brings back the GPU interface (the startup test
-        // menu's "Old interface" run).
+        // only when what it shows changes. Since hardware test #47 the GPU draws the interface again, from one
+        // texture (the UI atlas: prepareGuiDraws); sdmc:/openmw/soft-gui brings the CPU interface back.
         bool softGui()
         {
             static const bool on = [] {
                 struct stat st;
-                const bool gpu = stat("sdmc:/openmw/gpu-ui", &st) == 0 || stat("sdmc:/openmw/lumiere", &st) == 0;
-                P3DS_LOGI("render3ds: interface drawn by the %s", gpu ? "GPU (gpu-ui)" : "CPU");
-                return !gpu;
+                const bool soft = stat("sdmc:/openmw/soft-gui", &st) == 0;
+                P3DS_LOGI("render3ds: interface drawn by the %s", soft ? "CPU (soft-gui)" : "GPU");
+                return soft;
             }();
             return on;
         }
@@ -4071,6 +4079,9 @@ namespace Render3DS
             gGuiDraws.push_back(GuiDraw{ 0, 6, &gOverlay, GuiBlend::Premultiplied });
         }
 
+#ifdef OPENMW3DS_LUMIERE
+        // Deprecated 18/10/2026 (hardware test #47: MyGUI on one texture does not flash either): kept to borrow
+        // from, compiled only with -DOPENMW3DS_LUMIERE=ON.
         // ------------------------------------------------------------------ the port's own interface (Lumiere)
         //
         // Hardware tests #34-#43: the New 3DS draws nearby scene meshes wrong for a frame when the interface
@@ -4679,6 +4690,8 @@ namespace Render3DS
             }
         }
 
+#endif // OPENMW3DS_LUMIERE
+
         void drawGui()
         {
             // Only while the GUI owns the bottom screen: OpenMW's menus still go to the M6 text menus there, and
@@ -4686,8 +4699,10 @@ namespace Render3DS
             if (!gDrawsGui || !gGuiOwnsBottom || gGuiSource == nullptr || gFlatProjection < 0)
                 return;
             p3ds::perf::Phase phase("guiDraw");
+#ifdef OPENMW3DS_LUMIERE
             if (lumiere::enabled() && lumiere::draw())
                 return;
+#endif // OPENMW3DS_LUMIERE
             const uint64_t hash = prepareGuiDraws();
             const bool soft = softGui();
             if (soft)
@@ -5072,6 +5087,7 @@ namespace Render3DS
     }
 }
 
+#ifdef OPENMW3DS_LUMIERE
 namespace Render3DS::Lumiere
 {
     bool enabled()
@@ -5125,3 +5141,4 @@ namespace Render3DS::Lumiere
         lumiere::releaseIcons();
     }
 }
+#endif // OPENMW3DS_LUMIERE
