@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The birthsign window on the top screen (M8, 3DS): 400x240 at 0,0. The widget names are those of birth.cpp. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 400 240" name="_Main">
+        <!-- Birthsign list -->
+        <Widget type="ListBox" skin="MW_List" position="8 4 150 100" name="BirthsignList"/>
+
+        <!-- Birthsign image -->
+        <Widget type="Widget" skin="MW_Box" position="166 4 226 100" align="Left Top">
+            <Widget type="ImageBox" skin="ImageBox" position="2 2 222 96" name="BirthsignImage" align="Left Top"/>
+        </Widget>
+
+        <!-- Spell list -->
+        <Widget type="ScrollView" skin="MW_ScrollView" position="8 110 384 96" align="Left Top" name="SpellArea">
+            <Property key="CanvasAlign" value="Left"/>
+        </Widget>
+
+        <!-- Dialog buttons -->
+        <Widget type="HBox" position="0 210 392 26">
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="BackButton">
+                <Property key="Caption" value="#{sBack}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="OKButton">
+                <Property key="Caption" value="#{Interface:OK}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

@@ -392,7 +392,11 @@ namespace MWGui
         auto dialogueWindow = std::make_unique<DialogueWindow>();
         mDialogueWindow = dialogueWindow.get();
         mWindows.push_back(std::move(dialogueWindow));
+#ifndef OPENMW_PLATFORM_3DS
+        // 3DS (M8): the dialogue window's layout spans both screens; the saved PC position and size would
+        // squeeze it onto the bottom one.
         trackWindow(mDialogueWindow, makeDialogueWindowSettingValues());
+#endif
         mGuiModeStates[GM_Dialogue] = GuiModeState(mDialogueWindow);
         mTradeWindow->eventTradeDone += MyGUI::newDelegate(mDialogueWindow, &DialogueWindow::onTradeComplete);
 
@@ -1987,6 +1991,8 @@ namespace MWGui
 
     bool WindowManager::getCursorVisible()
     {
+        // 3DS: the system has no pointer, but the HUD's mouse emulation cursor (drawn by the interface) shows
+        // where the circle pad points while the interface is up (test #63: "L Mouse" with no cursor).
         return mCursorVisible && mCursorActive;
     }
 

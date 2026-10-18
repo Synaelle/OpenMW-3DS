@@ -36,10 +36,16 @@ namespace Render3DS
     // time). Set before OpenMW creates its UI (the canvas size depends on it).
     void setDrawsGui(bool draws);
     bool drawsGui();
+    // Which path draws the interface, for the debug display: "ui CPU", or the deprecated GPU one.
+    const char* interfacePath();
+    bool interfaceByCpu(); // the CPU path (the port's one) rather than the deprecated GPU one
 
     // While a loading screen is up (hardware test #54: the cell being torn down and rebuilt drew smears on the
     // top screen), the top screen keeps its last frame: no clear, no scene draws; the interface still draws.
     void setHoldTopScreen(bool hold);
+    // Both screens' interface drawn whole again: after a system applet (the keyboard), whose transition writes
+    // the screens' capture into VRAM over the top overlay texture (test #63).
+    void invalidateInterface();
 
     // MyGUI's canvas has the console's shape: the top screen (400x240) at (0, 0) and the bottom screen (320x240)
     // centred under it at (40, 240). Its vertices arrive in the canvas's clip space; each screen draws them through

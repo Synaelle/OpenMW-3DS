@@ -10,8 +10,13 @@
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/luamanager.hpp"
+#include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/statemanager.hpp"
+#include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
+#include "../mwgui/mode.hpp"
+#include "../mwgui/savegamedialog.hpp"
+#include "../mwmechanics/actorutil.hpp"
 #include "../mwphysics/raycasting.hpp"
 #include "../mwrender/camera.hpp"
 #include "../mwworld/actionteleport.hpp"
@@ -20,9 +25,12 @@
 #include "../mwworld/class.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/globals.hpp"
+#include "../mwworld/manualref.hpp"
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/refdata.hpp"
 #include "../mwworld/timestamp.hpp"
+
+#include <MyGUI_ITexture.h> // SaveGameDialog holds a unique_ptr to one
 
 #include <components/esm/position.hpp>
 #include <components/esm/refid.hpp>
@@ -276,6 +284,9 @@ namespace omw3ds::debug
             float mTurnDegrees = 0; // "turn:D": rotate the player by D degrees at frame 30
             std::vector<ScriptedInput> mInputs;
             std::vector<unsigned> mDoors; // "door:F,G,...": activate the nearest door at those frames
+            std::vector<unsigned> mSaves; // "save:F": a quick save at frame F
+            std::vector<unsigned> mLoads; // "load:F": the quick load at frame F
+            std::vector<std::pair<unsigned, std::string>> mGuiModes; // "gui:F,<mode>": open a window at frame F
             unsigned mLuaProfileAt = 0; // "luaprof:F": write the Lua profiler table (needs "lua profiler = true")
             unsigned mPosAt = 0; // "pos:F,X,Y,Z": put the player at X Y Z (same worldspace) at frame F
             osg::Vec3f mPos;
@@ -404,6 +415,21 @@ namespace omw3ds::debug
                             result.mDoors.push_back(unsigned(std::strtoul(end + (*end == ',' ? 1 : 0), &end, 10)));
                         while (*end == ',');
                     }
+                    for (const char* q = std::strstr(buf, "gui:"); q != nullptr; q = std::strstr(q + 4, "gui:"))
+                    {
+                        char* end = nullptr;
+                        const unsigned at = unsigned(std::strtoul(q + 4, &end, 10));
+                        if (*end != ',')
+                            continue;
+                        std::string mode;
+                        for (const char* c = end + 1; *c != '\0' && !std::isspace(static_cast<unsigned char>(*c)); ++c)
+                            mode += *c;
+                        result.mGuiModes.emplace_back(at, mode);
+                    }
+                    if (const char* q = std::strstr(buf, "save:"))
+                        result.mSaves.push_back(unsigned(std::strtoul(q + 5, nullptr, 10)));
+                    if (const char* q = std::strstr(buf, "load:"))
+                        result.mLoads.push_back(unsigned(std::strtoul(q + 5, nullptr, 10)));
                     if (const char* q = std::strstr(buf, "loading:"))
                     {
                         char* end = const_cast<char*>(q + 8);
@@ -528,6 +554,91 @@ namespace omw3ds::debug
         for (unsigned door : autorun.mDoors)
             if (door == frame)
                 activateNearestDoor();
+        for (unsigned at : autorun.mSaves)
+            if (at == frame)
+            {
+                P3DS_LOGI("autorun: quick save");
+                MWBase::Environment::get().getStateManager()->quickSave("Autorun");
+            }
+        for (unsigned at : autorun.mLoads)
+            if (at == frame)
+            {
+                P3DS_LOGI("autorun: quick load");
+                MWBase::Environment::get().getStateManager()->quickLoad();
+            }
+        for (const auto& [at, mode] : autorun.mGuiModes)
+            if (at == frame)
+            {
+                static const std::pair<const char*, MWGui::GuiMode> modes[] = { { "race", MWGui::GM_Race },
+                    { "class", MWGui::GM_Class }, { "classpick", MWGui::GM_ClassPick },
+                    { "classcreate", MWGui::GM_ClassCreate }, { "classgen", MWGui::GM_ClassGenerate },
+                    { "birth", MWGui::GM_Birth }, { "review", MWGui::GM_Review }, { "name", MWGui::GM_Name },
+                    { "mainmenu", MWGui::GM_MainMenu }, { "journal", MWGui::GM_Journal } };
+                bool found = false;
+                for (const auto& [name, gm] : modes)
+                    if (mode == name)
+                    {
+                        P3DS_LOGI("autorun: opening the %s window", name);
+                        MWBase::Environment::get().getWindowManager()->pushGuiMode(gm);
+                        found = true;
+                    }
+                if (!found && (mode == "save" || mode == "load"))
+                {
+                    static std::unique_ptr<MWGui::SaveGameDialog> dialog; // as the main menu keeps its own
+                    if (!dialog)
+                        dialog = std::make_unique<MWGui::SaveGameDialog>();
+                    P3DS_LOGI("autorun: the %s dialog", mode.c_str());
+                    dialog->setLoadOrSave(mode == "load");
+                    dialog->setVisible(true);
+                    found = true;
+                }
+                if (!found && (mode == "dialogue" || mode == "travel"))
+                {
+                    const MWWorld::Ptr player = MWMechanics::getPlayer();
+                    MWWorld::Ptr nearest;
+                    float best = 0.f;
+                    std::vector<MWWorld::Ptr> actors;
+                    MWBase::Environment::get().getMechanicsManager()->getActorsInRange(
+                        player.getRefData().getPosition().asVec3(), 2000.f, actors);
+                    for (const MWWorld::Ptr& actor : actors)
+                    {
+                        if (actor == player)
+                            continue;
+                        const float d = (actor.getRefData().getPosition().asVec3() - player.getRefData().getPosition().asVec3()).length();
+                        if (nearest.isEmpty() || d < best)
+                        {
+                            nearest = actor;
+                            best = d;
+                        }
+                    }
+                    if (!nearest.isEmpty())
+                    {
+                        P3DS_LOGI("autorun: %s with '%s'", mode.c_str(), nearest.getCellRef().getRefId().toDebugString().c_str());
+                        MWBase::Environment::get().getWindowManager()->pushGuiMode(
+                            mode == "travel" ? MWGui::GM_Travel : MWGui::GM_Dialogue, nearest);
+                        found = true;
+                    }
+                }
+                if (!found && (mode == "book" || mode == "scroll"))
+                {
+                    // The first book (or scroll) of the store, as a reference of its own, read like ActionRead.
+                    static std::unique_ptr<MWWorld::ManualRef> ref; // alive while the window is up
+                    const bool scroll = mode == "scroll";
+                    for (const ESM::Book& book : MWBase::Environment::get().getESMStore()->get<ESM::Book>())
+                    {
+                        if ((book.mData.mIsScroll != 0) != scroll || book.mText.get().size() < 400)
+                            continue;
+                        ref = std::make_unique<MWWorld::ManualRef>(*MWBase::Environment::get().getESMStore(), book.mId);
+                        P3DS_LOGI("autorun: reading %s '%s'", mode.c_str(), book.mId.toDebugString().c_str());
+                        MWBase::Environment::get().getWindowManager()->pushGuiMode(
+                            scroll ? MWGui::GM_Scroll : MWGui::GM_Book, ref->getPtr());
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    P3DS_LOGW("autorun: gui: unknown window \"%s\"", mode.c_str());
+            }
         if (autorun.mWeatherAt != 0 && frame == autorun.mWeatherAt)
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();

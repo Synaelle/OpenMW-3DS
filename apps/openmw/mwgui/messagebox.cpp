@@ -259,7 +259,11 @@ namespace MWGui
         getWidget(mMessageWidget, "message");
         getWidget(mButtonsWidget, "buttons");
 
+#ifdef OPENMW_PLATFORM_3DS
+        mMessageWidget->setSize(300, mMessageWidget->getHeight()); // the bottom screen is 320 wide
+#else
         mMessageWidget->setSize(400, mMessageWidget->getHeight());
+#endif
         mMessageWidget->setCaptionWithReplacing(message);
 
         MyGUI::IntSize textSize = mMessageWidget->getTextSize();
@@ -331,6 +335,9 @@ namespace MWGui
             MyGUI::IntPoint absPos;
             absPos.left = (gameWindowSize.width - realSize.width) / 2;
             absPos.top = (gameWindowSize.height - realSize.height) / 2;
+#ifdef OPENMW_PLATFORM_3DS
+            absPos.top = gameWindowSize.height / 2 + (gameWindowSize.height / 2 - realSize.height) / 2; // bottom screen
+#endif
 
             mMainWidget->setPosition(absPos);
             mMainWidget->setSize(realSize);
@@ -400,6 +407,9 @@ namespace MWGui
             MyGUI::IntPoint absPos;
             absPos.left = (gameWindowSize.width - mainWidgetSize.width) / 2;
             absPos.top = (gameWindowSize.height - mainWidgetSize.height) / 2;
+#ifdef OPENMW_PLATFORM_3DS
+            absPos.top = gameWindowSize.height / 2 + (gameWindowSize.height / 2 - mainWidgetSize.height) / 2;
+#endif
 
             mMainWidget->setPosition(absPos);
 

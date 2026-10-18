@@ -34,6 +34,10 @@
 
 #include "confirmationdialog.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/frame3ds.hpp"
+#endif
+
 namespace MWGui
 {
     SaveGameDialog::SaveGameDialog()
@@ -62,6 +66,10 @@ namespace MWGui
         mSaveList->eventKeyButtonPressed += MyGUI::newDelegate(this, &SaveGameDialog::onKeyButtonPressed);
         mSaveNameEdit->eventEditSelectAccept += MyGUI::newDelegate(this, &SaveGameDialog::onEditSelectAccept);
         mSaveNameEdit->eventEditTextChange += MyGUI::newDelegate(this, &SaveGameDialog::onSaveNameChanged);
+#ifdef OPENMW_PLATFORM_3DS
+        // M8: the name typed on the system keyboard (the box is static in the 3DS layout).
+        mSaveNameEdit->eventMouseButtonClick += MyGUI::newDelegate(this, &SaveGameDialog::onSaveNameClicked3DS);
+#endif
 
         // To avoid accidental deletions
         mDeleteButton->setNeedKeyFocus(false);
@@ -270,6 +278,20 @@ namespace MWGui
         }
 
         center();
+    }
+
+    void SaveGameDialog::onSaveNameClicked3DS(MyGUI::Widget* /*sender*/)
+    {
+#ifdef OPENMW_PLATFORM_3DS
+        omw3ds::deferToFrame([this] {
+            std::string text = mSaveNameEdit->getCaption().asUTF8();
+            if (omw3ds::systemKeyboard("Save name", text, 48))
+            {
+                mSaveNameEdit->setCaption(MyGUI::UString(text));
+                onSaveNameChanged(mSaveNameEdit);
+            }
+        });
+#endif
     }
 
     void SaveGameDialog::onCancelButtonClicked(MyGUI::Widget* /*sender*/)

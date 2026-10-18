@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <ctime>
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,6 +19,8 @@
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_ResourceManager.h>
 #include <MyGUI_TextBox.h>
+
+#include <3ds.h>
 #include <MyGUI_Window.h>
 
 
@@ -29,6 +32,7 @@
 #include <components/resource/resourcesystem.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/statemanager.hpp"
 #include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 #include "../mwgui/hud.hpp"
@@ -712,7 +716,11 @@ namespace omw3ds
             // A page replaces the HUD panel: OpenMW's own HUD toggle (the one bound to F12 on the PC), which the
             // window manager applies on every mode change; hiding the HUD window directly broke its layout.
             static bool hudHidden = false;
-            const bool hideHud = active && tab != Tab::None;
+            const bool noGame = MWBase::Environment::get().getStateManager()->getState()
+                == MWBase::StateManager::State_NoGame; // the main menu before a game: nothing of the HUD
+            // ... and under every window that pauses the game (the character creation ones, dialogue, containers:
+            // Morrowind's HUD is not drawn under them on the small screen).
+            const bool hideHud = noGame || windows().isGuiMode() || (active && tab != Tab::None);
             if (hideHud != hudHidden)
             {
                 windows().setHudVisibility(!hideHud);

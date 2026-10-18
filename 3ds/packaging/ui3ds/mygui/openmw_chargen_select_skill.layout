@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The skill picker on the bottom screen (M8, 3DS): 320x240, centred there by center(). -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 320 240" name="_Main">
+        <Widget type="Widget" skin="" position="6 6 308 228" align="Stretch">
+            <!-- Label -->
+            <Widget type="TextBox" skin="HeaderText" position="0 0 308 18" name="LabelT" align="HCenter Top">
+                <Property key="Caption" value="#{sSkillsMenu1}"/>
+                <Property key="TextAlign" value="HCenter Top"/>
+            </Widget>
+
+            <!-- Combat list -->
+            <Widget type="TextBox" skin="HeaderText" position="0 22 100 18" name="CombatLabelT" align="Left Top">
+                <Property key="Caption" value="#{sSpecializationCombat}"/>
+                <Property key="TextAlign" value="Left Top"/>
+            </Widget>
+            <Widget type="ScrollView" skin="MW_ScrollView" position="0 40 100 160" name="CombatSkills" align="Left Top">
+                <Property key="CanvasAlign" value="Left"/>
+            </Widget>
+
+            <!-- Magic list -->
+            <Widget type="TextBox" skin="HeaderText" position="104 22 100 18" name="MagicLabelT" align="Left Top">
+                <Property key="Caption" value="#{sSpecializationMagic}"/>
+                <Property key="TextAlign" value="Left Top"/>
+            </Widget>
+            <Widget type="ScrollView" skin="MW_ScrollView" position="104 40 100 160" name="MagicSkills" align="Left Top">
+                <Property key="CanvasAlign" value="Left"/>
+            </Widget>
+
+            <!-- Stealth list -->
+            <Widget type="TextBox" skin="HeaderText" position="208 22 100 18" name="StealthLabelT" align="Left Top">
+                <Property key="Caption" value="#{sSpecializationStealth}"/>
+                <Property key="TextAlign" value="Left Top"/>
+            </Widget>
+            <Widget type="ScrollView" skin="MW_ScrollView" position="208 40 100 160" name="StealthSkills" align="Left Top">
+                <Property key="CanvasAlign" value="Left"/>
+            </Widget>
+
+            <!-- Dialog buttons -->
+            <Widget type="HBox" position="0 202 308 26">
+                <Widget type="Spacer" />
+                <Widget type="AutoSizedButton" skin="MW_Button" align="Right Bottom" name="CancelButton">
+                    <Property key="ExpandDirection" value="Left Up"/>
+                    <Property key="Caption" value="#{Interface:Cancel}"/>
+                </Widget>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

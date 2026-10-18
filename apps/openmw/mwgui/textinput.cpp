@@ -5,9 +5,14 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_EditBox.h>
+#include <MyGUI_TextBox.h>
 #include <MyGUI_UString.h>
 
 #include <components/esm/refid.hpp>
+
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/frame3ds.hpp"
+#endif
 
 namespace MWGui
 {
@@ -17,6 +22,11 @@ namespace MWGui
     {
         // Centre dialog
         center();
+#ifdef OPENMW_PLATFORM_3DS
+        // On the top screen: the system keyboard covers the bottom one while the text is typed.
+        const MyGUI::IntCoord coord = mMainWidget->getCoord();
+        mMainWidget->setPosition((400 - coord.width) / 2, (240 - coord.height) / 2);
+#endif
 
         getWidget(mTextEdit, "TextEdit");
         mTextEdit->eventEditSelectAccept += newDelegate(this, &TextInputDialog::onTextAccepted);
@@ -54,6 +64,20 @@ namespace MWGui
         WindowModal::onOpen();
         // Make sure the edit box has focus
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mTextEdit);
+#ifdef OPENMW_PLATFORM_3DS
+        // The system keyboard types the text (M8): opened at the next frame's start, outside any drawing, and
+        // the dialog is accepted as if OK were pressed; cancelled, the dialog stays for a second try by touch.
+        omw3ds::deferToFrame([this] {
+            std::string text = getTextInput();
+            MyGUI::TextBox* label = nullptr;
+            getWidget(label, "LabelT");
+            if (omw3ds::systemKeyboard(label != nullptr ? label->getCaption().asUTF8() : std::string(), text, 32))
+            {
+                mTextEdit->setCaption(MyGUI::UString(text));
+                onOkClicked(nullptr);
+            }
+        });
+#endif
     }
 
     // widget controls

@@ -101,6 +101,20 @@ void WindowBase::center()
     MyGUI::IntCoord coord = mMainWidget->getCoord();
     coord.left = (layerSize.width - coord.width) / 2;
     coord.top = (layerSize.height - coord.height) / 2;
+#ifdef OPENMW_PLATFORM_3DS
+    // The canvas is both screens: a dialog is centred on the bottom one (its 320x240 at 40,240); a window laid
+    // out over both screens by the port (the character creation ones) stays where its layout put it.
+    if (coord.height > layerSize.height / 2 || coord.width > 320)
+    {
+        coord.left = 0;
+        coord.top = 0;
+    }
+    else
+    {
+        coord.left = 40 + (320 - coord.width) / 2;
+        coord.top = layerSize.height / 2 + (layerSize.height / 2 - coord.height) / 2;
+    }
+#endif
     mMainWidget->setCoord(coord);
 }
 

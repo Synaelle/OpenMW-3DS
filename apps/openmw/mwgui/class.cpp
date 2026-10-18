@@ -23,6 +23,10 @@
 
 #include "tooltips.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/frame3ds.hpp"
+#endif
+
 namespace
 {
 
@@ -451,6 +455,27 @@ namespace MWGui
         center();
     }
 
+    void InfoBoxDialog::setButtonEnabled(size_t index, bool enabled)
+    {
+        if (index >= mButtons.size())
+            return;
+        mButtons[index]->setEnabled(enabled);
+        if (!enabled && index == mControllerFocus)
+            moveControllerFocus(1);
+    }
+
+    void InfoBoxDialog::moveControllerFocus(int delta)
+    {
+        setControllerFocus(mButtons, mControllerFocus, false);
+        for (size_t tries = 0; tries < mButtons.size(); ++tries)
+        {
+            mControllerFocus = wrap(mControllerFocus, mButtons.size(), delta);
+            if (mButtons[mControllerFocus]->getEnabled())
+                break;
+        }
+        setControllerFocus(mButtons, mControllerFocus, true);
+    }
+
     void InfoBoxDialog::onButtonClicked(MyGUI::Widget* sender)
     {
         int i = 0;
@@ -458,6 +483,8 @@ namespace MWGui
         {
             if (button == sender)
             {
+                if (!button->getEnabled())
+                    return;
                 eventButtonSelected(i);
                 return;
             }
@@ -484,9 +511,7 @@ namespace MWGui
             if (mButtons.size() == 2 && mControllerFocus == 0)
                 return true;
 
-            setControllerFocus(mButtons, mControllerFocus, false);
-            mControllerFocus = wrap(mControllerFocus, mButtons.size(), -1);
-            setControllerFocus(mButtons, mControllerFocus, true);
+            moveControllerFocus(-1);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)
         {
@@ -495,9 +520,7 @@ namespace MWGui
             if (mButtons.size() == 2 && mControllerFocus == 1)
                 return true;
 
-            setControllerFocus(mButtons, mControllerFocus, false);
-            mControllerFocus = wrap(mControllerFocus, mButtons.size(), 1);
-            setControllerFocus(mButtons, mControllerFocus, true);
+            moveControllerFocus(1);
         }
 
         return true;
@@ -518,6 +541,9 @@ namespace MWGui
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sClassChoiceMenu3", {}));
         buttons.emplace_back(MWBase::Environment::get().getWindowManager()->getGameSettingString("sBack", {}));
         setButtons(buttons);
+#ifdef OPENMW_PLATFORM_3DS
+        setButtonEnabled(0, false); // the class questions (M8): a later phase
+#endif
     }
 
     /* CreateClassDialog */
@@ -572,6 +598,12 @@ namespace MWGui
         getWidget(descriptionButton, "DescriptionButton");
         descriptionButton->eventMouseButtonClick += MyGUI::newDelegate(this, &CreateClassDialog::onDescriptionClicked);
         mButtons.push_back(descriptionButton);
+#ifdef OPENMW_PLATFORM_3DS
+        // M8: no description on the 3DS (the tester's choice); the name is typed on the system keyboard from a
+        // touch on its box, without accepting the class.
+        descriptionButton->setVisible(false);
+        mEditName->eventMouseButtonClick += MyGUI::newDelegate(this, &CreateClassDialog::onNameClicked);
+#endif
 
         MyGUI::Button* backButton;
         getWidget(backButton, "BackButton");
@@ -712,22 +744,34 @@ namespace MWGui
         {
             onOkClicked(mButtons[2]);
         }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)
+        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
         {
+            const int delta = arg.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT ? -1 : 1;
             setControllerFocus(mButtons, mControllerFocus, false);
-            mControllerFocus = wrap(mControllerFocus, mButtons.size(), -1);
-            setControllerFocus(mButtons, mControllerFocus, true);
-        }
-        else if (arg.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
-        {
-            setControllerFocus(mButtons, mControllerFocus, false);
-            mControllerFocus = wrap(mControllerFocus, mButtons.size(), 1);
+            for (size_t tries = 0; tries < mButtons.size(); ++tries)
+            {
+                mControllerFocus = wrap(mControllerFocus, mButtons.size(), delta);
+                if (mButtons[mControllerFocus]->getVisible())
+                    break;
+            }
             setControllerFocus(mButtons, mControllerFocus, true);
         }
         return true;
     }
 
     // widget controls
+
+    void CreateClassDialog::onNameClicked(MyGUI::Widget* /*sender*/)
+    {
+#ifdef OPENMW_PLATFORM_3DS
+        omw3ds::deferToFrame([this] {
+            std::string text = mEditName->getCaption().asUTF8();
+            if (omw3ds::systemKeyboard(getWidget("LabelT")->castType<MyGUI::TextBox>()->getCaption().asUTF8(),
+                    text, 32))
+                mEditName->setCaption(MyGUI::UString(text));
+        });
+#endif
+    }
 
     void CreateClassDialog::onDialogCancel()
     {

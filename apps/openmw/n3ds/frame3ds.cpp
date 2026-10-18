@@ -4,6 +4,11 @@
 #include "sound3ds.hpp"
 #ifdef OPENMW3DS_DEBUG
 #include "debugtools.hpp"
+
+extern "C"
+{
+#include <3ds/applets/swkbd.h>
+}
 #endif
 
 #include <platform3ds/crash.hpp>
@@ -397,14 +402,49 @@ namespace omw3ds
         p3ds::GameSnapshot snap;
         snap.frame = &gStats;
         snap.cellName = gCellName == "-" ? "(loading)" : gCellName.c_str();
-        snap.status = "loading";
+        static const std::string loading = std::string("loading - ") + Render3DS::interfacePath();
+        snap.status = loading.c_str();
         gBottom.update(snap);
         gBottom.render(); // rate-limited internally
+    }
+
+    namespace
+    {
+        std::vector<std::function<void()>> gDeferred;
+    }
+
+    void deferToFrame(std::function<void()> call)
+    {
+        gDeferred.push_back(std::move(call));
+    }
+
+    bool systemKeyboard(const std::string& hint, std::string& text, size_t maxLength)
+    {
+        SwkbdState keyboard;
+        swkbdInit(&keyboard, SWKBD_TYPE_NORMAL, 2, static_cast<int>(maxLength));
+        swkbdSetHintText(&keyboard, hint.c_str());
+        swkbdSetInitialText(&keyboard, text.c_str());
+        swkbdSetFeatures(&keyboard, SWKBD_DARKEN_TOP_SCREEN);
+        std::vector<char> buffer(maxLength * 4 + 1, 0);
+        const SwkbdButton button = swkbdInputText(&keyboard, buffer.data(), buffer.size());
+        P3DS_LOGI("system keyboard: %s", button == SWKBD_BUTTON_CONFIRM ? "confirmed" : "cancelled");
+        Render3DS::invalidateInterface(); // the applet's transition clobbers the overlay texture (test #63)
+        if (button != SWKBD_BUTTON_CONFIRM)
+            return false;
+        text = buffer.data();
+        return true;
     }
 
     void onEngineFrame()
     {
         serviceApt(false);
+        if (!gDeferred.empty())
+        {
+            std::vector<std::function<void()>> calls;
+            calls.swap(gDeferred);
+            for (auto& call : calls)
+                call();
+        }
         static uint64_t lastTick = 0;
         const uint64_t now = svcGetSystemTick();
         if (lastTick == 0)
@@ -574,7 +614,7 @@ namespace omw3ds
         snap.lookingAt = gLooking;
         snap.state = gStateLine;
         snap.stateAlert = gStateAlert;
-        snap.status = Render3DS::isActive() ? ""
+        snap.status = Render3DS::isActive() ? Render3DS::interfacePath()
             : Render3DS::failure()          ? Render3DS::failure()
                                             : "headless (renderer failed to start)";
         gBottom.update(snap);

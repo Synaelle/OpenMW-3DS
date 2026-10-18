@@ -63,6 +63,9 @@ namespace MyGUIPlatform
             return;
 
         MyGUI::IntSize globalViewSize = MyGUI::RenderManager::getInstance().getViewSize();
+#ifdef OPENMW_PLATFORM_3DS
+        globalViewSize.height /= 2; // the layer lives on the top screen (M8)
+#endif
 
         left -= globalViewSize.width / 2;
         top -= globalViewSize.height / 2;
@@ -79,6 +82,9 @@ namespace MyGUIPlatform
         MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
         float w = static_cast<float>(viewSize.width);
         float h = static_cast<float>(viewSize.height);
+#ifdef OPENMW_PLATFORM_3DS
+        h /= 2.f; // the top screen's height: the canvas is both screens (M8)
+#endif
 
         float heightScale = (h / layerViewSize.height);
         float widthScale = (w / layerViewSize.width);
@@ -101,8 +107,14 @@ namespace MyGUIPlatform
 
         float hoffset = (globalViewSize.width - mViewSize.width * getScaleFactor(mViewSize)) / 2.f
             / static_cast<float>(globalViewSize.width);
+#ifdef OPENMW_PLATFORM_3DS
+        // Centred on the top screen (the canvas's upper half), not on the canvas (M8).
+        float voffset = (globalViewSize.height / 2 - mViewSize.height * getScaleFactor(mViewSize)) / 2.f
+            / static_cast<float>(globalViewSize.height);
+#else
         float voffset = (globalViewSize.height - mViewSize.height * getScaleFactor(mViewSize)) / 2.f
             / static_cast<float>(globalViewSize.height);
+#endif
 
         ProxyRenderTarget proxy(target, viewSize, hoffset, voffset);
 

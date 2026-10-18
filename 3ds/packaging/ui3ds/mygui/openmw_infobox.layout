@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The class choice question (M8, 3DS): a 300-wide box centred on the bottom screen by center(); the buttons
+     are created by InfoBoxDialog::setButtons over the bar's width and the heights fitted on open. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 300 240" align="Center" name="_Main">
+        <Widget type="Widget" skin="" position="10 10 280 70" name="TextBox" align="Top HCenter">
+            <Widget type="TextBox" skin="SandText" position="4 4 272 62" name="Text" align="Top HCenter">
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+        </Widget>
+        <Widget type="Widget" skin="" position="20 90 260 150" name="ButtonBar" align="Top HCenter" />
+    </Widget>
+</MyGUI>

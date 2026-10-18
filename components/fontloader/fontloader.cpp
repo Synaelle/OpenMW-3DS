@@ -33,6 +33,7 @@
 
 #include <components/myguiplatform/myguirendermanager.hpp>
 #include <components/render3ds/gpumemory.hpp>
+#include <components/render3ds/render3ds.hpp>
 #endif
 
 namespace
@@ -456,10 +457,14 @@ namespace Gui
         const std::string bookFontName = std::format("Journalbook {}", fontId.mValue);
         const int bookResolution = static_cast<int>(resolution * bookScale * mScalingFactor);
 #ifdef OPENMW_PLATFORM_3DS
-        MyGUI::IFont* font = cookedTrueTypeFont(
+        // The CPU interface draws from MyGUI's own font pages (rendered on the device by its FreeType: test #60
+        // showed the PC's FreeType hinting the glyphs differently); the atlas glyphs serve the deprecated GPU path.
+        MyGUI::IFont* font = Render3DS::interfaceByCpu() ? nullptr : cookedTrueTypeFont(
             std::string(fontId.mValue), path, Settings::gui().mFontSize,
             static_cast<int>(resolution * std::ceil(mScalingFactor)));
-        MyGUI::IFont* bookFont = cookedTrueTypeFont(bookFontName, path, Settings::gui().mFontSize, bookResolution);
+        MyGUI::IFont* bookFont = Render3DS::interfaceByCpu()
+            ? nullptr
+            : cookedTrueTypeFont(bookFontName, path, Settings::gui().mFontSize, bookResolution);
         if (font == nullptr)
 #else
         MyGUI::IFont* font = nullptr;

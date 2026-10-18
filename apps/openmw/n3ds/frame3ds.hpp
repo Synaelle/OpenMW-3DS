@@ -4,6 +4,8 @@
 // Per-frame 3DS hooks for the engine loop: bottom-screen display and frame-time log (debug tools in
 // debugtools.cpp).
 
+#include <functional>
+#include <string>
 #include <string>
 namespace osgViewer
 {
@@ -22,6 +24,11 @@ namespace omw3ds
     // Once per Engine::frame(), main thread. Measures wall time between calls itself (OpenMW's frame
     // time is clamped for the simulation).
     void onEngineFrame();
+    // Runs `call` at the start of the next engine frame, outside any drawing (the system keyboard, which is
+    // an applet, is opened this way from a MyGUI dialog).
+    void deferToFrame(std::function<void()> call);
+    // The system keyboard (libctru's swkbd applet) over `text`: true when the player confirmed.
+    bool systemKeyboard(const std::string& hint, std::string& text, size_t maxLength);
 
     // While loading (loading screen draws, the data-loading wait loop): services the HOME button and
     // keeps the bottom screen updating. A close request while loading exits immediately.

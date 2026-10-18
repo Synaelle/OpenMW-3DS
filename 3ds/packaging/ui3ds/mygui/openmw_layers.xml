@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- OpenMW's layers with one change for the 3DS (M8): the books and scrolls layer is 600x400, scaled to the top
+     screen by the port's ScalingLayer (a 584x398 book at 0.6 fills the screen; the stock 600x520 would make it
+     270 px wide). -->
+<MyGUI type="Layer" version="1.0">
+    <Layer name="Scene" overlapped="false" pick="false"/>
+    <Layer name="FadeToBlack" overlapped="false" pick="false"/>
+    <Layer name="HitOverlay" type="AdditiveLayer" pick="false"/>
+    <Layer name="HUD" overlapped="false" pick="true"/>
+    <Layer name="JournalBooks" type="ScalingLayer" pick="true">
+        <Property key="Size" value="600 400"/>
+    </Layer>
+    <Layer name="Windows" overlapped="true" pick="true"/>
+    <Layer name="DragAndDrop" overlapped="false" pick="false"/>
+    <Layer name="DrowningBar" overlapped="false" pick="false"/>
+    <Layer name="MainMenuBackground" overlapped="true" pick="true"/>
+    <Layer name="MainMenu" overlapped="true" pick="true"/>
+    <Layer name="Settings" overlapped="true" pick="true"/>
+    <Layer name="ControllerButtons" overlapped="true" pick="false"/>
+    <Layer name="LoadingScreenBackground" overlapped="false" pick="true"/>
+    <Layer name="LoadingScreen" overlapped="false" pick="true"/>
+    <Layer name="Debug" overlapped="true" pick="true"/>
+    <Layer name="Console" overlapped="true" pick="true"/>
+    <Layer name="Modal" overlapped="true" pick="true"/>
+    <Layer name="Popup" overlapped="true" pick="true"/>
+    <Layer name="Notification" overlapped="false" pick="false"/>
+    <Layer name="Video" overlapped="false" pick="true"/>
+    <Layer name="InputBlocker" overlapped="false" pick="true"/>
+    <Layer name="Pointer" overlapped="false" pick="false"/>
+</MyGUI>

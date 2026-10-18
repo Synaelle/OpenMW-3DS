@@ -123,6 +123,8 @@ ATLAS_HALVED_PREFIX = "textures/menu_icon_"
 UI_PREFIXES = ("icons/", "bookart/", "textures/omw_", "textures/levelup/", "textures/birthsigns/")
 UI_TEXTURE_NAMES = ("menu_", "tx_menu", "tx_cursor", "compass", "target", "scroll", "detect_", "menu")
 UI_MAX_SIZE = 256  # the longest side of any cooked UI texture (hardware test #40)
+# Exceptions: UI pictures the CPU interface shows large (the title screen's picture on the whole top screen).
+UI_BIG = {"textures/menu_morrowind": 512}
 # UI atlas (see the docstring): the images that go in, and its shape.
 ATLAS_KEY = "ui-atlas/"
 ATLAS_WIDTH = 512
@@ -586,9 +588,10 @@ def cook_one(job):
     if ui:
         # A side above UI_MAX_SIZE: resampled to a power of two of at most UI_MAX_SIZE on each side, filling the
         # texture (no padding, no flag: the texture coordinates MyGUI computes from the original size cover it).
-        resampled = max(src_w, src_h) > UI_MAX_SIZE
-        w = pow2_ceil(min(src_w, UI_MAX_SIZE), UI_MAX_SIZE)
-        h = pow2_ceil(min(src_h, UI_MAX_SIZE), UI_MAX_SIZE)
+        ui_max = UI_BIG.get(key, UI_MAX_SIZE)
+        resampled = max(src_w, src_h) > ui_max
+        w = pow2_ceil(min(src_w, ui_max), ui_max)
+        h = pow2_ceil(min(src_h, ui_max), ui_max)
         fmt = GPU_RGBA8 if max(w, h) <= 128 else (GPU_ETC1A4 if has_alpha else GPU_ETC1)
         if has_alpha:
             rgba = bleed_transparent(rgba, keep_alpha_zero=(fmt == GPU_RGBA8))
@@ -804,7 +807,7 @@ def main():
 
     ui_count = sum(1 for e in entries if e[9] & FLAG_PADDED)
     print(f"  UI images padded to a power of two (no mipmaps): {ui_count}")
-    ui_max = max((max(e[3], e[4]) for e in entries if is_ui(e[1])), default=0)
+    ui_max = max((max(e[3], e[4]) for e in entries if is_ui(e[1]) and e[1] not in UI_BIG), default=0)
     all_max = max(max(e[3], e[4]) for e in entries if not e[1].startswith(ATLAS_KEY))
     print(f"  largest cooked side: UI textures {ui_max}, every texture {all_max} (hardware test #40: UI <= 256), "
           f"the UI atlas {ATLAS_WIDTH}x{ATLAS_HEIGHT}")

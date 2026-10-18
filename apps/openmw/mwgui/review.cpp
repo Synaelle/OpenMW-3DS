@@ -84,7 +84,11 @@ namespace MWGui
 
         MyGUI::Widget* attributes = getWidget("Attributes");
         const auto& store = MWBase::Environment::get().getWorld()->getStore().get<ESM::Attribute>();
+#ifdef OPENMW_PLATFORM_3DS
+        MyGUI::IntCoord coord{ 4, 4, attributes->getWidth() / 2 - 6, 18 }; // the 3DS box: two columns of four
+#else
         MyGUI::IntCoord coord{ 8, 4, 250, 18 };
+#endif
         for (const ESM::Attribute& attribute : store)
         {
             auto* widget
@@ -98,11 +102,18 @@ namespace MWGui
             widget->setAttributeId(attribute.mId);
             widget->setAttributeValue(Widgets::MWAttribute::AttributeValue());
             coord.top += coord.height;
+#ifdef OPENMW_PLATFORM_3DS
+            if (mAttributeWidgets.size() == 4) // the 3DS box: two columns of four
+                coord = MyGUI::IntCoord(attributes->getWidth() / 2 + 2, 4, coord.width, coord.height);
+#endif
         }
 
         // Setup skills
         getWidget(mSkillView, "SkillView");
         mSkillView->eventMouseWheel += MyGUI::newDelegate(this, &ReviewDialog::onMouseWheel);
+#ifdef OPENMW_PLATFORM_3DS
+        mControllerScrollWidget = mSkillView; // the C stick scrolls the skills (M8, the tester)
+#endif
 
         for (const ESM::Skill& skill : MWBase::Environment::get().getESMStore()->get<ESM::Skill>())
         {
@@ -409,8 +420,13 @@ namespace MWGui
         }
         mSkillWidgets.clear();
 
+#ifdef OPENMW_PLATFORM_3DS
+        const int valueSize = 28; // the 3DS column is 138 wide: the names keep ~82 px
+        MyGUI::IntCoord coord1(4, 0, mSkillView->getWidth() - (4 + valueSize) - 24, 18);
+#else
         const int valueSize = 40;
         MyGUI::IntCoord coord1(10, 0, mSkillView->getWidth() - (10 + valueSize) - 24, 18);
+#endif
         MyGUI::IntCoord coord2(coord1.left + coord1.width, coord1.top, valueSize, coord1.height);
 
         if (!mMajorSkills.empty())

@@ -21,6 +21,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -44,6 +45,12 @@ namespace
 {
     constexpr const char* kArgsPath = "sdmc:/openmw/args.txt";
 
+    // The startup choice (debug builds, before the test runs): "Start normally" boots the game's own main menu
+    // (M8: a new game goes through character creation); "Skip the intro" keeps the test set-up of args.txt
+    // (--skip-menu --start <cell> --script-run test-start.txt: the test character with its gold, skills, axe
+    // and spells), for testing anything but the menus. Automated runs skip the intro.
+    bool gSkipIntro = true;
+
     std::vector<std::string> loadArguments()
     {
         std::vector<std::string> args{ "openmw" };
@@ -59,6 +66,25 @@ namespace
                     args.push_back(line);
             }
             P3DS_LOGI("arguments from %s", kArgsPath);
+            if (!gSkipIntro)
+            {
+                // The game's own start: no skipped menu, no start cell, no test script.
+                std::vector<std::string> kept;
+                for (size_t i = 0; i < args.size(); ++i)
+                {
+                    const std::string& a = args[i];
+                    if (a == "--skip-menu" || a == "--new-game")
+                        continue;
+                    if ((a == "--start" || a == "--script-run") && i + 1 < args.size())
+                    {
+                        ++i;
+                        continue;
+                    }
+                    kept.push_back(a);
+                }
+                args = std::move(kept);
+                P3DS_LOGI("start normally: the main menu");
+            }
         }
         else
         {
@@ -97,6 +123,82 @@ namespace
     // Shown before p3ds::init: the chosen run's logs get their own folder (logs/<prefix>-<run>, "logs <prefix>"
     // in the menu file), so the platform isn't up yet (no log; the bottom screen is set up here). Returns that
     // folder's name (empty: the usual logs folder) and, in `chosenLine`, the line to log once logging starts.
+    // A choice on the bottom screen before the platform is up (the test menu's look): the index chosen with
+    // UP/DOWN and A, or by tapping a line twice.
+    size_t pickOne(const char* title, const std::vector<std::string>& labels, const char* footer)
+    {
+        namespace tf = p3ds::textfb;
+        tf::setupBottomScreen();
+        size_t selected = 0;
+        bool redraw = true;
+        while (aptMainLoop())
+        {
+            if (redraw)
+            {
+                tf::clear(tf::color::black);
+                tf::fillRows(0, 1, tf::color::header);
+                tf::drawText(0, 0, title, tf::color::yellow, tf::color::header);
+                for (size_t i = 0; i < labels.size(); ++i)
+                {
+                    const bool on = i == selected;
+                    const std::string head = std::string(on ? "> " : "  ") + labels[i];
+                    tf::drawText(0, 2 + int(i) * 2, head.c_str(), on ? tf::color::green : tf::color::white,
+                        tf::color::black);
+                }
+                tf::fillRows(tf::kRows - 1, 1, tf::color::header);
+                tf::drawText(0, tf::kRows - 1, footer, tf::color::yellow, tf::color::header);
+                tf::present();
+                redraw = false;
+            }
+            gspWaitForVBlank();
+            hidScanInput();
+            const u32 down = hidKeysDown();
+            if (down & KEY_DOWN)
+            {
+                selected = (selected + 1) % labels.size();
+                redraw = true;
+            }
+            if (down & KEY_UP)
+            {
+                selected = (selected + labels.size() - 1) % labels.size();
+                redraw = true;
+            }
+            if (down & KEY_A)
+                return selected;
+            if (down & KEY_TOUCH)
+            {
+                touchPosition touch;
+                hidTouchRead(&touch);
+                const int row = touch.py / 8;
+                for (size_t i = 0; i < labels.size(); ++i)
+                    if (row >= 2 + int(i) * 2 && row <= 3 + int(i) * 2)
+                    {
+                        if (i == selected)
+                            return selected;
+                        selected = i;
+                        redraw = true;
+                    }
+            }
+        }
+        return selected;
+    }
+
+    // The first question: the game's own start, or the test set-up (see gSkipIntro).
+    void startChoice(std::string& chosenLine)
+    {
+        struct stat autorun;
+        if (stat(p3ds::kAutorunPath, &autorun) == 0)
+        {
+            gSkipIntro = true;
+            return;
+        }
+        const size_t choice = pickOne("OpenMW 3DS - how to start",
+            { "Start normally (the main menu, a new character)", "Skip the intro: the test character (debug)" },
+            "UP/DOWN choose, A start (or tap twice)");
+        gSkipIntro = choice == 1;
+        chosenLine = gSkipIntro ? "start: skip the intro (the test character)" : "start: normally (the main menu)";
+    }
+
     std::string testMenu(std::string& chosenLine)
     {
         std::ifstream file("sdmc:/openmw/test-menu.txt");
@@ -200,8 +302,11 @@ namespace
             }
         }
 
-        // Every switch any run names: the chosen run's ones exist afterwards, the others don't.
-        std::set<std::string> all;
+        // Every switch any run names, and the switches of past tests (hardware test #57: a "gpu-ui" left by
+        // test #56's run A kept the deprecated GPU interface on): the chosen run's ones exist afterwards, the
+        // others don't.
+        std::set<std::string> all{ "gpu-ui", "soft-gui", "lumiere", "lumiere-demo", "no-fills", "fills", "fills-top",
+            "fills-bottom", "fills-opaque", "gui-on-scene", "gui-no-reupload", "ui3ds-demo", "no-m8ui" };
         for (const TestRun& run : runs)
             all.insert(run.mSwitches.begin(), run.mSwitches.end());
         const std::vector<std::string>& wanted = runs[selected].mSwitches;
@@ -232,8 +337,13 @@ namespace
                     folder += '-';
             while (!folder.empty() && folder.back() == '-')
                 folder.pop_back();
-            if (!logPrefix.empty())
-                folder = folder.empty() ? logPrefix : logPrefix + "-" + folder;
+        }
+        if (!logPrefix.empty()) // "Normal game" too: logs/test<N>-<date>-<time>[-<run>]
+        {
+            const std::time_t now = std::time(nullptr);
+            char stamp[32];
+            std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M", std::localtime(&now));
+            folder = logPrefix + "-" + stamp + (folder.empty() ? "" : "-" + folder);
         }
         chosenLine = "test menu: run \"" + runs[selected].mLabel + "\" chosen (" + std::to_string(wanted.size())
             + " switch file(s)), logs in " + (folder.empty() ? std::string("logs/") : "logs/" + folder + "/");
@@ -251,6 +361,8 @@ int main(int, char**)
     opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
 #ifdef OPENMW3DS_DEBUG
     // Before p3ds::init (the run decides where the logs go) and the watchdog (waiting here isn't a hang).
+    std::string startLine;
+    startChoice(startLine);
     std::string menuChoice;
     const std::string runLogs = testMenu(menuChoice);
     if (!runLogs.empty())
@@ -261,6 +373,8 @@ int main(int, char**)
 #endif
     p3ds::init(opts);
 #ifdef OPENMW3DS_DEBUG
+    if (!startLine.empty())
+        P3DS_LOGI("%s", startLine.c_str());
     if (!menuChoice.empty())
         P3DS_LOGI("%s", menuChoice.c_str());
 #endif
@@ -268,7 +382,8 @@ int main(int, char**)
     // Fed by Engine::frame() and LoadingScreen::draw() (see p3ds::crash::kick calls in openmw).
     p3ds::crash::startWatchdog(60, p3ds::info().syscoreLimit > 0 ? 1 : 0);
 
-    omw3ds::initBottomScreen("(starting OpenMW)");
+    const std::string starting = std::string("(starting OpenMW) ") + Render3DS::interfacePath();
+    omw3ds::initBottomScreen(starting.c_str());
 
     // Top screen: citro3d draws what OSG culls (components/render3ds). Textures come from the pack cooked
     // on the PC by tools/cook_textures.py.

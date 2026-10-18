@@ -39,4 +39,5 @@
         <!-- WindowPinnableBase looks for the pin button: none to show on the 3DS -->
         <Child type="Button" skin="PinUp" offset="252 0 0 0" align="Right Top" name="Button"/>
     </Resource>
+
 </MyGUI>

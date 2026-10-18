@@ -31,6 +31,7 @@ namespace MWGui
 
         void onKeyButtonPressed(MyGUI::Widget* sender, MyGUI::KeyCode key, MyGUI::Char character);
         void onCancelButtonClicked(MyGUI::Widget* sender);
+        void onSaveNameClicked3DS(MyGUI::Widget* sender); // 3DS: the system keyboard
         void onOkButtonClicked(MyGUI::Widget* sender);
         void onDeleteButtonClicked(MyGUI::Widget* sender);
         void onCharacterSelected(MyGUI::ComboBox* sender, size_t pos);

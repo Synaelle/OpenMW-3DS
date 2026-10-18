@@ -852,7 +852,11 @@ bool MWState::StateManager::confirmLoading(const std::vector<std::string_view>& 
 
 void MWState::StateManager::writeScreenshot(std::vector<char>& imageData) const
 {
+#ifdef OPENMW_PLATFORM_3DS
+    imageData.clear(); // the OSG render-to-image is not the 3DS renderer's: no picture in a save (M8)
+#else
     int screenshotW = 259 * 2, screenshotH = 133 * 2; // *2 to get some nice antialiasing
 
     imageData = MWBase::Environment::get().getWorld()->screenshot(screenshotW, screenshotH);
+#endif
 }

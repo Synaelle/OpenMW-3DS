@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The review window on the top screen (M8, 3DS): 400x240 at 0,0, the name/race/class/sign rows, the
+     bars and the attributes on the left, the skills on the right (scrolled by the C stick). The widget names are those
+     of review.cpp; the attribute rows take the box's width there. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 400 240" name="_Main">
+
+        <!-- Player Name, Race, Class and Birthsign: two rows of two -->
+        <Widget type="Widget" skin="MW_Box" position="4 4 244 50">
+            <Widget type="Button" skin="MW_Button" position="4 4 46 20" name="NameButton">
+                <Property key="Caption" value="#{sName}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandTextRight" position="52 5 68 18" name="NameText"/>
+            <Widget type="Button" skin="MW_Button" position="126 4 46 20" name="RaceButton">
+                <Property key="Caption" value="#{sRace}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandTextRight" position="174 5 66 18" name="RaceText"/>
+            <Widget type="Button" skin="MW_Button" position="4 26 46 20" name="ClassButton">
+                <Property key="Caption" value="#{sClass}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandTextRight" position="52 27 68 18" name="ClassText"/>
+            <Widget type="Button" skin="MW_Button" position="126 26 46 20" name="SignButton">
+                <Property key="Caption" value="#{sBirthSign}"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandTextRight" position="174 27 66 18" name="SignText"/>
+        </Widget>
+
+        <!-- Player Health, Magicka and Fatigue (the stock bar skin: 236 wide) -->
+        <Widget type="Widget" skin="MW_Box" position="4 58 244 64">
+            <Widget type="MWDynamicStat" skin="MW_DynamicStat_Red" position="4 3 236 18" name="Health">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\k\health.dds"/>
+                <Property key="Caption" value="#{sHealth}"/>
+            </Widget>
+            <Widget type="MWDynamicStat" skin="MW_DynamicStat_Blue" position="4 23 236 18" name="Magicka">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\k\magicka.dds"/>
+                <Property key="Caption" value="#{sMagic}"/>
+            </Widget>
+            <Widget type="MWDynamicStat" skin="MW_DynamicStat_Green" position="4 43 236 18" name="Fatigue">
+                <UserString key="ToolTipType" value="Layout"/>
+                <UserString key="ToolTipLayout" value="HealthToolTip"/>
+                <UserString key="ImageTexture_HealthImage" value="icons\katigue.dds"/>
+                <Property key="Caption" value="#{sFatigue}"/>
+            </Widget>
+        </Widget>
+
+        <!-- Player attributes: two columns of four rows (review.cpp) -->
+        <Widget type="Widget" skin="MW_Box" position="4 126 244 82" name="Attributes" />
+
+        <!-- Player Skills -->
+        <Widget type="Widget" skin="MW_Box" position="252 4 144 206" align="Left Top" name="Skills">
+            <Widget type="ScrollView" skin="MW_ScrollView" position="4 4 136 198" align="Stretch" name="SkillView"/>
+        </Widget>
+
+        <!-- Dialogue Buttons -->
+        <Widget type="HBox" position="4 212 244 24">
+            <Widget type="Spacer"/>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="BackButton">
+                <Property key="Caption" value="#{sBack}"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" name="OKButton">
+                <Property key="Caption" value="#{Interface:OK}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

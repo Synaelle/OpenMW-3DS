@@ -506,6 +506,12 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mGoodbyeButton);
 
         setTitle(mPtr.getClass().getName(mPtr));
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS layout's root has no caption bar: the name goes in its own text box on the top screen.
+        MyGUI::TextBox* npcName = nullptr;
+        getWidget(npcName, "NpcName3DS");
+        npcName->setCaptionWithReplacing(MyGUI::UString(mPtr.getClass().getName(mPtr)));
+#endif
 
         updateTopics();
         updateTopicsPane(); // force update for new services

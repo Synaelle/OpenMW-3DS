@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The dialogue window on the two 3DS screens (M8, the tester's split): the NPC's name, the disposition bar
+     and the conversation on the top screen (the C stick scrolls it); the topics and Goodbye on the bottom one
+     (the list's arrows scroll it by touch). The root spans the canvas without a frame; the widget names are
+     those of dialogue.cpp (NpcName3DS is the port's: the frameless root has no caption bar). -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="" layer="Windows" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen -->
+        <Widget type="Widget" skin="MW_Dialog" position="0 0 400 240">
+            <Widget type="TextBox" skin="HeaderText" position="8 4 280 18" name="NpcName3DS" align="Left Top">
+                <Property key="TextAlign" value="Left Top"/>
+            </Widget>
+            <!-- The disposition bar -->
+            <Widget type="ProgressBar" skin="MW_Progress_Blue" position="296 5 96 16" align="Right Top" name="Disposition">
+                <Widget type="TextBox" skin="ProgressText" position="0 0 96 14" name="DispositionText" align="Right VCenter">
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+            <Widget type="Widget" skin="MW_Box" position="8 24 384 212" align="Left Top"/>
+            <Widget type="Widget" position="14 29 358 202" align="Left Top">
+                <Widget type="BookPage" skin="MW_BookPage" position="0 0 358 202" name="History" align="Left Top">
+                </Widget>
+            </Widget>
+            <Widget type="ScrollBar" skin="MW_VScroll" position="374 28 14 204" align="Right Top" name="VScroll">
+                <Property key="Visible" value="false"/>
+            </Widget>
+        </Widget>
+
+        <!-- Bottom screen -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 240">
+            <!-- The list of topics -->
+            <Widget type="MWList" skin="MW_SimpleList" position="8 8 304 196" name="TopicsList" align="Left Top">
+            </Widget>
+            <!-- The Goodbye button -->
+            <Widget type="Button" skin="MW_Button" position="8 208 304 24" name="ByeButton" align="Left Top">
+                <Property key="Caption" value="#{sGoodbye}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

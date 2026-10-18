@@ -47,6 +47,7 @@ namespace Files
         std::shared_ptr<SharedArchiveFile> mShared;
         std::unique_ptr<char[]> mBuffer;
         std::size_t mCapacity = 0; // largest read
+        std::size_t mBufferSize = 0; // bytes allocated in mBuffer: mKeep + the current chunk, grown as it doubles
         std::size_t mKeep = 0; // bytes of the previous fill kept in front of a sequential refill (whole files)
         std::size_t mChunk = 0; // current read size
         std::size_t mBufferPos = 0; // stream position (relative to mOrigin) of mBuffer[0]

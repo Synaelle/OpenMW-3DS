@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The travel window on the bottom screen (M8, 3DS): 320x240, centred there by center(). The widget names are
+     those of travelwindow.cpp. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 320 240" name="_Main">
+        <Widget type="TextBox" skin="NormalText" position="0 3 320 20" name="Travel" align="Center Top">
+            <Property key="TextAlign" value="Center"/>
+            <Property key="Caption" value="#{sServiceTravelTitle}"/>
+        </Widget>
+        <Widget type="TextBox" skin="SandText" position="6 22 308 18" name="Select" align="Left Top">
+            <Property key="TextAlign" value="Right"/>
+            <Property key="Caption" value="#{sTravelServiceTitle}"/>
+        </Widget>
+        <Widget type="Widget" skin="MW_Box" position="6 42 308 152" align="Left Top">
+            <Widget type="ScrollView" skin="MW_ScrollView" position="4 3 300 146" align="Left Top" name="DestinationsView">
+                <Property key="CanvasAlign" value="Left Top"/>
+            </Widget>
+        </Widget>
+        <Widget type="TextBox" skin="SandText" position="6 202 180 24" name="PlayerGold" align="Left Top">
+            <Property key="TextAlign" value="Left VCenter"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="250 202 64 24" name="CancelButton" align="Left Top">
+            <Property key="ExpandDirection" value="Left"/>
+            <Property key="Caption" value="#{Interface:Cancel}"/>
+        </Widget>
+    </Widget>
+</MyGUI>

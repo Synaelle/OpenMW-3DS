@@ -1,4 +1,3 @@
-title Test #56: the CPU interface
-logs test56
+title Test #67: saving and loading
+logs test67
 run Normal game |
-run A: GPU interface (deprecated) | gpu-ui

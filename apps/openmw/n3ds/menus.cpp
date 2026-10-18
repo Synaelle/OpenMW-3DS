@@ -706,8 +706,7 @@ namespace omw3ds
         // Empty title: no menu.
         void build()
         {
-            if (messageBox())
-                return;
+            // M8: the message boxes are MyGUI's on the bottom screen now (messagebox.cpp, 3DS placement).
             MWGui::WindowManager& wm = windows();
             if (!wm.isGuiMode() || wm.getGuiModeStack().empty())
             {
@@ -722,10 +721,8 @@ namespace omw3ds
                 case MWGui::GM_Loading:
                 case MWGui::GM_LoadingWallpaper:
                     return;
-                case MWGui::GM_Dialogue:
-                    if (dialogue())
-                        return;
-                    break;
+                case MWGui::GM_Dialogue: // M8: MyGUI's dialogue window on the two screens (dialogue.cpp)
+                    return;
                 case MWGui::GM_Inventory:
                     inventory();
                     return;
@@ -737,10 +734,8 @@ namespace omw3ds
                     if (barter())
                         return;
                     break;
-                case MWGui::GM_Travel:
-                    if (travel())
-                        return;
-                    break;
+                case MWGui::GM_Travel: // M8: MyGUI's travel window on the bottom screen
+                    return;
                 case MWGui::GM_Training:
                     if (training())
                         return;
@@ -753,14 +748,9 @@ namespace omw3ds
                     if (repair())
                         return;
                     break;
-                case MWGui::GM_Book:
-                    if (book())
-                        return;
-                    break;
+                case MWGui::GM_Book: // M8: MyGUI's book and scroll windows on the top screen (the scaling layer)
                 case MWGui::GM_Scroll:
-                    if (scroll())
-                        return;
-                    break;
+                    return;
                 case MWGui::GM_Rest:
                     if (rest())
                         return;
@@ -772,8 +762,15 @@ namespace omw3ds
                 case MWGui::GM_Journal:
                     journal();
                     return;
-                case MWGui::GM_MainMenu:
-                    mainMenu();
+                case MWGui::GM_MainMenu: // M8: MyGUI's main menu on the two screens (mainmenu.cpp)
+                case MWGui::GM_Name: // M8: the system keyboard (textinput.cpp)
+                case MWGui::GM_Race: // M8 phase 2: the character creation windows, MyGUI's on the two screens
+                case MWGui::GM_Class:
+                case MWGui::GM_ClassPick:
+                case MWGui::GM_ClassCreate:
+                case MWGui::GM_ClassGenerate:
+                case MWGui::GM_Birth:
+                case MWGui::GM_Review:
                     return;
                 default:
                     break;

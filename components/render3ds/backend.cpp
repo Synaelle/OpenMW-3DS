@@ -2752,6 +2752,7 @@ namespace Render3DS
         };
         static_assert(sizeof(GuiVertex) == 24);
         // In the scene's layout: the GPU's vertex input configuration stays the same all frame (useProgram).
+        bool softGui(); // the interface drawn by the CPU (below)
         Vertex* gGuiBuffer = nullptr; // linear memory, grows on demand
         uint64_t gTopHashNow = 0, gTopHashDrawn = 0; // the top screen's texture: what it would show, what it shows
         C3D_Tex gTopGui{}; // the top screen's interface, rendered offscreen (see drawGuiOn)
@@ -3144,6 +3145,10 @@ namespace Render3DS
             gGuiBatches.clear();
             gGuiDraws.clear();
             gGuiSource([](const GuiBatch& batch) { gGuiBatches.push_back(batch); });
+            // The CPU interface (the port's one) draws every batch from its own texture, unclipped, in one list:
+            // the icon slots, the white-cell fills, the per-screen clipping and the composite quad below belong
+            // to the deprecated GPU path only (LIMITATIONS.md M16).
+            const bool soft = softGui();
             uint32_t total = 0;
             for (const GuiBatch& batch : gGuiBatches)
                 total += batch.mCount;
@@ -3219,7 +3224,7 @@ namespace Render3DS
                 for (uint32_t i = 0; i < batch.mCount && inside; ++i)
                     inside = in[i].mTexCoord[0] >= -kUvSlack && in[i].mTexCoord[0] <= 1.f + kUvSlack
                         && in[i].mTexCoord[1] >= -kUvSlack && in[i].mTexCoord[1] <= 1.f + kUvSlack;
-                if (cooked != nullptr && !cooked->inAtlas() && inside && isAtlasIcon(*cooked))
+                if (!soft && cooked != nullptr && !cooked->inAtlas() && inside && isAtlasIcon(*cooked))
                 {
                     osg::Texture* atlasTexture = uiAtlasTexture(0);
                     C3D_Tex* atlas = atlasTexture != nullptr ? textureFor(*atlasTexture) : nullptr;
@@ -3253,7 +3258,7 @@ namespace Render3DS
                     // switching the texture environment between the interface's draws brought the flashing back)
                     // and every quad keeps ordinary texture coordinates (#49: all of them on one texel flashed).
                     unsigned whiteX, whiteY, whiteSize;
-                    if (texture != nullptr && cooked == nullptr && uniformImage(*image, tint)
+                    if (!soft && texture != nullptr && cooked == nullptr && uniformImage(*image, tint)
                         && uiAtlasWhiteCell(whiteX, whiteY, whiteSize))
                     {
                         osg::Texture* atlasTexture = uiAtlasTexture(0);
@@ -3414,11 +3419,12 @@ namespace Render3DS
             // bottom screen x in [-0.8, 0.8], y in [-1, 0]).
             uint32_t used = 0;
             static bool loggedFull = false;
-            for (int screen = 0; screen < 2; ++screen)
+            for (int screen = 0; screen < (soft ? 1 : 2); ++screen)
             {
-                const float x0 = screen == 0 ? -1.f : -float(kGuiCanvasWidth - 2 * kGuiBottomX) / float(kGuiCanvasWidth);
+                // The CPU path: one list over the whole canvas (its rasterizer clips to each screen itself).
+                const float x0 = soft ? -1.f : screen == 0 ? -1.f : -float(kGuiCanvasWidth - 2 * kGuiBottomX) / float(kGuiCanvasWidth);
                 const float x1 = -x0;
-                const float y0 = screen == 0 ? 0.f : -1.f, y1 = screen == 0 ? 1.f : 0.f;
+                const float y0 = soft ? -1.f : screen == 0 ? 0.f : -1.f, y1 = screen == 0 ? 1.f : 0.f;
                 for (const Group& group : groups)
                 {
                     const uint32_t first = used;
@@ -3500,7 +3506,7 @@ namespace Render3DS
                 }
             }
             // The top screen's composite quad (screen 2): the texture's 400x240 top left over the whole top screen.
-            if (used + 6 <= gGuiCapacity)
+            if (!soft && used + 6 <= gGuiCapacity)
             {
                 const float u1 = float(kGuiCanvasWidth) / 512.f, v1 = float(kGuiCanvasHeight / 2) / 256.f;
                 // The texture target's row 0 is the canvas's bottom (clip y = 0): v runs from v1 at the top.
@@ -4316,7 +4322,9 @@ namespace Render3DS
                 rasterizeGui(gSoftTop, topRect);
                 gSoftTopEmpty = std::all_of(
                     gSoftTop.mPixels.begin(), gSoftTop.mPixels.end(), [](uint32_t value) { return value == 0; });
-                if (!gSoftTopEmpty && !uploadSoftTop(topRect))
+                // Uploaded even when the screen just emptied: the texture must lose the closed window too, or
+                // the next draw on the top screen shows the window's remains around it (test #63).
+                if (!uploadSoftTop(topRect))
                     gSoftTopEmpty = true;
                 noteSoftRedraw("top", gSoftTop, topRect, start);
             }
@@ -5012,6 +5020,10 @@ namespace Render3DS
                 struct stat st;
                 return stat("sdmc:/openmw/gui-on-scene", &st) == 0;
             }();
+            // No scene drawn this frame (the main menu before a game): the top screen is black under the interface
+            // rather than whatever its target holds.
+            if (gStats.mDraws == 0 && !gHoldTop)
+                C3D_RenderTargetClear(gTarget, C3D_CLEAR_COLOR, 0x000000FF, 0);
             if (!soft && !onScene && ensureTopGuiTarget())
             {
                 // The texture is redrawn only when what it shows changes; the composite quad every frame (the
@@ -5294,6 +5306,14 @@ namespace Render3DS
         osgUtil::gRenderStageDrawHook3DS = &drawStageHook;
         SDLUtil::gSwapBuffersHook3DS = &swapHook;
         gActive = true;
+        // The top screen's target holds whatever VRAM held until the first scene frame (startup noise, test
+        // #60): one black frame now.
+        if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+        {
+            C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, 0x000000FF, 0);
+            C3D_FrameDrawOn(gTarget);
+            C3D_FrameEnd(GX_CMDLIST_FLUSH);
+        }
         P3DS_LOGI("render3ds: citro3d ready, %lu KB linear memory free", (unsigned long)(linearSpaceFree() / 1024));
         return true;
     }
@@ -5358,6 +5378,24 @@ namespace Render3DS
     void setGuiSource(GuiBatchSource source)
     {
         gGuiSource = source;
+    }
+
+    bool interfaceByCpu()
+    {
+        return softGui();
+    }
+
+    const char* interfacePath()
+    {
+        return softGui() ? "ui CPU" : "ui GPU (gpu-ui, deprecated)";
+    }
+
+    void invalidateInterface()
+    {
+        P3DS_LOGI("render3ds: interface redrawn whole (applet)");
+        gSoftTop.mValid = false;
+        gSoftBottom.mValid = false;
+        gBottomHash = 0;
     }
 
     void setHoldTopScreen(bool hold)

@@ -126,8 +126,12 @@ namespace Files
         }
         mCapacity = std::max<std::size_t>(1, std::min(mSize, mShared != nullptr ? kMaxChunk : kMaxFileChunk));
         mKeep = mShared == nullptr && mSize > mCapacity ? kKeep : 0;
-        mBuffer.reset(new char[mKeep + mCapacity]); // not value-initialized
         mChunk = mSize <= kMaxChunk ? mCapacity : kMinChunk;
+        // The buffer follows the chunk size (underflow grows it): a whole file opened for one record (every land
+        // record reopens Morrowind.esm) took 1 MB + 64 KB up front, and that allocation was the one to fail on
+        // the fragmented heap of hardware test #63 (the second exterior load).
+        mBufferSize = mKeep + mChunk;
+        mBuffer.reset(new char[mBufferSize]); // not value-initialized
         setg(mBuffer.get(), mBuffer.get(), mBuffer.get());
     }
 
@@ -181,11 +185,19 @@ namespace Files
             mChunk = std::min(mChunk * 2, mCapacity);
         std::size_t keep = 0;
         if (sequential && mKeep > 0)
-        {
             keep = std::min<std::size_t>(mKeep, egptr() - eback());
-            std::memmove(mBuffer.get(), egptr() - keep, keep);
-        }
         const std::size_t toRead = std::min(mChunk, mSize - pos);
+        if (keep + toRead > mBufferSize)
+        {
+            // The chunk doubled: a bigger buffer, the kept bytes carried over.
+            std::unique_ptr<char[]> grown(new char[mKeep + mChunk]);
+            if (keep > 0)
+                std::memcpy(grown.get(), egptr() - keep, keep);
+            mBuffer = std::move(grown);
+            mBufferSize = mKeep + mChunk;
+        }
+        else if (keep > 0)
+            std::memmove(mBuffer.get(), egptr() - keep, keep);
         const std::size_t got = readAt(pos, mBuffer.get() + keep, toRead);
         mFilePos = pos + got;
         mBufferPos = pos - keep;

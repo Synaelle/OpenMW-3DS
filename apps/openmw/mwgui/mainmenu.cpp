@@ -112,6 +112,9 @@ namespace MWGui
         constexpr VFS::Path::NormalizedView menuBackgroundVideo("video/menu_background.bik");
 
         mHasAnimatedMenu = mVFS->exists(menuBackgroundVideo);
+#ifdef OPENMW_PLATFORM_3DS
+        mHasAnimatedMenu = false; // no video on the 3DS: the title picture (showBackground)
+#endif
         mDisableGamepadCursor = Settings::gui().mControllerMenus;
 
         updateMenu();
@@ -274,6 +277,11 @@ namespace MWGui
                 mBackground = MyGUI::Gui::getInstance().createWidgetReal<BackgroundImage>(
                     "ImageBox", 0, 0, 1, 1, MyGUI::Align::Stretch, "MainMenuBackground");
                 mBackground->setBackgroundImage("textures\\menu_morrowind.dds", true, stretch);
+#ifdef OPENMW_PLATFORM_3DS
+                // The picture on the top screen, with its proportions (the top screen is cleared black under
+                // it by the backend when no scene is drawn; the HUD is hidden while no game runs: hud3ds.cpp).
+                mBackground->setCoord(MyGUI::IntCoord(0, 0, mWidth, mHeight / 2));
+#endif
             }
             mBackground->setVisible(true);
         }
@@ -379,9 +387,21 @@ namespace MWGui
             button->setImageTile(MyGUI::IntSize(requested.width, static_cast<int>(requested.height - 16 * scale)));
             button->setCoord(static_cast<int>((maxwidth - requested.width / scale) / 2), curH,
                 static_cast<int>(requested.width / scale), static_cast<int>(height / scale - 16));
+#ifdef OPENMW_PLATFORM_3DS
+            // Six buttons on the bottom screen's 240 px: 40 px apart (the images' lower rows are padding, the
+            // buttons overlap there; MyGUI draws the images at their own size).
+            curH += 40;
+#else
             curH += static_cast<int>(height / scale - 16);
+#endif
         }
 
+#ifdef OPENMW_PLATFORM_3DS
+        // The canvas is both screens (400x480, the bottom screen's 320x240 at 40,240): the buttons centred on
+        // the bottom screen, the title picture on the top one (showBackground), the version at the bottom right.
+        mButtonBox->setCoord(40 + (320 - maxwidth) / 2, 240 + (240 - curH) / 2, maxwidth, curH + 8);
+        mVersionText->setCoord(40, 240 + 2, 320 - 4, 18);
+#else
         if (state == MWBase::StateManager::State_NoGame)
         {
             // Align with the background image
@@ -390,5 +410,6 @@ namespace MWGui
         }
         else
             mButtonBox->setCoord(mWidth / 2 - maxwidth / 2, mHeight / 2 - curH / 2, maxwidth, curH);
+#endif
     }
 }

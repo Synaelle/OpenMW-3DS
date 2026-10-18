@@ -28,6 +28,8 @@ namespace MWGui
         void setText(std::string_view str);
         std::string getText() const;
         void setButtons(ButtonList& buttons);
+        // A greyed-out choice (the class questions on the 3DS, not ported): skipped by the controller focus.
+        void setButtonEnabled(size_t index, bool enabled);
 
         void onOpen() override;
 
@@ -48,6 +50,7 @@ namespace MWGui
     private:
         void fitToText(MyGUI::TextBox* widget);
         void layoutVertically(MyGUI::Widget* widget, int margin);
+        void moveControllerFocus(int delta);
         MyGUI::Widget* mTextBox;
         MyGUI::TextBox* mText;
         MyGUI::Widget* mButtonBar;
@@ -335,6 +338,7 @@ namespace MWGui
 
     private:
         MyGUI::EditBox* mEditName;
+        void onNameClicked(MyGUI::Widget* sender); // 3DS: the name typed on the system keyboard
         MyGUI::TextBox* mSpecializationName;
         std::vector<MyGUI::Button*> mButtons;
         Widgets::MWAttributePtr mFavoriteAttribute0, mFavoriteAttribute1;
