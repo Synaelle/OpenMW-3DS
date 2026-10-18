@@ -1,5 +1,4 @@
-title Test #48: label box, pages, no Lumiere - pick a run
-logs test48
-run A: GPU interface (default) |
-run B: CPU interface | soft-gui
+title Test #56: the CPU interface
+logs test56
 run Normal game |
+run A: GPU interface (deprecated) | gpu-ui

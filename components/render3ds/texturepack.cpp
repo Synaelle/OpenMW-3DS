@@ -237,6 +237,19 @@ namespace Render3DS
         y = gReservedPos >> 16;
     }
 
+    bool uiAtlasWhiteCell(unsigned& x, unsigned& y, unsigned& size)
+    {
+        static const uint64_t hash = fnv1a64("ui/white");
+        const auto it = std::lower_bound(gIndex.begin(), gIndex.end(), hash,
+            [](const PackEntry& entry, uint64_t value) { return entry.mHash < value; });
+        if (it == gIndex.end() || it->mHash != hash || (it->mFlags & 8) == 0)
+            return false;
+        x = it->mAtlasPos & 0xFFFF;
+        y = it->mAtlasPos >> 16;
+        size = it->mSrcWidth;
+        return true;
+    }
+
     namespace
     {
         osg::ref_ptr<osg::Image> loadEntry(const PackEntry& entry, std::string_view name)

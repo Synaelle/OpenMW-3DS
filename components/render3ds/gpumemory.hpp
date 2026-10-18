@@ -102,6 +102,9 @@ namespace Render3DS
     const CookedFont* cookedFont(std::string_view omwfontPath, unsigned ppem, const CookedGlyph** glyphs);
     // The top-left texel of the atlas's reserved region (the icon slots, the map square under them).
     void uiAtlasReservedRegion(unsigned& x, unsigned& y);
+    // The atlas's opaque white cell (the pack's "ui/white" entry: x, y and its side), across which the interface's
+    // plain-colour fills are drawn; false when the pack has none.
+    bool uiAtlasWhiteCell(unsigned& x, unsigned& y, unsigned& size);
 }
 
 #endif

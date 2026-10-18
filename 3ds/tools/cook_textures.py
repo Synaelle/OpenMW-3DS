@@ -145,6 +145,12 @@ CODE_TAB, CODE_SPACE = 0x0009, 0x0020
 CODE_SELECTED, CODE_SELECTED_BACK, CODE_CURSOR, CODE_NOT_DEFINED = 0xFFFFFFFC, 0xFFFFFFFD, 0xFFFFFFFE, 0xFFFFFFFF
 # The uniform cells those specials sample (MyGUI's charMask alphas), one texel each.
 SPECIAL_CELLS = {"ui/font-selected": 0x88, "ui/font-selected-back": 0x60, "ui/font-cursor": 0xFF}
+# An opaque white 8x8 cell, a pack entry of its own ("ui/white", in the atlas like any skin image): the runtime
+# draws OpenMW's plain-colour fills ("white", "black", "transparent" 8x8 runtime images) across it with their
+# colour in the vertices, so they are ordinary atlas quads (hardware test #49: texture coordinates collapsed onto
+# one texel flashed).
+WHITE_KEY = "ui/white"
+WHITE_SIZE = 8
 # The reserved regions, bottom right: icon slots (an item icon is 32x32; the Inventory window shows 5x4, the quick
 # keys and the effects a few more) and the local map square under them.
 ICON_SIZE = 32
@@ -724,6 +730,7 @@ def main():
             cells += [(f"glyph:{font}:{ppem}:{g[0]}", g[1]) for g in glyphs if isinstance(g[1], np.ndarray)]
     for key, alpha in SPECIAL_CELLS.items():
         cells.append((key, np.array([[[255, 255, 255, alpha]]], dtype=np.uint8)))
+    cells.append((WHITE_KEY, np.full((WHITE_SIZE, WHITE_SIZE, 4), 255, dtype=np.uint8)))
     placements, turned = pack_atlas(cells)
     cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
     entries = []
@@ -734,6 +741,9 @@ def main():
         entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
     atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
     entries.append(atlas_entry)
+    wx, wy = placements[WHITE_KEY]
+    entries.append((fnv1a64(WHITE_KEY), WHITE_KEY, bytes([255]) * (WHITE_SIZE * WHITE_SIZE * 4), WHITE_SIZE,
+                    WHITE_SIZE, WHITE_SIZE, WHITE_SIZE, GPU_RGBA8, 1, FLAG_ATLAS, 0, wx | (wy << 16)))
     if args.atlas_preview:
         Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
     font_table = bytearray()

@@ -37,6 +37,10 @@ namespace Render3DS
     void setDrawsGui(bool draws);
     bool drawsGui();
 
+    // While a loading screen is up (hardware test #54: the cell being torn down and rebuilt drew smears on the
+    // top screen), the top screen keeps its last frame: no clear, no scene draws; the interface still draws.
+    void setHoldTopScreen(bool hold);
+
     // MyGUI's canvas has the console's shape: the top screen (400x240) at (0, 0) and the bottom screen (320x240)
     // centred under it at (40, 240). Its vertices arrive in the canvas's clip space; each screen draws them through
     // its own projection and the GPU clips what lies on the other screen.
@@ -122,6 +126,7 @@ namespace Render3DS
         uint32_t mBadParticles = 0; // particles left out: non-finite corners (a zero-scale effect, see buildParticles)
         uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
         uint32_t mGuiTextureBinds = 0; // distinct textures of the GUI passes, summed (one per screen: the UI atlas)
+        uint32_t mGuiTopFrames = 0; // frames that redrew the top screen's interface texture
         uint32_t mGuiBottomFrames = 0; // frames in which the bottom screen was redrawn (0 or 1)
     };
     const FrameStats& getLastFrameStats();

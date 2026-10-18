@@ -709,8 +709,15 @@ namespace omw3ds
             }
             showWindow(Hud3DS::magic(), tab == Tab::Magic);
             showWindow(Hud3DS::stats(), tab == Tab::Stats);
-            // A page replaces the HUD panel (hardware test #47: the bars and boxes showed through the pages).
-            showWindow(Hud3DS::hud(), tab == Tab::None);
+            // A page replaces the HUD panel: OpenMW's own HUD toggle (the one bound to F12 on the PC), which the
+            // window manager applies on every mode change; hiding the HUD window directly broke its layout.
+            static bool hudHidden = false;
+            const bool hideHud = active && tab != Tab::None;
+            if (hideHud != hudHidden)
+            {
+                windows().setHudVisibility(!hideHud);
+                hudHidden = hideHud;
+            }
             if (tab == Tab::Items)
                 sItems->tick();
             else if (tab == Tab::Debug && sDebug != nullptr)

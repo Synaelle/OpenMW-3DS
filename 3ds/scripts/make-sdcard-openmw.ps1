@@ -57,17 +57,13 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #48: the two fixes from your test #47 screenshots):
-  Test #47 showed no flashing: the interface on the GPU from one texture is now the default. Fixed since:
-  the dark box behind the top screen's target label and the windows' translucent backgrounds were not drawn
-  (one bug: the plain-colour fills were left out), and a tab's page now hides the HUD panel instead of
-  showing over it. Lumiere is gone from the builds (kept in the repository).
+What this tests (hardware test #56: the CPU interface is the one again):
+  Your call after test #55: the GPU interface attempt is deprecated (kept behind a switch), the interface
+  drawn by the CPU is the port's one from here on, and the missing menus come next on it.
   New: the CIA and openmw/test-menu.txt (uploaded).
-  At startup, choose a run with UP/DOWN and A:
-    Run A: the interface by the GPU, one texture (the default now). Look at a door or an NPC: the label at the
-           top has a dark translucent box. Open the tabs: the page replaces the HUD. Walk 3 minutes: any flash?
-    Run B: the interface by the CPU, for comparison only.
-    Logs: logs/test48-A, -B.
+  At startup: "Normal game" = the CPU interface. Play as you like; doors, tabs. Run A is the deprecated GPU
+  interface, for comparison only.
+  Logs: the normal game logs as usual.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 

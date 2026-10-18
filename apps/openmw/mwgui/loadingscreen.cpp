@@ -1,3 +1,6 @@
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+#endif
 #include "loadingscreen.hpp"
 
 #include <array>
@@ -158,6 +161,9 @@ namespace MWGui
             return;
 
         mLoadingOnTime = mTimer.time_m();
+#ifdef OPENMW_PLATFORM_3DS
+        Render3DS::setHoldTopScreen(true);
+#endif
 
         // Assign dummy bounding sphere callback to avoid the bounding sphere of the entire scene being recomputed after
         // each frame of loading We are already using node masks to avoid the scene from being updated/rendered, but
@@ -186,6 +192,9 @@ namespace MWGui
     {
         if (--mNestedLoadingCount > 0)
             return;
+#ifdef OPENMW_PLATFORM_3DS
+        Render3DS::setHoldTopScreen(false);
+#endif
 
         if (mLastRenderTime < mLoadingOnTime)
         {
