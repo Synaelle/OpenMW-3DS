@@ -22,6 +22,7 @@
 extern "C" __declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x00000001;
 #endif
 
+#include <algorithm>
 #include <filesystem>
 
 #if (defined(__APPLE__) || defined(__linux) || defined(__unix) || defined(__posix))
@@ -96,14 +97,45 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
                                             // due to implementation bugs.
     engine.setDataDirs(dataDirs);
 
+#ifdef OPENMW_PLATFORM_3DS
+    // M11: an expansion is used when its files are in a data folder (its ESM, and its BSA when there), after
+    // Morrowind's; deleting them removes it (openmw.cfg doesn't list them). Saves made with it need it back.
+    StringsVector expansions;
+    for (const char* name : { "Tribunal", "Bloodmoon" })
+        for (const auto& dir : dataDirs)
+            if (std::filesystem::exists(dir / (std::string(name) + ".esm")))
+            {
+                expansions.emplace_back(name);
+                break;
+            }
+#endif
+
     // fallback archives
     StringsVector archives = variables["fallback-archive"].as<StringsVector>();
+#ifdef OPENMW_PLATFORM_3DS
+    for (const std::string& name : expansions)
+        for (const auto& dir : dataDirs)
+            if (std::filesystem::exists(dir / (name + ".bsa"))
+                && std::find(archives.begin(), archives.end(), name + ".bsa") == archives.end())
+            {
+                archives.push_back(name + ".bsa");
+                break;
+            }
+#endif
     for (StringsVector::const_iterator it = archives.begin(); it != archives.end(); ++it)
     {
         engine.addArchive(*it);
     }
 
     StringsVector content = variables["content"].as<StringsVector>();
+#ifdef OPENMW_PLATFORM_3DS
+    for (const std::string& name : expansions)
+        if (std::find(content.begin(), content.end(), name + ".esm") == content.end())
+        {
+            content.push_back(name + ".esm");
+            Log(Debug::Info) << "3DS: expansion " << name << " found, loaded";
+        }
+#endif
     if (content.empty())
     {
         Log(Debug::Error) << "No content file given (esm/esp, nor omwgame/omwaddon). Aborting...";

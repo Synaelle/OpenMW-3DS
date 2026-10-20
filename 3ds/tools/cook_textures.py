@@ -459,7 +459,7 @@ def render_truetype(fonts_dir, name, ppem):
     return line_height, glyphs
 
 
-def collect_sources(data_dir, archives, prefixes, resources=None, after=()):
+def collect_sources(data_dir, archives, prefixes, resources=None, after=(), loose=True):
     """name -> (file, offset, size). Later archives and loose files override earlier ones (VFS order); OpenMW's own
     resources (resources/vfs) come first, as OpenMW adds them before the game's data, and the folders in `after`
     (the port's own interface, packaging/ui3ds) last, as the port's openmw.cfg adds them after it."""
@@ -480,7 +480,8 @@ def collect_sources(data_dir, archives, prefixes, resources=None, after=()):
         for name, src in read_bsa_index(bsa).items():
             if name.startswith(prefixes) and name.endswith(IMAGE_EXTENSIONS):
                 sources[name] = src
-    walk(data_dir)
+    if loose:
+        walk(data_dir)
     for folder in after:
         walk(folder)
     # One texture per key; OpenMW prefers .dds when both exist.
@@ -682,6 +683,10 @@ def main():
     parser.add_argument("--tex3ds", default=DEFAULT_TEX3DS)
     parser.add_argument("--jobs", type=int, default=os.cpu_count())
     parser.add_argument("--limit", type=int, default=0, help="cook only the first N textures (testing)")
+    parser.add_argument("--addon", action="store_true",
+                        help="an expansion's own pack (Tribunal, Bloodmoon): only the textures of --archives, no loose "
+                             "files, no UI atlas or fonts (those stay in the main pack); loaded after it, its textures "
+                             "override the main pack's")
     parser.add_argument("--atlas-preview", default="", help="also write the UI atlas as this PNG (top row first)")
     parser.add_argument("--layouts", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                           "packaging", "ui3ds", "mygui"),
@@ -694,8 +699,11 @@ def main():
     prefixes = tuple(normalize(p.strip()) for p in args.prefixes.split(",") if p.strip())
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     layouts = [folder for folder in args.layouts.split(",") if folder]
-    sources = collect_sources(args.data, archives, prefixes, args.resources,
-                              after=[os.path.dirname(folder) for folder in layouts])
+    if args.addon:
+        sources = collect_sources(args.data, archives, prefixes, loose=False)
+    else:
+        sources = collect_sources(args.data, archives, prefixes, args.resources,
+                                  after=[os.path.dirname(folder) for folder in layouts])
     referenced = referenced_textures([os.path.join(args.resources, "mygui")] + layouts
                                      + [os.path.join(repo, "openmw", "apps", "openmw", "mwgui")])
     referenced.update(key for key in sources if key.startswith(ATLAS_HALVED_PREFIX))
@@ -722,59 +730,67 @@ def main():
             if (i + 1) % 250 == 0:
                 print(f"  {i + 1}/{len(keys)}", flush=True)
 
-    # The UI atlas: the candidate images and the fonts' glyphs packed into one page.
-    cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
-             if texels is not None]
-    fonts = []
-    for font in FONTS:
-        for ppem in FONT_SIZES:
-            line_height, glyphs = render_truetype(os.path.join(args.resources, "fonts"), font, ppem)
-            fonts.append((font, ppem, line_height, glyphs))
-            cells += [(f"glyph:{font}:{ppem}:{g[0]}", g[1]) for g in glyphs if isinstance(g[1], np.ndarray)]
-    for key, alpha in SPECIAL_CELLS.items():
-        cells.append((key, np.array([[[255, 255, 255, alpha]]], dtype=np.uint8)))
-    cells.append((WHITE_KEY, np.full((WHITE_SIZE, WHITE_SIZE, 4), 255, dtype=np.uint8)))
-    placements, turned = pack_atlas(cells)
-    cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
-    entries = []
-    for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
-        x, y = placements.get(key, (0, 0))
-        if key in turned:
-            flags |= FLAG_ATLAS_TRANSPOSED
-        entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
-    atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
-    entries.append(atlas_entry)
-    wx, wy = placements[WHITE_KEY]
-    entries.append((fnv1a64(WHITE_KEY), WHITE_KEY, bytes([255]) * (WHITE_SIZE * WHITE_SIZE * 4), WHITE_SIZE,
-                    WHITE_SIZE, WHITE_SIZE, WHITE_SIZE, GPU_RGBA8, 1, FLAG_ATLAS, 0, wx | (wy << 16)))
-    if args.atlas_preview:
-        Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
-    font_table = bytearray()
-    glyph_table = bytearray()
-    for font, ppem, line_height, glyphs in fonts:
-        font_table += struct.pack("<QHHIII", fnv1a64(f"fonts/{font}"), ppem, line_height, len(glyphs),
-                                  len(glyph_table) // GLYPH_RECORD_SIZE, 0)
-        for code, cell, width, height, advance, bearing_x, bearing_y in glyphs:
-            rect = (0, 0, 0, 0)
-            if isinstance(cell, np.ndarray):
-                x, y = placements[f"glyph:{font}:{ppem}:{code}"]
-                rect = (x, y, cell.shape[1], cell.shape[0])
-            elif isinstance(cell, str):
-                rect = placements[cell] + (1, 1)
-            glyph_table += struct.pack("<IHHHHfffff", code, *rect, width, height, advance, bearing_x, bearing_y)
-    assert len(font_table) == FONT_RECORD_SIZE * len(fonts)
-    font_table += glyph_table
-    rx, ry, rw, rh = reserved_region()
-    used = sum(w * h for _, w, h, _, _ in
-               [(k, t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2],
-                 t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3],
-                 0, 0) for k, t in cells])
-    glyph_cells = sum(1 for key, _ in cells if key.startswith("glyph:"))
-    print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells) - glyph_cells - len(SPECIAL_CELLS)} images, "
-          f"{glyph_cells} glyph cells of {len(fonts)} fonts ({', '.join(f'{f[0]} {f[1]} px' for f in fonts)}), "
-          f"reserved {rw}x{rh} at {rx},{ry} "
-          f"({ICON_SLOTS[0]}x{ICON_SLOTS[1]} icon slots, {MAP_SIZE}x{MAP_SIZE} map), "
-          f"{100 * (used + rw * rh) // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
+    if args.addon:
+        # An expansion's pack: its textures only; the interface atlas and the fonts are the main pack's.
+        entries = [(fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags & ~FLAG_ATLAS, 0, 0)
+                   for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results]
+        fonts = []
+        font_table = bytearray()
+        rx = ry = 0
+    else:
+        # The UI atlas: the candidate images and the fonts' glyphs packed into one page.
+        cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
+                 if texels is not None]
+        fonts = []
+        for font in FONTS:
+            for ppem in FONT_SIZES:
+                line_height, glyphs = render_truetype(os.path.join(args.resources, "fonts"), font, ppem)
+                fonts.append((font, ppem, line_height, glyphs))
+                cells += [(f"glyph:{font}:{ppem}:{g[0]}", g[1]) for g in glyphs if isinstance(g[1], np.ndarray)]
+        for key, alpha in SPECIAL_CELLS.items():
+            cells.append((key, np.array([[[255, 255, 255, alpha]]], dtype=np.uint8)))
+        cells.append((WHITE_KEY, np.full((WHITE_SIZE, WHITE_SIZE, 4), 255, dtype=np.uint8)))
+        placements, turned = pack_atlas(cells)
+        cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
+        entries = []
+        for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
+            x, y = placements.get(key, (0, 0))
+            if key in turned:
+                flags |= FLAG_ATLAS_TRANSPOSED
+            entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
+        atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
+        entries.append(atlas_entry)
+        wx, wy = placements[WHITE_KEY]
+        entries.append((fnv1a64(WHITE_KEY), WHITE_KEY, bytes([255]) * (WHITE_SIZE * WHITE_SIZE * 4), WHITE_SIZE,
+                        WHITE_SIZE, WHITE_SIZE, WHITE_SIZE, GPU_RGBA8, 1, FLAG_ATLAS, 0, wx | (wy << 16)))
+        if args.atlas_preview:
+            Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
+        font_table = bytearray()
+        glyph_table = bytearray()
+        for font, ppem, line_height, glyphs in fonts:
+            font_table += struct.pack("<QHHIII", fnv1a64(f"fonts/{font}"), ppem, line_height, len(glyphs),
+                                      len(glyph_table) // GLYPH_RECORD_SIZE, 0)
+            for code, cell, width, height, advance, bearing_x, bearing_y in glyphs:
+                rect = (0, 0, 0, 0)
+                if isinstance(cell, np.ndarray):
+                    x, y = placements[f"glyph:{font}:{ppem}:{code}"]
+                    rect = (x, y, cell.shape[1], cell.shape[0])
+                elif isinstance(cell, str):
+                    rect = placements[cell] + (1, 1)
+                glyph_table += struct.pack("<IHHHHfffff", code, *rect, width, height, advance, bearing_x, bearing_y)
+        assert len(font_table) == FONT_RECORD_SIZE * len(fonts)
+        font_table += glyph_table
+        rx, ry, rw, rh = reserved_region()
+        used = sum(w * h for _, w, h, _, _ in
+                   [(k, t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2],
+                     t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3],
+                     0, 0) for k, t in cells])
+        glyph_cells = sum(1 for key, _ in cells if key.startswith("glyph:"))
+        print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells) - glyph_cells - len(SPECIAL_CELLS)} images, "
+              f"{glyph_cells} glyph cells of {len(fonts)} fonts ({', '.join(f'{f[0]} {f[1]} px' for f in fonts)}), "
+              f"reserved {rw}x{rh} at {rx},{ry} "
+              f"({ICON_SLOTS[0]}x{ICON_SLOTS[1]} icon slots, {MAP_SIZE}x{MAP_SIZE} map), "
+              f"{100 * (used + rw * rh) // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
     entries.sort(key=lambda e: e[0])
     for a, b in zip(entries, entries[1:]):
         if a[0] == b[0]:

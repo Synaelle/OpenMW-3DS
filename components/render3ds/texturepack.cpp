@@ -62,9 +62,35 @@ namespace Render3DS
         } __attribute__((packed));
         static_assert(sizeof(PackEntry) == 32);
 
+        // The texture packs: the main one (textures/textures.o3tp: Morrowind, the interface atlas, the fonts), then
+        // each expansion's (tribunal.o3tp, bloodmoon.o3tp: its BSA's textures only), whose textures override the
+        // ones before them, as their BSAs do.
+        struct Pack
+        {
+            FILE* mFile = nullptr;
+            std::vector<PackEntry> mIndex;
+        };
         std::mutex gPackMutex;
-        FILE* gPack = nullptr;
-        std::vector<PackEntry> gIndex;
+        std::vector<Pack> gPacks;
+        FILE* gPack = nullptr; // the main pack's file
+        std::vector<PackEntry> gIndex; // the main pack's index (the interface atlas, the white cell)
+
+        // The newest pack holding the hash, or -1.
+        int findInPacks(uint64_t hash, const PackEntry** entry)
+        {
+            for (int p = int(gPacks.size()) - 1; p >= 0; --p)
+            {
+                const std::vector<PackEntry>& index = gPacks[p].mIndex;
+                const auto it = std::lower_bound(index.begin(), index.end(), hash,
+                    [](const PackEntry& e, uint64_t value) { return e.mHash < value; });
+                if (it != index.end() && it->mHash == hash)
+                {
+                    *entry = &*it;
+                    return p;
+                }
+            }
+            return -1;
+        }
         std::vector<CookedFont> gFonts;
         std::vector<CookedGlyph> gGlyphs;
         uint32_t gReservedPos = 0;
@@ -122,10 +148,32 @@ namespace Render3DS
         return linearAlloc(size); // locked by platform3ds's wrapper
     }
 
+    namespace
+    {
+        // VRAM (6 MB at 0x1F000000): the render targets and the top screen's interface overlay take ~1 MB; scene
+        // textures fill the rest when it has room, which leaves that much linear memory to the heap's large pool
+        // (M9). vramAlloc has no lock: one here.
+        constexpr uintptr_t kVramBegin = 0x1F000000, kVramEnd = 0x1F600000;
+        constexpr size_t kVramMargin = 384 * 1024; // left free for render targets created later
+        std::mutex gVramMutex;
+        std::vector<CookedImage*> gVramImages; // reloaded after applets
+
+        bool inVram(const void* ptr)
+        {
+            return uintptr_t(ptr) >= kVramBegin && uintptr_t(ptr) < kVramEnd;
+        }
+    }
+
     void gpuFree(void* ptr)
     {
         if (ptr == nullptr)
             return;
+        if (inVram(ptr))
+        {
+            std::lock_guard<std::mutex> lock(gVramMutex);
+            vramFree(ptr);
+            return;
+        }
         linearFree(ptr);
     }
 
@@ -163,6 +211,11 @@ namespace Render3DS
 
     CookedImage::~CookedImage()
     {
+        if (inVram(mGpuData))
+        {
+            std::lock_guard<std::mutex> lock(gVramMutex);
+            gVramImages.erase(std::find(gVramImages.begin(), gVramImages.end(), this));
+        }
         gpuFree(mGpuData);
     }
 
@@ -211,11 +264,40 @@ namespace Render3DS
         // Every texture is one read straight into linear memory: no stdio buffering in between.
         std::setvbuf(file, nullptr, _IONBF, 0);
         gPack = file;
-        gIndex = std::move(index);
+        gIndex = index;
+        gPacks.insert(gPacks.begin(), Pack{ file, std::move(index) });
         P3DS_LOGI("render3ds: texture pack %s: %u textures, %u fonts (%u glyphs) in the UI atlas, its reserved "
                   "region at %u,%u",
             path, (unsigned)gIndex.size(), (unsigned)gFonts.size(), (unsigned)gGlyphs.size(),
             (unsigned)(gReservedPos & 0xFFFF), (unsigned)(gReservedPos >> 16));
+        return true;
+    }
+
+    bool openAddonTexturePack(const char* path)
+    {
+        std::lock_guard<std::mutex> lock(gPackMutex);
+        FILE* file = std::fopen(path, "rb");
+        if (file == nullptr)
+            return false;
+        PackHeader header;
+        std::vector<PackEntry> index;
+        bool ok = std::fread(&header, sizeof(header), 1, file) == 1 && std::memcmp(header.mMagic, kMagic, 4) == 0
+            && header.mVersion == kVersion;
+        if (ok)
+        {
+            index.resize(header.mCount);
+            ok = std::fseek(file, static_cast<long>(header.mIndexOffset), SEEK_SET) == 0
+                && std::fread(index.data(), sizeof(PackEntry), index.size(), file) == index.size();
+        }
+        if (!ok)
+        {
+            P3DS_LOGE("render3ds: %s is not a usable version %lu texture pack", path, (unsigned long)kVersion);
+            std::fclose(file);
+            return false;
+        }
+        std::setvbuf(file, nullptr, _IONBF, 0);
+        gPacks.push_back(Pack{ file, std::move(index) });
+        P3DS_LOGI("render3ds: expansion texture pack %s: %u textures", path, unsigned(gPacks.back().mIndex.size()));
         return true;
     }
 
@@ -252,8 +334,89 @@ namespace Render3DS
 
     namespace
     {
-        osg::ref_ptr<osg::Image> loadEntry(const PackEntry& entry, std::string_view name)
+        // Scene textures (not interface images: the CPU interface reads those) go to VRAM through a heap buffer
+        // (the file system can't write VRAM); nullptr when VRAM has no room.
+        // The CPU writes VRAM since packaging/app.rsf maps it writable (it was read-only: hardware test #71 faulted
+        // in the memcpy below).
+        constexpr bool kTexturesInVram = true;
+
+        CookedImage* loadIntoVram(const PackEntry& entry, int pack)
         {
+            if (!kTexturesInVram || (entry.mFlags & (4 | 8)) != 0)
+                return nullptr;
+            void* vram = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(gVramMutex);
+                if (vramSpaceFree() < entry.mSize + kVramMargin)
+                    return nullptr;
+                vram = vramAlloc(entry.mSize);
+            }
+            if (vram == nullptr)
+                return nullptr;
+            std::vector<uint8_t> staging;
+            bool ok = false;
+            try
+            {
+                staging.resize(entry.mSize);
+                std::lock_guard<std::mutex> lock(gPackMutex);
+                FILE* file = gPacks[pack].mFile;
+                ok = std::fseek(file, static_cast<long>(entry.mOffset), SEEK_SET) == 0
+                    && std::fread(staging.data(), 1, entry.mSize, file) == entry.mSize;
+            }
+            catch (const std::bad_alloc&)
+            {
+            }
+            if (!ok)
+            {
+                gpuFree(vram);
+                return nullptr;
+            }
+            std::memcpy(vram, staging.data(), entry.mSize);
+            GSPGPU_FlushDataCache(vram, entry.mSize);
+            auto* image = new CookedImage(vram, entry.mSize, entry.mWidth, entry.mHeight, entry.mSrcWidth,
+                entry.mSrcHeight, static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels, entry.mFlags,
+                entry.mAtlas, entry.mAtlasPos);
+            image->setPackOffset(entry.mOffset);
+            image->setPackIndex(static_cast<uint8_t>(pack));
+            std::lock_guard<std::mutex> lock(gVramMutex);
+            gVramImages.push_back(image);
+            return image;
+        }
+
+        // Texture tier-down, the last resort (M9): when linear memory runs low (the heap's large pool took it, or
+        // the GPU did), a scene texture loads from its second mip level, a quarter of the memory.
+        PackEntry tierDown(const PackEntry& entry)
+        {
+            constexpr size_t kLowLinear = 6u * 1024u * 1024u; // under the large pool's floor: the GPU itself is short
+            if ((entry.mFlags & (4 | 8)) != 0 || entry.mLevels < 2 || entry.mWidth < 16 || entry.mHeight < 16
+                || linearSpaceFree() >= kLowLinear)
+                return entry;
+            const uint32_t top = uint32_t(entry.mWidth) * entry.mHeight
+                * bitsPerPixel(static_cast<GPU_TEXCOLOR>(entry.mFormat)) / 8;
+            if (top >= entry.mSize)
+                return entry;
+            PackEntry smaller = entry;
+            smaller.mOffset += top;
+            smaller.mSize -= top;
+            smaller.mWidth /= 2;
+            smaller.mHeight /= 2;
+            smaller.mLevels -= 1;
+            static unsigned count = 0;
+            if (count++ % 50 == 0)
+                P3DS_LOGW("render3ds: linear memory low (%u KB): textures load at half size (%u so far)",
+                    unsigned(linearSpaceFree() / 1024), count);
+            return smaller;
+        }
+
+        osg::ref_ptr<osg::Image> loadEntry(const PackEntry& fullEntry, std::string_view name, int pack = 0)
+        {
+            const PackEntry entry = tierDown(fullEntry);
+            if (CookedImage* inVramImage = loadIntoVram(entry, pack))
+            {
+                osg::ref_ptr<osg::Image> image = inVramImage;
+                image->setFileName(std::string(name));
+                return image;
+            }
             void* data = gpuAlloc(entry.mSize);
             if (data == nullptr)
             {
@@ -266,8 +429,9 @@ namespace Render3DS
             bool ok;
             {
                 std::lock_guard<std::mutex> lock(gPackMutex);
-                ok = std::fseek(gPack, static_cast<long>(entry.mOffset), SEEK_SET) == 0
-                    && std::fread(data, 1, entry.mSize, gPack) == entry.mSize;
+                FILE* file = gPacks[pack].mFile;
+                ok = std::fseek(file, static_cast<long>(entry.mOffset), SEEK_SET) == 0
+                    && std::fread(data, 1, entry.mSize, file) == entry.mSize;
             }
             if (!ok)
             {
@@ -285,6 +449,35 @@ namespace Render3DS
         }
     }
 
+    void reloadVramTextures()
+    {
+        std::lock_guard<std::mutex> vramLock(gVramMutex);
+        std::vector<uint8_t> staging;
+        size_t bytes = 0;
+        for (CookedImage* image : gVramImages)
+        {
+            try
+            {
+                staging.resize(image->gpuSize());
+            }
+            catch (const std::bad_alloc&)
+            {
+                break;
+            }
+            std::lock_guard<std::mutex> lock(gPackMutex);
+            FILE* file = image->packIndex() < gPacks.size() ? gPacks[image->packIndex()].mFile : gPack;
+            if (std::fseek(file, static_cast<long>(image->packOffset()), SEEK_SET) == 0
+                && std::fread(staging.data(), 1, image->gpuSize(), file) == image->gpuSize())
+            {
+                std::memcpy(image->gpuData(), staging.data(), image->gpuSize());
+                GSPGPU_FlushDataCache(image->gpuData(), image->gpuSize());
+                bytes += image->gpuSize();
+            }
+        }
+        P3DS_LOGI("render3ds: %u textures in VRAM read again (%u KB)", unsigned(gVramImages.size()),
+            unsigned(bytes / 1024));
+    }
+
     bool cookedSourceSize(const osg::Image& image, int& width, int& height)
     {
         const auto* cooked = dynamic_cast<const CookedImage*>(&image);
@@ -299,12 +492,11 @@ namespace Render3DS
     {
         if (gPack == nullptr)
             return nullptr;
-        const uint64_t hash = fnv1a64(stripExtension(normalizedPath));
-        const auto it = std::lower_bound(gIndex.begin(), gIndex.end(), hash,
-            [](const PackEntry& entry, uint64_t value) { return entry.mHash < value; });
-        if (it == gIndex.end() || it->mHash != hash)
+        const PackEntry* entry = nullptr;
+        const int pack = findInPacks(fnv1a64(stripExtension(normalizedPath)), &entry);
+        if (pack < 0)
             return nullptr;
-        return loadEntry(*it, normalizedPath);
+        return loadEntry(*entry, normalizedPath, pack);
     }
 
     namespace

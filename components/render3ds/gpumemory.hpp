@@ -20,7 +20,11 @@ namespace Render3DS
     // linearAlloc/linearFree behind one lock: textures load on any thread (ImageManager), geometry is
     // uploaded on the main thread.
     void* gpuAlloc(size_t size);
+    // Frees linear or VRAM memory (scene textures live in VRAM when it has room, see loadEntry).
     void gpuFree(void* ptr);
+    // Reads the textures kept in VRAM again from the texture pack: applet transitions (the keyboard, HOME Menu)
+    // write the screens' capture into VRAM. Main thread, between frames.
+    void reloadVramTextures();
 
     // The first mipmapped texture of that format in the cooked pack (GPU self-test).
     osg::ref_ptr<osg::Image> loadCookedImageWithFormat(GPU_TEXCOLOR format);
@@ -60,10 +64,19 @@ namespace Render3DS
         uint16_t atlasX() const { return static_cast<uint16_t>(mAtlasPos & 0xFFFF); }
         uint16_t atlasY() const { return static_cast<uint16_t>(mAtlasPos >> 16); }
 
+        // Set for an image in VRAM: where its data is in the texture pack (reloadVramTextures).
+        void setPackOffset(uint32_t offset) { mPackOffset = offset; }
+        uint32_t packOffset() const { return mPackOffset; }
+        // Which texture pack holds it (0: the main one; an expansion's pack after it).
+        void setPackIndex(uint8_t index) { mPackIndex = index; }
+        uint8_t packIndex() const { return mPackIndex; }
+
     protected:
         ~CookedImage() override;
 
     private:
+        uint32_t mPackOffset = 0;
+        uint8_t mPackIndex = 0;
         void* mGpuData;
         uint32_t mGpuSize;
         GPU_TEXCOLOR mGpuFormat;
