@@ -309,6 +309,12 @@ namespace MWWorld
 
         Ptr searchInContainer(const ESM::RefId& id);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // References moved into or out of this cell are tracked by pointer in both cells: such a cell is never
+        // evicted (WorldModel::evictCells).
+        bool hasMovedRefs() const { return !mMovedHere.empty() || !mMovedToAnotherCell.empty(); }
+#endif
+
         void loadState(const ESM::CellState& state);
 
         void saveState(ESM::CellState& state) const;

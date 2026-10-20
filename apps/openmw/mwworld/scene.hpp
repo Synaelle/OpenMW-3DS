@@ -8,6 +8,7 @@
 #include "positioncellgrid.hpp"
 #include "ptr.hpp"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -127,6 +128,12 @@ namespace MWWorld
         void preloadCells(float dt);
         void preloadTeleportDoorDestinations(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
         void preloadExteriorGrid(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the terrain of the cells beyond the loaded grid's edge, built on the work queue as the player nears
+        // that edge (OpenMW's cell preloader is off on the 3DS: it also loads every object model of those cells).
+        void preloadEdgeTerrain3DS(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos);
+        std::map<std::pair<int, int>, std::shared_ptr<SceneUtil::WorkItem>> mEdgeTerrain3DS;
+#endif
         void preloadFastTravelDestinations(
             const osg::Vec3f& playerPos, std::vector<PositionCellGrid>& exteriorPositions);
         void preloadCellWithSurroundings(MWWorld::CellStore& cell);

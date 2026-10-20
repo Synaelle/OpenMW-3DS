@@ -19,10 +19,13 @@
 #include <components/misc/convert.hpp>
 #include <components/misc/resourcehelpers.hpp>
 #include <components/resource/resourcesystem.hpp>
+#include <components/resource/keyframemanager.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/positionattitudetransform.hpp>
 #include <components/settings/values.hpp>
 #include <components/terrain/terraingrid.hpp>
+#include <components/terrain/view.hpp>
+#include <components/vfs/manager.hpp>
 #include <components/vfs/pathutil.hpp>
 
 #include "../mwbase/environment.hpp"
@@ -55,6 +58,8 @@
 
 #ifdef OPENMW_PLATFORM_3DS
 #include "../n3ds/hydration.hpp"
+#include "../n3ds/memrelief.hpp"
+#include "worldmodel.hpp"
 #include <3ds.h>
 #include <cstdio>
 #include <components/resource/bulletshapemanager.hpp>
@@ -452,6 +457,9 @@ namespace MWWorld
         if (mActiveCells.find(cell) == mActiveCells.end())
             return;
         Log(Debug::Info) << "Unloading cell " << cell->getCell()->getDescription();
+#ifdef OPENMW_PLATFORM_3DS
+        mWorld.getWorldModel().touchCell(*cell); // left now: the eviction order counts from here
+#endif
 
         ListAndResetObjectsVisitor visitor;
 
@@ -578,6 +586,9 @@ namespace MWWorld
         // register local scripts
         // do this before insertCell, to make sure we don't add scripts from levelled creature spawning twice
         OMW3DS_MEMSTAGE("loadCell: start");
+#ifdef OPENMW_PLATFORM_3DS
+        mWorld.getWorldModel().touchCell(cell); // cell eviction's least recently used order
+#endif
         mWorld.getLocalScripts().addCell(&cell);
 
         if (respawn)
@@ -736,6 +747,11 @@ namespace MWWorld
             else
                 unloadCell(cell, navigatorUpdateGuard.get());
         }
+#ifdef OPENMW_PLATFORM_3DS
+        OMW3DS_MEMSTAGE("cell change: old cells unloaded");
+        omw3ds::memrelief::onCellChange(*mRendering.getResourceSystem());
+        OMW3DS_MEMSTAGE("cell change: memory watchdog");
+#endif
 
         const DetourNavigator::CellGridBounds cellGridBounds{
             .mCenter = osg::Vec2i(playerCellX, playerCellY),
@@ -793,8 +809,10 @@ namespace MWWorld
 
         navigatorUpdateGuard.reset();
 
+        OMW3DS_MEMSTAGE("cell change: navigator");
         CellStore& current = mWorld.getWorldModel().getExterior(playerCellIndex);
         MWBase::Environment::get().getWindowManager()->changeCell(&current);
+        OMW3DS_MEMSTAGE("cell change: exterior done");
 
         if (changeEvent)
             mCellChanged = true;
@@ -1064,6 +1082,11 @@ namespace MWWorld
             unloadCell(cellToUnload, navigatorUpdateGuard.get());
         }
         assert(mActiveCells.empty());
+#ifdef OPENMW_PLATFORM_3DS
+        OMW3DS_MEMSTAGE("cell change: old cells unloaded");
+        omw3ds::memrelief::onCellChange(*mRendering.getResourceSystem());
+        OMW3DS_MEMSTAGE("cell change: memory watchdog");
+#endif
 
         loadingListener->setProgressRange(cell.count());
 
@@ -1093,6 +1116,7 @@ namespace MWWorld
             MWBase::Environment::get().getWindowManager()->fadeScreenIn(0.5);
 
         MWBase::Environment::get().getWindowManager()->changeCell(mCurrentCell);
+        OMW3DS_MEMSTAGE("cell change: interior done");
 
         MWBase::Environment::get().getWorld()->getPostProcessor()->setExteriorFlag(cell.getCell()->isQuasiExterior());
     }
@@ -1215,6 +1239,18 @@ namespace MWWorld
                 // and parse the file again on the main thread.
                 if (mShapeManager != nullptr)
                     mShape = mShapeManager->getShape(mMesh);
+                // M10: an actor model's animations (model.kf beside model.nif, as Animation::addAnimSource names
+                // them): read on the main thread at insertion otherwise (test #83: an NPC's 613 ms, a large .kf).
+                if (mKeyframeManager != nullptr && mVfs != nullptr)
+                {
+                    VFS::Path::Normalized kf(mMesh);
+                    if (kf.extension() == VFS::Path::ExtensionView("nif"))
+                    {
+                        kf.changeExtension(VFS::Path::ExtensionView("kf"));
+                        if (mVfs->exists(kf))
+                            mKeyframes = mKeyframeManager->get(kf);
+                    }
+                }
 #else
                 mSceneManager->getTemplate(mMesh);
 #endif
@@ -1229,6 +1265,11 @@ namespace MWWorld
 
 #ifdef OPENMW_PLATFORM_3DS
         void setShapeManager(Resource::BulletShapeManager* shapeManager) { mShapeManager = shapeManager; }
+        void setKeyframeManager(Resource::KeyframeManager* keyframeManager, const VFS::Manager* vfs)
+        {
+            mKeyframeManager = keyframeManager;
+            mVfs = vfs;
+        }
 #endif
 
     private:
@@ -1238,6 +1279,9 @@ namespace MWWorld
         Resource::BulletShapeManager* mShapeManager = nullptr;
         osg::ref_ptr<const osg::Node> mTemplate;
         std::shared_ptr<const Resource::BulletShape> mShape;
+        Resource::KeyframeManager* mKeyframeManager = nullptr;
+        const VFS::Manager* mVfs = nullptr;
+        std::shared_ptr<const SceneUtil::KeyframeHolder> mKeyframes;
 #endif
         std::atomic_bool mAborted{ false };
     };
@@ -1256,6 +1300,9 @@ namespace MWWorld
         auto item = std::make_shared<PreloadMeshItem>(meshPath, mRendering.getResourceSystem()->getSceneManager());
         if (withShape)
             item->setShapeManager(mPhysics->getShapeManager());
+        if (useAnim)
+            item->setKeyframeManager(
+                mRendering.getResourceSystem()->getKeyframeManager(), mRendering.getResourceSystem()->getVFS());
         mRendering.getWorkQueue()->addWorkItem(item);
         const auto isDone = [](const std::shared_ptr<SceneUtil::WorkItem>& v) { return v->isDone(); };
         mWorkItems.erase(std::remove_if(mWorkItems.begin(), mWorkItems.end(), isDone), mWorkItems.end());
@@ -1302,6 +1349,9 @@ namespace MWWorld
 
         mLastPlayerPos = playerPos;
 
+#ifdef OPENMW_PLATFORM_3DS
+        preloadEdgeTerrain3DS(playerPos, predictedPos);
+#endif
         if (mPreloadEnabled)
         {
             if (mPreloadDoors)
@@ -1346,6 +1396,115 @@ namespace MWWorld
             }
         }
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        // One cell's terrain (its chunks, the land data they're made from), held by the item until it's released.
+        class PreloadTerrainItem : public SceneUtil::WorkItem
+        {
+        public:
+            PreloadTerrainItem(Terrain::World& terrain, MWRender::LandManager& land, ESM::ExteriorCellLocation cell)
+                : mTerrain(terrain)
+                , mLand(land)
+                , mCell(cell)
+                , mView(terrain.createView()) // on the main thread, as CellPreloader's PreloadItem
+            {
+            }
+
+            void doWork() override
+            {
+                if (mAborted)
+                    return;
+                try
+                {
+                    mLandObject = mLand.getLand(mCell);
+                    if (mView != nullptr && !mAborted)
+                        mTerrain.cacheCell(mView.get(), mCell.mX, mCell.mY);
+                }
+                catch (const std::exception& e)
+                {
+                    Log(Debug::Warning) << "Failed to preload the terrain of " << mCell << ": " << e.what();
+                }
+            }
+
+            void abort() override { mAborted = true; }
+
+        private:
+            Terrain::World& mTerrain;
+            MWRender::LandManager& mLand;
+            ESM::ExteriorCellLocation mCell;
+            std::unique_ptr<Terrain::View> mView;
+            std::shared_ptr<const ESMTerrain::LandObject> mLandObject;
+            std::atomic_bool mAborted{ false };
+        };
+    }
+
+    void Scene::preloadEdgeTerrain3DS(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos)
+    {
+        Terrain::World* terrain = mRendering.getTerrain();
+        if (mCurrentCell == nullptr || !mCurrentCell->isExterior() || terrain == nullptr)
+        {
+            for (auto& [cell, item] : mEdgeTerrain3DS)
+                item->abort();
+            mEdgeTerrain3DS.clear();
+            return;
+        }
+        static unsigned frames = 0;
+        if (++frames % 10 != 0)
+            return;
+        // The cells of the ring just outside the loaded grid that the player (now, or as predicted) is within
+        // kAhead of loading: crossing then finds their chunks in the terrain's cache instead of building them
+        // (test #83: 80-126 ms a cell, three a crossing, behind a loading screen). Walking speed gives the work
+        // queue a few seconds. At most kMaxCells (a corner wants five).
+        constexpr float kAhead = 1536.f;
+        constexpr std::size_t kMaxCells = 5;
+        const ESM::RefId worldspace = mWorld.getCurrentWorldspace();
+        const int cellSize = ESM::getCellSize(worldspace);
+        const int ring = mHalfGridSize + 1;
+        const float loadDist = cellSize / 2 + cellSize - mCellLoadingThreshold + kAhead;
+        std::vector<std::pair<float, std::pair<int, int>>> wanted;
+        for (int dx = -ring; dx <= ring; ++dx)
+            for (int dy = -ring; dy <= ring; ++dy)
+            {
+                if (dx != ring && dx != -ring && dy != ring && dy != -ring)
+                    continue;
+                const ESM::ExteriorCellLocation cell(
+                    mCurrentGridCenter.x() + dx, mCurrentGridCenter.y() + dy, worldspace);
+                const osg::Vec2f center = ESM::indexToPosition(cell, true);
+                const float dist = std::min(
+                    std::max(std::abs(center.x() - playerPos.x()), std::abs(center.y() - playerPos.y())),
+                    std::max(std::abs(center.x() - predictedPos.x()), std::abs(center.y() - predictedPos.y())));
+                if (dist < loadDist)
+                    wanted.emplace_back(dist, std::make_pair(cell.mX, cell.mY));
+            }
+        std::sort(wanted.begin(), wanted.end());
+        if (wanted.size() > kMaxCells)
+            wanted.resize(kMaxCells);
+        // Released once out of the ring: a cell the grid now holds keeps its chunks through the loaded terrain.
+        for (auto it = mEdgeTerrain3DS.begin(); it != mEdgeTerrain3DS.end();)
+        {
+            const bool keep = std::any_of(
+                wanted.begin(), wanted.end(), [&](const auto& w) { return w.second == it->first; });
+            if (keep)
+                ++it;
+            else
+            {
+                it->second->abort();
+                it = mEdgeTerrain3DS.erase(it);
+            }
+        }
+        for (const auto& [dist, xy] : wanted)
+        {
+            if (mEdgeTerrain3DS.count(xy) != 0)
+                continue;
+            auto item = std::make_shared<PreloadTerrainItem>(
+                *terrain, *mRendering.getLandManager(), ESM::ExteriorCellLocation(xy.first, xy.second, worldspace));
+            mRendering.getWorkQueue()->addWorkItem(item);
+            mEdgeTerrain3DS.emplace(xy, std::move(item));
+        }
+    }
+#endif
 
     void Scene::preloadExteriorGrid(const osg::Vec3f& playerPos, const osg::Vec3f& predictedPos)
     {

@@ -4,6 +4,8 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/sceneutil/material.hpp>
+#include <components/sceneutil/riggeometry.hpp>
+#include <components/settings/values.hpp>
 
 #include <osg/AlphaFunc>
 #include <osg/BlendFunc>
@@ -26,12 +28,14 @@
 #include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
+#include <platform3ds/platform.hpp>
 #include <platform3ds/screenshot.hpp>
 #include <platform3ds/textfb.hpp>
 
 #include <citro3d.h>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <unordered_set>
@@ -43,9 +47,11 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 
+#include "probe_shbin.h"
 #include "scene_shbin.h"
 
 namespace SDLUtil
@@ -91,6 +97,9 @@ namespace Render3DS
         shaderProgram_s gProgram1;
         shaderProgram_s gProgram0;
         bool gVariants = false;
+        DVLB_s* gProbeDvlb = nullptr; // the probe shader's own DVLB (M10: its room in gDvlb went to gProgramSkin)
+        shaderProgram_s gProgramSkin; // skinned on the GPU, sun + 1 light (skin1.v.pica)
+        bool gSkinVariant = false;
 
         // Set when the GPU hung: the GPU core was reset and nothing is drawn for the rest of the run, so the game
         // keeps running (headless) and HOME closes it normally instead of a frozen console.
@@ -107,7 +116,7 @@ namespace Render3DS
         struct UniformLocations
         {
             int mProjection, mModelView, mTexMat, mTexMat1, mSunDir, mSunDiffuse, mSunAmbient, mMatDiffuse,
-                mMatAmbient, mMatEmission, mColorSel, mLighting, mLights;
+                mMatAmbient, mMatEmission, mColorSel, mLighting, mLights, mBones;
         } gLoc;
 
         FrameStats gStats;
@@ -126,6 +135,21 @@ namespace Render3DS
         // waited for, so a draw that hangs the GPU is named in the log instead of freezing the console.
         int gVerifyFramesLeft = 2;
         bool gVerifyThisFrame = false;
+
+        // The draw-by-draw checks (the first frames, and every new object's first draw) cost a GPU wait each:
+        // 2282 of them in test #72, seconds added to every cell load. The GPU hangs they were made for (tests #9,
+        // #10) are long fixed: off unless sdmc:/openmw/gpu-verify exists. The startup self-test stays.
+        bool gpuVerify()
+        {
+            static const bool enabled = [] {
+                std::FILE* f = std::fopen("sdmc:/openmw/gpu-verify", "r");
+                if (f != nullptr)
+                    std::fclose(f);
+                P3DS_LOGI("render3ds: draw-by-draw GPU checks %s", f != nullptr ? "on (sdmc:/openmw/gpu-verify)" : "off");
+                return f != nullptr;
+            }();
+            return enabled;
+        }
         uint32_t gVerifiedDraws = 0;
 
         bool gWarnedPrimitive = false;
@@ -146,6 +170,8 @@ namespace Render3DS
         }
 
         bool gPerspective = true;
+        bool gRotatedTarget = true; // drawing on a screen (rotated 90 degrees), not into a texture
+        float gSmallFeaturePixels = 0.f; // [Camera] small feature culling pixel size, 0 = off (read every frame)
 
         // GL clip space -> PICA clip space. The top screen framebuffer is rotated 90 degrees (as citro3d's
         // Mtx_PerspTilt: x' = y, y' = -x). Depth, with the convention 0 = near, 1 = far (GL's LESS works as is):
@@ -158,8 +184,16 @@ namespace Render3DS
             C3D_FVec p[4];
             setRows(p, projection, 4);
             C3D_FVec* out = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mProjection, 4);
-            out[0] = p[1];
-            out[1] = FVec4_Scale(p[0], -1.f);
+            if (gRotatedTarget)
+            {
+                out[0] = p[1];
+                out[1] = FVec4_Scale(p[0], -1.f);
+            }
+            else // a texture (render-to-texture): not the screens' rotated framebuffer
+            {
+                out[0] = p[0];
+                out[1] = p[1];
+            }
             out[3] = p[3];
             gPerspective = projection(3, 3) == 0.f;
             if (gPerspective)
@@ -205,6 +239,32 @@ namespace Render3DS
             std::lock_guard<std::mutex> lock(gPendingMutex);
             gPendingDeletes.push_back(this);
         }
+
+        // A render-to-texture camera's color texture, drawn by the GPU (the character preview, the tester 20/10:
+        // the race window showed no head): a VRAM texture with its own depth buffer, freed with the OSG texture
+        // (the race window drops its preview when it closes).
+        // One 256x256 target reserved at startup (test #85: allocated when the race window opened, the VRAM was
+        // full of the scene's textures and the preview stayed empty); the race window is the only user.
+        struct RttReserve
+        {
+            C3D_Tex mTex{};
+            C3D_RenderTarget* mTarget = nullptr;
+            bool mInUse = false;
+        } gRttReserve;
+
+        struct RttTarget : GpuObject
+        {
+            C3D_Tex* mTex = nullptr; // nullptr: no target (not drawn, not shown)
+            C3D_RenderTarget* mTarget = nullptr;
+            bool mDrawn = false; // drawn this frame: the CPU interface reads it once the GPU is done (next frame)
+            bool mReady = false; // a finished image: until then the interface shows nothing (VRAM leftovers, #88)
+            void release() override
+            {
+                if (mTex == &gRttReserve.mTex)
+                    gRttReserve.mInUse = false;
+            }
+        };
+        std::unordered_map<const osg::Texture*, RttTarget*> gRttTargets;
 
         // ------------------------------------------------------------------ geometry
 
@@ -265,6 +325,12 @@ namespace Render3DS
         };
 
         std::unordered_map<const osg::Texture*, GpuTexture*> gTextures;
+        // M10: the last lookup (consecutive draws mostly share a texture; an unordered_map lookup divides by its
+        // bucket count, in software on this CPU). Map values stay put on insert; erasing clears it.
+        const osg::Texture* gLastTextureKey = nullptr;
+        GpuTexture** gLastTextureSlot = nullptr;
+
+        bool forgetSkin(GpuObject* object); // a GpuSkin (GPU skinning, below): out of gSkins
 
         void processPendingDeletes()
         {
@@ -281,11 +347,22 @@ namespace Render3DS
                     if (it != gGeometries.end() && it->second == geometry)
                         gGeometries.erase(it);
                 }
+                else if (forgetSkin(object))
+                {
+                }
+                else if (auto* rtt = dynamic_cast<RttTarget*>(object))
+                {
+                    auto it = gRttTargets.find(static_cast<const osg::Texture*>(object->mOwner));
+                    if (it != gRttTargets.end() && it->second == rtt)
+                        gRttTargets.erase(it);
+                }
                 else if (auto* texture = dynamic_cast<GpuTexture*>(object))
                 {
                     auto it = gTextures.find(static_cast<const osg::Texture*>(object->mOwner));
                     if (it != gTextures.end() && it->second == texture)
                         gTextures.erase(it);
+                    gLastTextureKey = nullptr;
+                    gLastTextureSlot = nullptr;
                 }
                 object->release();
                 delete object;
@@ -453,61 +530,61 @@ namespace Render3DS
                 switch (name[0])
                 {
                     case 'L':
-                        if (name == "LightBuffer")
+                        if (name == std::string_view("LightBuffer"))
                             rs.mLightBuffer.merge(uniform, flags);
                         break;
                     case 'P':
-                        if (name == "PointLightCount")
+                        if (name == std::string_view("PointLightCount"))
                             rs.mPointLightCount.merge(uniform, flags);
                         break;
                     case 's':
-                        if (name == "sun.position")
+                        if (name == std::string_view("sun.position"))
                             rs.mSunPosition.merge(uniform, flags);
-                        else if (name == "sun.diffuse")
+                        else if (name == std::string_view("sun.diffuse"))
                             rs.mSunDiffuse.merge(uniform, flags);
-                        else if (name == "sun.ambient")
+                        else if (name == std::string_view("sun.ambient"))
                             rs.mSunAmbient.merge(uniform, flags);
                         break;
                     case 'f':
-                        if (name == "fog.start")
+                        if (name == std::string_view("fog.start"))
                             rs.mFogStart.merge(uniform, flags);
-                        else if (name == "fog.end")
+                        else if (name == std::string_view("fog.end"))
                             rs.mFogEnd.merge(uniform, flags);
-                        else if (name == "fog.color")
+                        else if (name == std::string_view("fog.color"))
                             rs.mFogColor.merge(uniform, flags);
                         break;
                     case 'a':
-                        if (name == "alpha")
+                        if (name == std::string_view("alpha"))
                             rs.mAlpha.merge(uniform, flags);
-                        else if (name == "actorFade")
+                        else if (name == std::string_view("actorFade"))
                             rs.mActorFade.merge(uniform, flags);
-                        else if (name == "atmosphereFade")
+                        else if (name == std::string_view("atmosphereFade"))
                             rs.mAtmosphereFade.merge(uniform, flags);
                         break;
                     case 'p':
-                        if (name == "pass")
+                        if (name == std::string_view("pass"))
                             rs.mSkyPass.merge(uniform, flags);
                         break;
                     case 'b':
-                        if (name == "blendMap")
+                        if (name == std::string_view("blendMap"))
                             rs.mBlendMap.merge(uniform, flags);
                         break;
                     case 'd':
-                        if (name == "diffuseColor")
+                        if (name == std::string_view("diffuseColor"))
                             rs.mDiffuseColor.merge(uniform, flags);
                         break;
                     case 'o':
-                        if (name == "opacity")
+                        if (name == std::string_view("opacity"))
                             rs.mOpacity.merge(uniform, flags);
                         break;
                     case 'm':
-                        if (name == "moonBlend")
+                        if (name == std::string_view("moonBlend"))
                             rs.mMoonBlend.merge(uniform, flags);
                         break;
                     case 't':
-                        if (name == "texMat0")
+                        if (name == std::string_view("texMat0"))
                             rs.mTexMat0.merge(uniform, flags);
-                        else if (name == "texMat1")
+                        else if (name == std::string_view("texMat1"))
                             rs.mTexMat1.merge(uniform, flags);
                         break;
                     default:
@@ -585,14 +662,21 @@ namespace Render3DS
 
         // Every geometry gets the same layout, with defaults for missing arrays: no fixed attributes and one
         // attribute setup per frame (fixed attributes were one of the suspects of the hardware GPU hang).
+        // The bone slots and weights are GPU skinning's (skin1.v.pica v4, v5); every vertex carries them (unused
+        // elsewhere) so the whole frame keeps one attribute layout. Test #93: switching the layout between skinned
+        // and other draws mid-frame (6 attributes, then 4) made meshes and the interface flash on hardware, as
+        // reconfiguring the vertex stages under in-flight draws did before (the fireball, gIdentityIbo below).
         struct Vertex
         {
             float mPosition[3];
             float mNormal[3];
             uint8_t mColor[4]; // 0..255, the shader scales by 1/255
             float mTexCoord[2];
+            uint8_t mSlots[4]; // GPU skinning: palette slot x 3
+            uint8_t mWeights[4]; // GPU skinning: 0..255
         };
-        static_assert(sizeof(Vertex) == 36);
+        static_assert(sizeof(Vertex) == 44);
+        using SkinVertex = Vertex;
 
         uint8_t toByte(float v)
         {
@@ -633,34 +717,76 @@ namespace Render3DS
             }
         }
 
+        // An osg::Geometry's arrays, read as the scene vertex layout (Vertex).
+        struct VertexSource
+        {
+            const osg::Vec3Array* mPositions = nullptr;
+            const osg::Vec3Array* mNormals = nullptr;
+            const osg::Vec4Array* mColors4f = nullptr;
+            const osg::Vec4ubArray* mColors4ub = nullptr;
+            const osg::Vec2Array* mTexCoords = nullptr;
+            uint8_t mOverall[4] = { 255, 255, 255, 255 }; // BIND_OVERALL colors (or none: white) for every vertex
+
+            // false: no Vec3Array vertex array (not drawn)
+            bool init(const osg::Geometry& geometry)
+            {
+                mPositions = dynamic_cast<const osg::Vec3Array*>(geometry.getVertexArray());
+                if (mPositions == nullptr || mPositions->empty())
+                {
+                    if (!gWarnedArray)
+                        Log(Debug::Warning) << "render3ds: geometry without a Vec3Array vertex array (not drawn)";
+                    gWarnedArray = true;
+                    return false;
+                }
+                const unsigned count = mPositions->size();
+                mNormals = dynamic_cast<const osg::Vec3Array*>(perVertex(geometry.getNormalArray(), count));
+                const osg::Array* colors = perVertex(geometry.getColorArray(), count);
+                mColors4f = dynamic_cast<const osg::Vec4Array*>(colors);
+                mColors4ub = dynamic_cast<const osg::Vec4ubArray*>(colors);
+                mTexCoords = dynamic_cast<const osg::Vec2Array*>(perVertex(geometry.getTexCoordArray(0), count));
+                if (const osg::Array* c = geometry.getColorArray();
+                    c && c->getBinding() == osg::Array::BIND_OVERALL && c->getNumElements() > 0)
+                {
+                    if (auto* c4f = dynamic_cast<const osg::Vec4Array*>(c))
+                        for (int k = 0; k < 4; ++k)
+                            mOverall[k] = toByte((*c4f)[0][k]);
+                    else if (auto* c4ub = dynamic_cast<const osg::Vec4ubArray*>(c))
+                        std::memcpy(mOverall, &(*c4ub)[0], 4);
+                }
+                return true;
+            }
+
+            void fill(Vertex& out, unsigned i) const
+            {
+                std::memcpy(out.mPosition, &(*mPositions)[i], 12);
+                if (mNormals)
+                    std::memcpy(out.mNormal, &(*mNormals)[i], 12);
+                else
+                {
+                    out.mNormal[0] = out.mNormal[1] = 0.f;
+                    out.mNormal[2] = 1.f;
+                }
+                if (mColors4f)
+                    for (int k = 0; k < 4; ++k)
+                        out.mColor[k] = toByte((*mColors4f)[i][k]);
+                else if (mColors4ub)
+                    std::memcpy(out.mColor, &(*mColors4ub)[i], 4);
+                else
+                    std::memcpy(out.mColor, mOverall, 4);
+                if (mTexCoords)
+                    std::memcpy(out.mTexCoord, &(*mTexCoords)[i], 8);
+                else
+                    out.mTexCoord[0] = out.mTexCoord[1] = 0.f;
+            }
+        };
+
         bool buildVertices(GpuGeometry& gpu, const osg::Geometry& geometry)
         {
-            const auto* positions = dynamic_cast<const osg::Vec3Array*>(geometry.getVertexArray());
-            if (positions == nullptr || positions->empty())
-            {
-                if (!gWarnedArray)
-                    Log(Debug::Warning) << "render3ds: geometry without a Vec3Array vertex array (not drawn)";
-                gWarnedArray = true;
+            VertexSource source;
+            if (!source.init(geometry))
                 return false;
-            }
+            const osg::Vec3Array* positions = source.mPositions;
             const unsigned count = positions->size();
-            const auto* normals = dynamic_cast<const osg::Vec3Array*>(perVertex(geometry.getNormalArray(), count));
-            const osg::Array* colors = perVertex(geometry.getColorArray(), count);
-            const auto* colors4f = dynamic_cast<const osg::Vec4Array*>(colors);
-            const auto* colors4ub = dynamic_cast<const osg::Vec4ubArray*>(colors);
-            const auto* texcoords = dynamic_cast<const osg::Vec2Array*>(perVertex(geometry.getTexCoordArray(0), count));
-
-            // BIND_OVERALL colors (or none: white) for every vertex.
-            uint8_t overall[4] = { 255, 255, 255, 255 };
-            if (const osg::Array* c = geometry.getColorArray();
-                c && c->getBinding() == osg::Array::BIND_OVERALL && c->getNumElements() > 0)
-            {
-                if (auto* c4f = dynamic_cast<const osg::Vec4Array*>(c))
-                    for (int k = 0; k < 4; ++k)
-                        overall[k] = toByte((*c4f)[0][k]);
-                else if (auto* c4ub = dynamic_cast<const osg::Vec4ubArray*>(c))
-                    std::memcpy(overall, &(*c4ub)[0], 4);
-            }
 
             const uint32_t size = count * sizeof(Vertex);
             if (gpu.mVbo == nullptr || gpu.mVboSize < size || gpu.mVboSize > size * 2)
@@ -677,28 +803,8 @@ namespace Render3DS
 
             auto* out = static_cast<Vertex*>(gpu.mVbo);
             for (unsigned i = 0; i < count; ++i, ++out)
-            {
-                std::memcpy(out->mPosition, &(*positions)[i], 12);
-                if (normals)
-                    std::memcpy(out->mNormal, &(*normals)[i], 12);
-                else
-                {
-                    out->mNormal[0] = out->mNormal[1] = 0.f;
-                    out->mNormal[2] = 1.f;
-                }
-                if (colors4f)
-                    for (int k = 0; k < 4; ++k)
-                        out->mColor[k] = toByte((*colors4f)[i][k]);
-                else if (colors4ub)
-                    std::memcpy(out->mColor, &(*colors4ub)[i], 4);
-                else
-                    std::memcpy(out->mColor, overall, 4);
-                if (texcoords)
-                    std::memcpy(out->mTexCoord, &(*texcoords)[i], 8);
-                else
-                    out->mTexCoord[0] = out->mTexCoord[1] = 0.f;
-            }
-            if (texcoords && onlyArrayQuads(geometry))
+                source.fill(*out, i);
+            if (source.mTexCoords && onlyArrayQuads(geometry))
                 rebaseQuadTexCoords(reinterpret_cast<Vertex*>(gpu.mVbo), count);
             flushToGpu(gpu.mVbo, size);
 
@@ -919,6 +1025,108 @@ namespace Render3DS
             return gpu->mValid ? gpu : nullptr;
         }
 
+        // ------------------------------------------------------------------ GPU skinning (M10)
+
+        // A skinned mesh's batches in linear memory, one after the other: built once, shared by every drawable
+        // wearing the mesh (render3ds.hpp SkinMesh), freed with it.
+        class GpuSkin : public GpuObject
+        {
+        public:
+            struct Batch
+            {
+                u32 mVboOffset; // physical address - vertex buffer base
+                const uint16_t* mIndices;
+                uint32_t mCount;
+            };
+            void* mVbo = nullptr;
+            uint16_t* mIbo = nullptr;
+            std::vector<Batch> mBatches;
+            bool mValid = false;
+
+            void release() override
+            {
+                gpuFree(mVbo);
+                gpuFree(mIbo);
+                mVbo = nullptr;
+                mIbo = nullptr;
+            }
+        };
+
+        std::unordered_map<const SkinMesh*, GpuSkin*> gSkins;
+
+        bool forgetSkin(GpuObject* object)
+        {
+            auto* skin = dynamic_cast<GpuSkin*>(object);
+            if (skin == nullptr)
+                return false;
+            auto it = gSkins.find(static_cast<const SkinMesh*>(object->mOwner));
+            if (it != gSkins.end() && it->second == skin)
+                gSkins.erase(it);
+            return true;
+        }
+
+        bool buildSkin(GpuSkin& gpu, const SkinMesh& mesh)
+        {
+            VertexSource source;
+            if (mesh.mSource == nullptr || !source.init(*mesh.mSource))
+                return false;
+            const unsigned sourceCount = source.mPositions->size();
+            size_t vertices = 0, indices = 0;
+            for (const SkinBatch& batch : mesh.mBatches)
+            {
+                vertices += batch.mVertices.size();
+                indices += batch.mIndices.size();
+            }
+            if (vertices == 0 || indices == 0)
+                return false;
+            gpu.mVbo = gpuAlloc(vertices * sizeof(SkinVertex));
+            gpu.mIbo = static_cast<uint16_t*>(gpuAlloc(indices * sizeof(uint16_t)));
+            if (gpu.mVbo == nullptr || gpu.mIbo == nullptr)
+            {
+                Log(Debug::Error) << "render3ds: out of linear memory for a skinned mesh (" << vertices
+                                  << " vertices); drawn on the CPU";
+                return false;
+            }
+            auto* out = static_cast<SkinVertex*>(gpu.mVbo);
+            uint16_t* index = gpu.mIbo;
+            for (const SkinBatch& batch : mesh.mBatches)
+            {
+                gpu.mBatches.push_back({ static_cast<u32>(osConvertVirtToPhys(out) - gBufferBase), index,
+                    static_cast<uint32_t>(batch.mIndices.size()) });
+                for (size_t v = 0; v < batch.mVertices.size(); ++v, ++out)
+                {
+                    const unsigned i = batch.mVertices[v];
+                    if (i >= sourceCount)
+                        return false;
+                    source.fill(*out, i);
+                    std::memcpy(out->mSlots, &batch.mSlots[v * 4], 4);
+                    std::memcpy(out->mWeights, &batch.mWeights[v * 4], 4);
+                }
+                std::memcpy(index, batch.mIndices.data(), batch.mIndices.size() * sizeof(uint16_t));
+                index += batch.mIndices.size();
+            }
+            flushToGpu(gpu.mVbo, vertices * sizeof(SkinVertex));
+            flushToGpu(gpu.mIbo, indices * sizeof(uint16_t));
+            gStats.mUploadedBytes += vertices * sizeof(SkinVertex) + indices * sizeof(uint16_t);
+            return true;
+        }
+
+        // nullptr: the mesh can't be drawn skinned on the GPU (no memory, unusable arrays).
+        GpuSkin* skinFor(const SkinMesh& mesh)
+        {
+            GpuSkin*& gpu = gSkins[&mesh];
+            if (gpu == nullptr)
+            {
+                gpu = new GpuSkin;
+                gpu->mOwner = &mesh;
+                mesh.addObserver(gpu);
+                gpu->mValid = buildSkin(*gpu, mesh);
+                if (!gpu->mValid)
+                    gpu->release();
+            }
+            return gpu->mValid ? gpu : nullptr;
+        }
+
         // ------------------------------------------------------------------ textures
 
         // Morton (Z-order) offset of (x, y) inside an 8x8 tile.
@@ -950,6 +1158,22 @@ namespace Render3DS
         // Uncompressed images made at runtime (fonts, generated textures, the warning image): converted to
         // a tiled PICA format (nearest-neighbour resampled to a power of two). One mip level.
         uint32_t gTextureGeneration = 0; // bumped when a runtime texture is (re)converted: the CPU interface redraws
+        // M10: which texture changed, and when (a value of gTextureGeneration). The CPU interface used to redraw both
+        // screens whole and decode every texture again whenever any runtime texture changed (walking outdoors:
+        // the minimap's tiles, 35-86 ms a redraw in Zeste, 20/10); now only the triangles sampling a changed
+        // texture are redrawn, and only that texture is decoded again.
+        std::unordered_map<const C3D_Tex*, uint32_t> gTexGenerations;
+
+        void bumpTexture(const C3D_Tex* tex)
+        {
+            gTexGenerations[tex] = ++gTextureGeneration;
+        }
+
+        uint32_t texGeneration(const C3D_Tex* tex)
+        {
+            const auto it = gTexGenerations.find(tex);
+            return it != gTexGenerations.end() ? it->second : 0;
+        }
 
         bool convertImage(GpuTexture& gpu, const osg::Image& image)
         {
@@ -1039,7 +1263,7 @@ namespace Render3DS
             gpu.mTex.height = static_cast<u16>(h);
             gpu.mTex.param = GPU_TEXTURE_MODE(GPU_TEX_2D);
             gpu.mLevels = 1;
-            ++gTextureGeneration;
+            bumpTexture(&gpu.mTex);
             return true;
         }
 
@@ -1090,8 +1314,19 @@ namespace Render3DS
 
         C3D_Tex* textureFor(const osg::Texture& texture)
         {
+            if (!gRttTargets.empty())
+            {
+                const auto rtt = gRttTargets.find(&texture);
+                if (rtt != gRttTargets.end()) // nullptr without a target or before its first image: left out
+                    return rtt->second->mReady ? rtt->second->mTex : nullptr;
+            }
             const osg::Image* image = texture.getNumImages() > 0 ? texture.getImage(0) : nullptr;
-            GpuTexture*& gpu = gTextures[&texture];
+            if (&texture != gLastTextureKey || gLastTextureSlot == nullptr)
+            {
+                gLastTextureSlot = &gTextures[&texture];
+                gLastTextureKey = &texture;
+            }
+            GpuTexture*& gpu = *gLastTextureSlot;
             if (gpu == nullptr)
             {
                 gpu = new GpuTexture;
@@ -1334,7 +1569,8 @@ namespace Render3DS
             }
         }
 
-        // Vertex = position, normal, color (4 unsigned bytes), texcoord: input registers v0..v3, one buffer.
+        // Vertex = position, normal, color (4 unsigned bytes), texcoord, bone slots, bone weights (unsigned bytes):
+        // input registers v0..v5, one buffer, for every draw of the frame (the skinned shader reads v4/v5).
         void setupAttributes()
         {
             C3D_AttrInfo* attr = C3D_GetAttrInfo();
@@ -1343,6 +1579,8 @@ namespace Render3DS
             AttrInfo_AddLoader(attr, Attr_Normal, GPU_FLOAT, 3);
             AttrInfo_AddLoader(attr, Attr_Color, GPU_UNSIGNED_BYTE, 4);
             AttrInfo_AddLoader(attr, Attr_TexCoord, GPU_FLOAT, 2);
+            AttrInfo_AddLoader(attr, 4, GPU_UNSIGNED_BYTE, 4);
+            AttrInfo_AddLoader(attr, 5, GPU_UNSIGNED_BYTE, 4);
         }
 
         void bindVertexBuffer(const void* vbo)
@@ -1350,7 +1588,7 @@ namespace Render3DS
             C3D_BufInfo* buf = C3D_GetBufInfo();
             BufInfo_Init(buf);
             buf->base_paddr = gBufferBase;
-            BufInfo_Add(buf, vbo, sizeof(Vertex), 4, 0x3210);
+            BufInfo_Add(buf, vbo, sizeof(Vertex), 6, 0x543210);
         }
 
         // Scene draws: citro3d re-sends all 12 attribute buffer configurations (~37 command words) whenever the
@@ -1359,7 +1597,6 @@ namespace Render3DS
         // offset is kept in step, so a re-send for any reason (it marks the info dirty itself) is still right.
         C3D_BufCfg* gSceneBuffer = nullptr;
         u32 gSceneBufferOffset = ~0u;
-
         void sceneBufferInfo(const void* anyVbo)
         {
             bindVertexBuffer(anyVbo);
@@ -1544,7 +1781,9 @@ namespace Render3DS
 
         // pointLights false: the draw ignores point lights (sky passes, OpenMW's "simpleLighting" weather
         // particles: lighting_vertex_impl.glsl), whatever the light manager attached.
-        void uploadLighting(const ResolvedState& rs, bool pointLights)
+        // skinned: the skinned variant, which evaluates slot 0 only (the draw's first light, OpenMW's nearest and
+        // brightest; the others are left out).
+        void uploadLighting(const ResolvedState& rs, bool pointLights, bool skinned = false)
         {
             // Sun: shared by everything under the light manager; its values change once per frame.
             const Slot<osg::Uniform>* sun[3] = { &rs.mSunPosition, &rs.mSunDiffuse, &rs.mSunAmbient };
@@ -1589,10 +1828,30 @@ namespace Render3DS
                 count = std::min<int>(count, static_cast<int>(buffer->getFloatArray()->size() / 16));
             gDrawLights = count;
 
-            const shaderProgram_s* program = !gVariants || count >= 2 ? &gProgram : count == 1 ? &gProgram1 : &gProgram0;
+            const shaderProgram_s* program = skinned ? &gProgramSkin
+                : !gVariants || count >= 2               ? &gProgram
+                : count == 1                             ? &gProgram1
+                                                         : &gProgram0;
             useProgram(program);
             if (program == &gProgram0)
                 return;
+            if (program == &gProgramSkin)
+            {
+                if (count > 0)
+                {
+                    if (writeSlot0(&(*buffer->getFloatArray())[0]))
+                        gBound.mLightCount = -1;
+                    gDrawLights = 1;
+                }
+                else if (!gLightSlots[0].mKnown || gLightSlots[0].mLit)
+                {
+                    writeSlot(0, nullptr);
+                    gLightSlots[0].mLit = false;
+                    gLightSlots[0].mKnown = true;
+                    gBound.mLightCount = -1;
+                }
+                return;
+            }
             if (program == &gProgram1)
             {
                 if (writeSlot0(&(*buffer->getFloatArray())[0]))
@@ -1946,7 +2205,8 @@ namespace Render3DS
                 return false;
             }
             C3D_FrameDrawOn(gTarget);
-            P3DS_LOGI("render3ds: GPU self-test %s: ok (%.1f ms)", name,
+            if (p3ds::debugMode()) // each step's line: the start menu's Debug choices only (M15)
+                P3DS_LOGI("render3ds: GPU self-test %s: ok (%.1f ms)", name,
                 double(svcGetSystemTick() - start) / CPU_TICKS_PER_MSEC);
             return true;
         }
@@ -2026,6 +2286,16 @@ namespace Render3DS
             auto* ibo8 = static_cast<uint8_t*>(gpuAlloc(sizeof(indices8)));
             auto* strip = static_cast<uint16_t*>(gpuAlloc(sizeof(strip16)));
             auto* white = static_cast<u32*>(gpuAlloc(8 * 8 * 4));
+            auto* skinVbo = gSkinVariant ? static_cast<SkinVertex*>(gpuAlloc(sizeof(SkinVertex) * 4)) : nullptr;
+            if (skinVbo != nullptr)
+            {
+                for (int i = 0; i < 4; ++i)
+                {
+                    skinVbo[i] = quad[i];
+                    skinVbo[i].mWeights[0] = 255; // bone 0 (slots all 0), the other weights 0
+                }
+                GSPGPU_FlushDataCache(skinVbo, sizeof(SkinVertex) * 4);
+            }
             if (!vbo || !probeVbo || !ibo16 || !ibo8 || !strip || !white)
             {
                 P3DS_LOGE("render3ds: GPU self-test: no linear memory, skipped");
@@ -2219,6 +2489,23 @@ namespace Render3DS
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                 if (!selfTestStep("L16 + sun-only shader variant"))
                     return false;
+                if (gSkinVariant && skinVbo != nullptr)
+                {
+                    // L17: GPU skinning: 6 attributes, bones through the address register. Bone 0 = identity
+                    // (the quad's own place), weight 255; the other slots point at it with weight 0.
+                    C3D_BindProgram(&gProgramSkin);
+                    setupAttributes();
+                    bindVertexBuffer(skinVbo);
+                    C3D_FVec* rows = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mBones, 3);
+                    rows[0] = FVec4_New(1, 0, 0, 0);
+                    rows[1] = FVec4_New(0, 1, 0, 0);
+                    rows[2] = FVec4_New(0, 0, 1, 0);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L17 + skinned variant (6 attributes, relative addressing)"))
+                        return false;
+                    bindVertexBuffer(vbo);
+                    gSceneBuffer = nullptr;
+                }
                 C3D_BindProgram(&gProgram);
                 return true;
             };
@@ -2227,7 +2514,10 @@ namespace Render3DS
 
             P3DS_LOGI("render3ds: GPU self-test passed");
 
-            // Leave nothing behind: the scene re-applies all of its state.
+            // Leave nothing behind: the scene re-applies all of its state. The test quads too: the first frame is
+            // drawn while the game loads, the top screen then held (no clear), so the last quad (a textured one,
+            // the middle of the screen) showed through the whole first load (the tester, since M8).
+            C3D_RenderTargetClear(gTarget, C3D_CLEAR_ALL, 0x000000FF, 0xFFFFFF);
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
             C3D_TexBind(0, nullptr);
@@ -2241,6 +2531,7 @@ namespace Render3DS
             gpuFree(ibo8);
             gpuFree(strip);
             gpuFree(white); // the GPU is idle: selfTestStep waited for it
+            gpuFree(skinVbo);
         }
 
         // ------------------------------------------------------------------ leaves, bins, stages
@@ -2268,6 +2559,10 @@ namespace Render3DS
         constexpr uint32_t kTransientVertices = 16384; // 2730 particles, 576 KB (rain alone: ~1400-1900 drops)
         Vertex* gTransient = nullptr; // linear memory (init)
         uint32_t gTransientUsed = 0;
+        // M10: particles are 4 vertices each (was 6, a triangle list), drawn through this index buffer: two triangles
+        // per quad, (0 1 2, 2 3 0) + 4 * quad. A third fewer vertices built and uploaded on the CPU (rain: ~2,600 a
+        // frame, 5 ms of a 37 ms frame in Balmora, test #92). Still an indexed triangle list (see gIdentityIbo).
+        uint16_t* gQuadIbo = nullptr; // linear memory (init); null: 6 vertices a particle, as before
         bool gWarnedTransient = false;
 
         // Hardware test #33 (docs/history/FIREBALL_CORRUPTION.md): the particles and the GUI were the frame's only
@@ -2358,7 +2653,8 @@ namespace Render3DS
                     default:
                         continue; // points and lines
                 }
-                if (count + 6 > room)
+                const uint32_t perParticle = gQuadIbo != nullptr ? 4 : 6;
+                if (count + perParticle > room)
                 {
                     if (!gWarnedTransient)
                         Log(Debug::Warning) << "render3ds: more particles than the per-frame buffer holds";
@@ -2401,8 +2697,9 @@ namespace Render3DS
                 for (int k = 0; k < 4; ++k)
                     rgba[k] = static_cast<uint8_t>(std::clamp(color[k], 0.f, 1.f) * 255.f + 0.5f);
                 static const int order[6] = { 0, 1, 2, 2, 3, 0 };
-                for (int corner : order)
+                for (uint32_t k = 0; k < perParticle; ++k)
                 {
+                    const int corner = perParticle == 4 ? static_cast<int>(k) : order[k];
                     Vertex& v = out[count++];
                     std::memcpy(v.mPosition, corners[corner].ptr(), 12);
                     v.mNormal[0] = v.mNormal[1] = 0.f;
@@ -2452,6 +2749,29 @@ namespace Render3DS
         // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
         // reaches the GPU then, logged once per drawable: draws at (near) zero scale (an effect's first frames:
         // normals of length 0, NaN once normalized in the shader) and draws whose bounds enclose the camera.
+        // sdmc:/openmw/draw-census: the small draws (under 64 triangles) of one busy frame are logged once, with
+        // their node path, size and distance (M10: what the 3DS's many small draws are).
+        bool gCensusFrame = false;
+        void censusDraw(const osgUtil::RenderLeaf& leaf, uint32_t triangles, const ResolvedState& rs)
+        {
+            const osg::Drawable* drawable = leaf._drawable.get();
+            std::string path = drawable->getName();
+            const osg::Node* node = drawable->getNumParents() > 0 ? drawable->getParent(0) : nullptr;
+            for (int depth = 0; node != nullptr && depth < 8; ++depth)
+            {
+                if (!node->getName().empty())
+                    path = node->getName() + "/" + path;
+                node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
+            }
+            const osg::Matrix& mv = *leaf._modelview;
+            const float scale = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length();
+            const osg::BoundingSphere& bound = drawable->getBound();
+            const osg::Image* image = rs.mTexture.mValue ? rs.mTexture.mValue->getImage(0) : nullptr;
+            P3DS_LOGI("census: %u tris, radius %.0f, distance %.0f, texture %s, %s", unsigned(triangles),
+                double(bound.radius() * scale), double((bound.center() * mv).length()),
+                image ? image->getFileName().c_str() : "-", path.c_str());
+        }
+
         void noteUnusualDraw(const osgUtil::RenderLeaf& leaf)
         {
             static std::unordered_set<const osg::Drawable*> noted;
@@ -2505,12 +2825,20 @@ namespace Render3DS
             }
             GpuGeometry* gpu = nullptr;
             uint32_t particleFirst = 0, particleCount = 0;
+            // GPU skinning: RigGeometry's drawable carries this frame's pose; its mesh is drawn instead of its
+            // vertices (which hold the first frame's pose, for ray casts).
+            const SkinPose* pose = nullptr;
+            GpuSkin* skin = nullptr;
+            if (geometry != nullptr && gSkinVariant)
+                if (const osg::Referenced* data = geometry->getUserData())
+                    if ((pose = dynamic_cast<const SkinPose*>(data)) != nullptr && pose->mMesh != nullptr)
+                        skin = skinFor(*pose->mMesh);
             if (particles)
             {
                 if (!buildParticles(*particles, *leaf->_modelview, particleFirst, particleCount))
                     return; // no live particles
             }
-            else
+            else if (skin == nullptr)
             {
                 gpu = geometryFor(*geometry);
                 if (gpu == nullptr || gpu->mPrimitives.empty())
@@ -2529,6 +2857,32 @@ namespace Render3DS
             const int sky = skyPass(rs);
             if (sky == Sky_SunflashQuery)
                 return; // an occlusion query for the sun glare: draws nothing visible
+            // M10: small feature culling for each part of a model. OSG culls whole objects smaller than [Camera]
+            // small feature culling pixel size, not their parts: a door far enough to show 5 pixels of keyhole
+            // still drew it (outside Seyda Neen, 169 of 304 draws had under 64 triangles). Never an actor's skinned
+            // parts: hands and forearms are separate small meshes, and NPCs a few metres away lost their arms (test
+            // #92).
+            const bool skinnedPart = skin != nullptr
+                || dynamic_cast<const SceneUtil::RigGeometry::CopyBoundingSphereCallback*>(
+                       geometry != nullptr ? geometry->getComputeBoundingSphereCallback() : nullptr)
+                    != nullptr;
+            if (gSmallFeaturePixels > 0.f && particles == nullptr && sky == Sky_None && !skinnedPart)
+            {
+                const osg::Matrix& projection = *leaf->_projection;
+                const osg::BoundingSphere& bound = geometry->getBound();
+                if (projection(3, 3) == 0.f && bound.valid())
+                {
+                    const osg::Matrix& mv = *leaf->_modelview;
+                    const float radius = bound.radius() * osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length();
+                    const float distance = (bound.center() * mv).length();
+                    const float height = gRotatedTarget ? 240.f : 256.f; // pixels across the vertical field of view
+                    if (distance > radius && radius * float(projection(1, 1)) * height < gSmallFeaturePixels * distance)
+                    {
+                        ++gStats.mSmallCulled;
+                        return;
+                    }
+                }
+            }
 
             const FixedState fixed = computeFixedState(rs);
             if (fixed.mCull == 3)
@@ -2575,21 +2929,64 @@ namespace Render3DS
             bool simpleLighting = false;
             if (particles)
                 particles->getUserValue("simpleLighting", simpleLighting);
-            uploadLighting(rs, sky == Sky_None && !simpleLighting);
+            uploadLighting(rs, sky == Sky_None && !simpleLighting, skin != nullptr);
             uploadMaterial(rs, sky);
             uploadTexMat(rs, sky);
             uploadFog(rs, sky);
             lap(gEmitProfile.mUniforms);
+
+            if (skin)
+            {
+                // Each batch: its bones' matrices times the model-view (3 rows each), then its triangles.
+                const osg::Matrixf modelView(*leaf->_modelview);
+                if (gSceneBuffer == nullptr)
+                    sceneBufferInfo(skin->mVbo);
+                const std::vector<SkinBatch>& batches = pose->mMesh->mBatches;
+                for (size_t b = 0; b < batches.size() && b < skin->mBatches.size(); ++b)
+                {
+                    const SkinBatch& batch = batches[b];
+                    C3D_FVec* rows = C3D_FVUnifWritePtr(GPU_VERTEX_SHADER, gLoc.mBones, batch.mBones.size() * 3);
+                    for (size_t k = 0; k < batch.mBones.size(); ++k)
+                    {
+                        const uint16_t bone = batch.mBones[k];
+                        if (bone < pose->mBones.size())
+                            setRows(rows + k * 3, pose->mBones[bone] * modelView, 3);
+                        else
+                            for (int r = 0; r < 3; ++r)
+                                rows[k * 3 + r] = FVec4_New(0.f, 0.f, 0.f, 0.f);
+                    }
+                    const GpuSkin::Batch& gpuBatch = skin->mBatches[b];
+                    setSceneBufferOffset(gpuBatch.mVboOffset);
+                    C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(gpuBatch.mCount), C3D_UNSIGNED_SHORT,
+                        gpuBatch.mIndices);
+                    ++gStats.mDraws;
+                    ++gStats.mSkinnedDraws;
+                    gStats.mTriangles += gpuBatch.mCount / 3;
+                    gStats.mShaderRuns[gDrawLights] += gpuBatch.mCount;
+                }
+                lap(gEmitProfile.mDraw);
+                return;
+            }
 
             if (particles)
             {
                 if (gSceneBuffer == nullptr)
                     sceneBufferInfo(gTransient);
                 setSceneBufferOffset(osConvertVirtToPhys(gTransient) - gBufferBase);
-                drawTriangleList(particleFirst, particleCount);
+                uint32_t indices = particleCount;
+                if (gQuadIbo != nullptr)
+                {
+                    // particleFirst is a multiple of 4: every particle system writes whole quads
+                    indices = particleCount / 4 * 6;
+                    C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(indices), C3D_UNSIGNED_SHORT,
+                        gQuadIbo + particleFirst / 4 * 6);
+                }
+                else
+                    drawTriangleList(particleFirst, particleCount);
                 ++gStats.mDraws;
-                gStats.mTriangles += particleCount / 3;
-                gStats.mShaderRuns[gDrawLights] += particleCount;
+                ++gStats.mParticleDraws;
+                gStats.mTriangles += indices / 3;
+                gStats.mShaderRuns[gDrawLights] += indices;
                 gStats.mParticleVertices += particleCount;
                 lap(gEmitProfile.mDraw);
                 return;
@@ -2597,7 +2994,7 @@ namespace Render3DS
             if (gSceneBuffer == nullptr)
                 sceneBufferInfo(gpu->mVbo);
             setSceneBufferOffset(gpu->mVboOffset);
-            const bool verify = gVerifyThisFrame || !gpu->mVerified;
+            const bool verify = gpuVerify() && (gVerifyThisFrame || !gpu->mVerified);
             for (const GpuPrimitive& prim : gpu->mPrimitives)
             {
                 if (gVerifyThisFrame && gVerifiedDraws < 3)
@@ -2608,6 +3005,14 @@ namespace Render3DS
                     C3D_DrawElements(prim.mMode, static_cast<int>(prim.mCount), prim.mIndexType,
                         static_cast<uint8_t*>(gpu->mIbo) + prim.mFirst);
                 ++gStats.mDraws;
+#ifdef OPENMW3DS_DEBUG
+                if (gCensusFrame && prim.mTriangles < 64 && sky == Sky_None && !blendMap)
+                    censusDraw(*leaf, prim.mTriangles, rs);
+#endif
+                ++(sky != Sky_None ? gStats.mSkyDraws
+                        : blendMap      ? gStats.mTerrainDraws
+                        : prim.mTriangles < 64 ? gStats.mSmallDraws
+                                               : gStats.mOtherDraws);
                 gStats.mTriangles += prim.mTriangles;
                 gStats.mShaderRuns[gDrawLights] += prim.mCount;
                 if (verify)
@@ -2699,6 +3104,33 @@ namespace Render3DS
                 return false;
             }
             gInFrame = true;
+            gSmallFeaturePixels = Settings::camera().mSmallFeatureCulling
+                ? std::max(0.f, Settings::camera().smallFeaturePixels3DS())
+                : 0.f;
+#ifdef OPENMW3DS_DEBUG
+            {
+                static bool censusDone = false;
+                gCensusFrame = false;
+                if (!censusDone && gLastStats.mDraws > 150 && gFrame % 300 == 0)
+                    if (std::FILE* f = std::fopen("sdmc:/openmw/draw-census", "r"))
+                    {
+                        std::fclose(f);
+                        gCensusFrame = censusDone = true;
+                    }
+            }
+#endif
+            // Textures the GPU drew into last frame (render-to-texture): finished now, the CPU interface reads them.
+            for (auto& [owner, rtt] : gRttTargets)
+                if (rtt->mDrawn)
+                {
+                    // The CPU's cache may still hold the texture's previous pixels (the CPU interface read it last
+                    // frame): the head turning left stale specks (test #87), as captureTarget's reads would.
+                    if (rtt->mTex != nullptr)
+                        GSPGPU_InvalidateDataCache(rtt->mTex->data, rtt->mTex->size);
+                    bumpTexture(rtt->mTex);
+                    rtt->mDrawn = false;
+                    rtt->mReady = rtt->mTex != nullptr;
+                }
             if (gFrame % 60 == 0)
                 checkDisplayState();
             if (!gCapturePath.empty())
@@ -3125,7 +3557,7 @@ namespace Render3DS
                         std::memcpy(dst + ((yStored / 8u + ty) * tilesPerRow + x / 8u + tx) * 256u,
                             src + (ty * tiles + tx) * 256u, 256u);
                 GSPGPU_FlushDataCache(atlas.data, atlas.size);
-                ++gTextureGeneration;
+                bumpTexture(&atlas);
             }
             gAtlasIcons[slot].mLastFrame = gFrame;
             return slot;
@@ -3140,11 +3572,50 @@ namespace Render3DS
         // HUD then binds a handful of textures (the atlas and the font pages) instead of hundreds; batches that don't
         // overlap anything drawn between them join an earlier draw too (pass 1 below). A batch whose coordinates
         // leave [0, 1] (a tiling skin) keeps the image's own texture, logged once per image.
-        uint64_t prepareGuiDraws()
+        // `reusable`: the CPU interface's screens still hold what the last frame's batches drew. Then, if MyGUI's
+        // batches are the same as last frame's (textures, blends, vertices), `unchanged` is set and nothing is
+        // redone: gGuiDraws and gGuiBuffer still hold last frame's result (M10: most frames change nothing, and
+        // converting, comparing and fingerprinting every triangle cost ~7 ms a frame on the console, test #71).
+        // M10: set when MyGUI collects its batches again (noteGuiCollected); the fingerprint below folds every
+        // vertex word (64-bit arithmetic, ~2% of the main thread in the Zeste profile of 20/10), useless when MyGUI
+        // skipped its layout and the batches are last frame's.
+        bool gGuiCollected = true;
+
+        uint64_t prepareGuiDraws(bool reusable, bool& unchanged)
         {
+            unchanged = false;
+            if (reusable && !gGuiCollected)
+            {
+                unchanged = true;
+                return 1;
+            }
+            gGuiCollected = false;
             gGuiBatches.clear();
-            gGuiDraws.clear();
             gGuiSource([](const GuiBatch& batch) { gGuiBatches.push_back(batch); });
+            {
+                // 32-bit arithmetic (M10: 64-bit shifts and adds per vertex word were slow on this CPU).
+                static uint32_t lastPrint = 0;
+                uint32_t print = 0x9E3779B9u;
+                auto fold = [&print](uint32_t value) {
+                    print ^= value + 0x9E3779B9u + (print << 6) + (print >> 2);
+                };
+                for (const GuiBatch& batch : gGuiBatches)
+                {
+                    fold(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(batch.mTexture)));
+                    fold(static_cast<uint32_t>(batch.mBlend) << 24 ^ batch.mCount);
+                    const auto* words = static_cast<const uint32_t*>(batch.mVertices);
+                    const size_t count = size_t(batch.mCount) * sizeof(GuiVertex) / 4;
+                    for (size_t i = 0; i < count; ++i)
+                        fold(words[i]);
+                }
+                if (reusable && print == lastPrint)
+                {
+                    unchanged = true;
+                    return 1;
+                }
+                lastPrint = print;
+            }
+            gGuiDraws.clear();
             // The CPU interface (the port's one) draws every batch from its own texture, unclipped, in one list:
             // the icon slots, the white-cell fills, the per-screen clipping and the composite quad below belong
             // to the deprecated GPU path only (LIMITATIONS.md M16).
@@ -3281,7 +3752,8 @@ namespace Render3DS
 #ifdef OPENMW3DS_DEBUG
                     // What still binds a texture of its own in the interface pass (the rule: only the UI atlas).
                     if (texture != nullptr && !whiteTexel && gGuiTextureNames.count(texture) == 0)
-                        gGuiTextureNames[texture] = image->getFileName().empty()
+                        gGuiTextureNames[texture] = image == nullptr ? std::string("(render-to-texture)")
+                            : image->getFileName().empty()
                             ? "(runtime " + std::to_string(image->s()) + "x" + std::to_string(image->t()) + ")"
                             : image->getFileName();
                     static std::set<const osg::Image*> loggedOwn;
@@ -3358,6 +3830,17 @@ namespace Render3DS
                 // cooked ones (which MyGUI's v = 0 at the top expects) flipped: mirror v for the runtime ones.
                 record.mFlipV = image != nullptr && cooked == nullptr;
 
+                // M10: the CPU interface (soft) draws each batch in order, triangle by triangle: joining batches into
+                // fewer draws (pass 1's overlap tests, triangle against triangle for overlapping batches) and the
+                // hash below only serve the deprecated GPU path, and were ~6% of the main thread when the HUD
+                // changes (Zeste, walking outdoors, 20/10).
+                const int index = static_cast<int>(records.size());
+                if (soft)
+                {
+                    records.push_back(record);
+                    groups.push_back(Group{ texture, batch.mBlend, index, index, batch.mCount });
+                    continue;
+                }
                 record.mFirstTriangle = static_cast<uint32_t>(triangles.size());
                 Box box{ in[0].mPosition[0], in[0].mPosition[1], in[0].mPosition[0], in[0].mPosition[1] };
                 for (uint32_t i = 0; i + 2 < batch.mCount; i += 3)
@@ -3385,7 +3868,6 @@ namespace Render3DS
                 mix(image != nullptr ? image->getModifiedCount() : 0);
                 mix(static_cast<uint64_t>(batch.mBlend));
 
-                const int index = static_cast<int>(records.size());
                 records.push_back(record);
                 int joined = -1;
                 for (int g = static_cast<int>(groups.size()) - 1; g >= 0; --g)
@@ -3494,7 +3976,7 @@ namespace Render3DS
                     if (used > first)
                     {
                         gGuiDraws.push_back(GuiDraw{ first, used - first, group.mTexture, group.mBlend, uint8_t(screen) });
-                        if (screen == 0)
+                        if (screen == 0 && !soft) // the GPU path's top texture only (M10, as pass 1's hash)
                         {
                             // What the top screen's texture would show: its draws' vertices (and texture).
                             const auto* words = reinterpret_cast<const uint32_t*>(gGuiBuffer + first);
@@ -3791,23 +4273,25 @@ namespace Render3DS
         {
             const void* mData = nullptr;
             uint16_t mWidth = 0, mHeight = 0;
+            uint32_t mGeneration = 0; // texGeneration() when decoded
             std::vector<uint32_t> mPixels;
         };
         std::unordered_map<const C3D_Tex*, DecodedTexture> gDecoded;
         size_t gDecodedBytes = 0;
-        uint32_t gDecodedGeneration = 0;
 
         const DecodedTexture& decodedTexture(const C3D_Tex& tex)
         {
-            if (gDecodedGeneration != gTextureGeneration || gDecodedBytes > (3u << 20))
+            if (gDecodedBytes > (3u << 20))
             {
                 gDecoded.clear();
                 gDecodedBytes = 0;
-                gDecodedGeneration = gTextureGeneration;
             }
             DecodedTexture& decoded = gDecoded[&tex];
-            if (decoded.mData == tex.data && decoded.mWidth == tex.width && decoded.mHeight == tex.height)
+            const uint32_t generation = texGeneration(&tex);
+            if (decoded.mData == tex.data && decoded.mWidth == tex.width && decoded.mHeight == tex.height
+                && decoded.mGeneration == generation)
                 return decoded;
+            decoded.mGeneration = generation;
             decoded.mData = tex.data;
             decoded.mWidth = tex.width;
             decoded.mHeight = tex.height;
@@ -4169,17 +4653,20 @@ namespace Render3DS
             for (const GuiDraw& draw : gGuiDraws)
             {
                 const Vertex* v = gGuiBuffer + draw.mFirst;
+                // 32-bit FNV-1a (M10: 64-bit multiplies are slow on this CPU; a collision only risks a missed redraw).
+                const uint32_t textureState
+                    = (uint32_t(reinterpret_cast<uintptr_t>(draw.mTexture)) * 2654435761u) ^ texGeneration(draw.mTexture);
                 for (uint32_t t = 0; t + 2 < draw.mCount; t += 3)
                 {
                     const PixelRect rect = triangleRect(v + t, target).clipped(all);
                     if (rect.empty())
                         continue;
-                    uint64_t hash = 0xCBF29CE484222325ull;
+                    uint32_t hash = 2166136261u;
                     const auto* words = reinterpret_cast<const uint32_t*>(v + t);
                     for (size_t i = 0; i < 3 * sizeof(Vertex) / 4; ++i)
-                        hash = (hash ^ words[i]) * 0x100000001B3ull;
-                    hash = (hash ^ reinterpret_cast<uintptr_t>(draw.mTexture)) * 0x100000001B3ull;
-                    hash = (hash ^ static_cast<uint64_t>(draw.mBlend)) * 0x100000001B3ull;
+                        hash = (hash ^ words[i]) * 16777619u;
+                    hash = (hash ^ textureState) * 16777619u;
+                    hash = (hash ^ static_cast<uint32_t>(draw.mBlend)) * 16777619u;
                     out.emplace_back(hash, rect);
                 }
             }
@@ -4192,33 +4679,33 @@ namespace Render3DS
         PixelRect changedRect(SoftTarget& target)
         {
             static std::vector<std::pair<uint64_t, PixelRect>> now;
-            static std::unordered_map<uint64_t, int> before;
             collectTriangles(target, now);
+            // Sorted by hash (mPrevTriangles was sorted the same way): a merge walk pairs equal hashes and leaves the
+            // triangles that appeared or went away (M10: an unordered_map divided by its bucket count per triangle).
+            std::sort(now.begin(), now.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
             PixelRect dirty;
-            if (!target.mValid || target.mPrevGeneration != gTextureGeneration)
+            if (!target.mValid) // a changed texture shows in its triangles' hashes (collectTriangles)
                 dirty = target.bounds();
             else
             {
-                before.clear();
-                for (const auto& [hash, rect] : target.mPrevTriangles)
-                    ++before[hash];
-                for (const auto& [hash, rect] : now)
+                const auto& prev = target.mPrevTriangles;
+                size_t i = 0, j = 0;
+                while (i < prev.size() && j < now.size())
                 {
-                    auto it = before.find(hash);
-                    if (it != before.end() && it->second > 0)
-                        --it->second;
-                    else
-                        dirty.add(rect);
-                }
-                for (const auto& [hash, rect] : target.mPrevTriangles)
-                {
-                    auto it = before.find(hash);
-                    if (it != before.end() && it->second > 0)
+                    if (prev[i].first == now[j].first)
                     {
-                        --it->second;
-                        dirty.add(rect);
+                        ++i;
+                        ++j;
                     }
+                    else if (prev[i].first < now[j].first)
+                        dirty.add(prev[i++].second);
+                    else
+                        dirty.add(now[j++].second);
                 }
+                for (; i < prev.size(); ++i)
+                    dirty.add(prev[i].second);
+                for (; j < now.size(); ++j)
+                    dirty.add(now[j].second);
             }
             target.mPrevTriangles.swap(now);
             target.mPrevGeneration = gTextureGeneration;
@@ -4996,9 +5483,13 @@ namespace Render3DS
             if (lumiere::enabled() && lumiere::draw())
                 return;
 #endif // OPENMW3DS_LUMIERE
-            const uint64_t hash = prepareGuiDraws();
             const bool soft = softGui();
-            if (soft)
+            const bool reusable = soft && gSoftTop.mValid && gSoftTop.mPrevGeneration == gTextureGeneration
+                && (!gGuiOwnsBottom
+                    || (gBottomHash != 0 && gSoftBottom.mValid && gSoftBottom.mPrevGeneration == gTextureGeneration));
+            bool unchanged = false;
+            const uint64_t hash = prepareGuiDraws(reusable, unchanged);
+            if (soft && !unchanged)
                 drawSoftGui();
             if (gGuiDraws.empty())
                 return;
@@ -5010,6 +5501,11 @@ namespace Render3DS
             C3D_AlphaTest(false, GPU_ALWAYS, 0);
             C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
             C3D_CullFace(GPU_CULL_NONE);
+            // No fog on the interface (hardware test #78: the scene's fog unit stayed on, and the top screen's
+            // full-screen overlay, blended premultiplied, added the fog color to every pixel: a white haze in
+            // daylight). The next scene draw sets its fog again.
+            C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+            gFog.mValid = false;
 
             // Top screen: the canvas's upper half (y in [0, 1]).
             bool topDrawn = false;
@@ -5106,7 +5602,7 @@ namespace Render3DS
             // its variant's entry point (gBound was reset).
             C3D_BindProgram(&gProgram);
             setupAttributes();
-            gVerifyThisFrame = gVerifyFramesLeft > 0;
+            gVerifyThisFrame = gVerifyFramesLeft > 0 && gpuVerify();
             const uint32_t drawsBefore = gStats.mDraws;
 #ifdef OPENMW3DS_DEBUG
             gSampleEmit = gFrame % 8 == 0; // the perf log's emit.* phases
@@ -5138,6 +5634,65 @@ namespace Render3DS
             gStats.mEmitMs += static_cast<float>(p3ds::memprobe::ticks() - start) / CPU_TICKS_PER_MSEC;
         }
 
+        // A render-to-texture stage: only the character preview (the race window's head). Others (the local map's
+        // tiles, M8 step 5) stay skipped: each costs VRAM and GPU time of its own.
+        void drawRttStage(osgUtil::RenderStage* stage)
+        {
+            osg::Camera* camera = stage->getCamera();
+            const auto& attachments = camera->getBufferAttachmentMap();
+            const auto color = attachments.find(osg::Camera::COLOR_BUFFER);
+            if (color == attachments.end() || color->second._texture == nullptr)
+                return;
+            osg::Texture* texture = color->second._texture.get();
+            // The frame first: beginFrame frees the GPU objects of deleted OSG objects and drops them from
+            // gRttTargets. Looked up before, a new preview texture at a freed one's address found the dying entry,
+            // which beginFrame then erased under the reference (test #94, a data abort leaving the Prison Ship).
+            if (!beginFrame())
+                return;
+            RttTarget*& rtt = gRttTargets[texture];
+            if (rtt == nullptr)
+            {
+                const int w = texture->getTextureWidth(), h = texture->getTextureHeight();
+                // The race window's preview (256x256 on the 3DS); the inventory's paper doll (512x1024, not shown
+                // by the port's pages) gets no target.
+                rtt = new RttTarget;
+                rtt->mOwner = texture;
+                texture->addObserver(rtt);
+                // The newest preview takes the reserve: the race window makes its preview twice when it opens (test
+                // #86), the first one's texture outliving it a while (OpenMW frees scene objects later, on a queue);
+                // only one race window shows at a time.
+                if (w == 256 && h == 256 && gRttReserve.mTarget != nullptr && gRttReserve.mInUse)
+                    for (auto& [owner, user] : gRttTargets)
+                        if (user != rtt && user->mTex == &gRttReserve.mTex)
+                        {
+                            user->mTex = nullptr; // its release no longer frees the reserve
+                            user->mTarget = nullptr;
+                            gRttReserve.mInUse = false;
+                            break;
+                        }
+                if (w == 256 && h == 256 && gRttReserve.mTarget != nullptr && !gRttReserve.mInUse)
+                {
+                    gRttReserve.mInUse = true;
+                    rtt->mTex = &gRttReserve.mTex;
+                    rtt->mTarget = gRttReserve.mTarget;
+                }
+                P3DS_LOGI("render3ds: render-to-texture \"%s\" %dx%d: %s", camera->getName().c_str(), w, h,
+                    rtt->mTarget != nullptr ? "the reserved target" : "not drawn (not 256x256, or the target is busy)");
+            }
+            if (rtt->mTarget == nullptr)
+                return;
+            C3D_RenderTargetClear(rtt->mTarget, C3D_CLEAR_ALL, toRgba8(stage->getClearColor()), 0xFFFFFF);
+            gRotatedTarget = false;
+            gBound.mProjection = nullptr;
+            drawOn(rtt->mTarget);
+            C3D_BindProgram(&gProgram);
+            setupAttributes();
+            drawBin(stage);
+            gRotatedTarget = true;
+            gBound.mProjection = nullptr; // the main stage sets its own (rotated) projection
+            rtt->mDrawn = true;
+        }
+
         bool drawStageHook(osgUtil::RenderStage* stage, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf*&)
         {
             if (!gActive)
@@ -5146,7 +5701,11 @@ namespace Render3DS
             // post-processing canvas, MyGUI) are skipped: returning true keeps OSG from drawing them. After a
             // GPU failure nothing is drawn any more (and not through the stub GL either).
             if (!isMainCamera(stage->getCamera()))
+            {
+                if (!gFailure && stage->getCamera() != nullptr && stage->getCamera()->getName() == "CharacterPreview")
+                    drawRttStage(stage);
                 return true;
+            }
             if (!gFailure)
                 drawMainStage(stage);
             // OSG runs the camera's final draw callback once the stage is drawn, and something may be waiting
@@ -5205,6 +5764,13 @@ namespace Render3DS
             return false;
         }
         C3D_RenderTargetSetOutput(gTarget, GFX_TOP, GFX_LEFT, kDisplayTransferFlags);
+        // The character preview's target (drawRttStage), reserved before the scene's textures fill the VRAM:
+        // 512 KB (color and depth).
+        if (C3D_TexInitVRAM(&gRttReserve.mTex, 256, 256, GPU_RGBA8))
+            gRttReserve.mTarget
+                = C3D_RenderTargetCreateFromTex(&gRttReserve.mTex, GPU_TEXFACE_2D, 0, GPU_RB_DEPTH24_STENCIL8);
+        if (gRttReserve.mTarget == nullptr)
+            P3DS_LOGW("render3ds: no VRAM for the character preview's target: the race window shows no head");
         if (!C3D_TexInit(&gUnusedTex1, 8, 8, GPU_A8))
         {
             P3DS_LOGE("render3ds: no memory for the unit 1 placeholder texture");
@@ -5218,6 +5784,15 @@ namespace Render3DS
         gTransient = static_cast<Vertex*>(gpuAlloc(kTransientVertices * sizeof(Vertex)));
         if (gTransient == nullptr)
             P3DS_LOGW("render3ds: no linear memory for the particle buffer; particles are not drawn");
+        gQuadIbo = static_cast<uint16_t*>(gpuAlloc(kTransientVertices / 4 * 6 * sizeof(uint16_t)));
+        if (gQuadIbo != nullptr)
+        {
+            static const uint16_t pattern[6] = { 0, 1, 2, 2, 3, 0 };
+            for (uint32_t q = 0; q < kTransientVertices / 4; ++q)
+                for (int k = 0; k < 6; ++k)
+                    gQuadIbo[q * 6 + k] = static_cast<uint16_t>(q * 4 + pattern[k]);
+            flushToGpu(gQuadIbo, kTransientVertices / 4 * 6 * sizeof(uint16_t));
+        }
         gIdentityIbo = static_cast<uint16_t*>(gpuAlloc(kIdentityIndices * sizeof(uint16_t)));
         if (gIdentityIbo != nullptr)
         {
@@ -5231,17 +5806,24 @@ namespace Render3DS
         gDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(scene_shbin)), scene_shbin_size);
         shaderProgramInit(&gProgram);
         shaderProgramSetVsh(&gProgram, &gDvlb->DVLE[0]);
+        gProbeDvlb = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(probe_shbin)), probe_shbin_size);
         shaderProgramInit(&gProbeProgram);
-        shaderProgramSetVsh(&gProbeProgram, &gDvlb->DVLE[1]);
+        shaderProgramSetVsh(&gProbeProgram, &gProbeDvlb->DVLE[0]);
         shaderProgramInit(&gFlatProgram);
-        shaderProgramSetVsh(&gFlatProgram, &gDvlb->DVLE[2]);
+        shaderProgramSetVsh(&gFlatProgram, &gDvlb->DVLE[1]);
         shaderProgramInit(&gProgram1);
         shaderProgramInit(&gProgram0);
-        if (gDvlb->numDVLE >= 5)
+        shaderProgramInit(&gProgramSkin);
+        if (gDvlb->numDVLE >= 4)
         {
-            shaderProgramSetVsh(&gProgram1, &gDvlb->DVLE[3]);
-            shaderProgramSetVsh(&gProgram0, &gDvlb->DVLE[4]);
+            shaderProgramSetVsh(&gProgram1, &gDvlb->DVLE[2]);
+            shaderProgramSetVsh(&gProgram0, &gDvlb->DVLE[3]);
             gVariants = true;
+        }
+        if (gVariants && gDvlb->numDVLE >= 5)
+        {
+            shaderProgramSetVsh(&gProgramSkin, &gDvlb->DVLE[4]);
+            gSkinVariant = true;
         }
         C3D_BindProgram(&gProgram);
         auto loc = [](const char* name) {
@@ -5263,26 +5845,38 @@ namespace Render3DS
         gLoc.mMatEmission = loc("matEmission");
         gLoc.mColorSel = loc("colorSel");
         gLoc.mLights = loc("lights");
+        gLoc.mBones = gSkinVariant ? loc("bones") : -1;
         gFlatProjection = shaderInstanceGetUniformLocation(gFlatProgram.vertexShader, "projection");
         gFlatModelView = shaderInstanceGetUniformLocation(gFlatProgram.vertexShader, "modelView");
         if (gFlatProjection < 0 || gFlatModelView < 0)
             P3DS_LOGE("render3ds: flat shader uniforms not found: no GUI");
-        for (shaderProgram_s* variant : { &gProgram1, &gProgram0 })
+        for (shaderProgram_s* variant : { &gProgram1, &gProgram0, &gProgramSkin })
         {
-            if (!gVariants)
+            if (!gVariants || (variant == &gProgramSkin && !gSkinVariant))
                 break;
             for (const char* name : { "projection", "modelView", "texMat", "texMat1", "lighting", "sunDir",
-                     "sunDiffuse", "sunAmbient", "matDiffuse", "matAmbient", "matEmission", "colorSel", "lights" })
+                     "sunDiffuse", "sunAmbient", "matDiffuse", "matAmbient", "matEmission", "colorSel", "lights",
+                     "bones" })
                 if (shaderInstanceGetUniformLocation(variant->vertexShader, name)
                     != shaderInstanceGetUniformLocation(gProgram.vertexShader, name))
                 {
-                    P3DS_LOGE("render3ds: shader variant uniform %s moved; variants off (8 lights everywhere)", name);
+                    P3DS_LOGE("render3ds: shader variant uniform %s moved; variants off (8 lights everywhere, CPU "
+                              "skinning)", name);
                     gVariants = false;
+                    gSkinVariant = false;
                     break;
                 }
         }
-        P3DS_LOGI("render3ds: shaders: %lu instructions in %d programs (max 512), light variants %s",
-            (unsigned long)gDvlb->DVLP.codeSize, int(gDvlb->numDVLE), gVariants ? "0/1/8" : "off");
+        // sdmc:/openmw/cpu-skinning: skinned meshes on the CPU, as before M10 (comparisons on hardware).
+        if (gSkinVariant)
+            if (std::FILE* f = std::fopen("sdmc:/openmw/cpu-skinning", "r"))
+            {
+                std::fclose(f);
+                gSkinVariant = false;
+            }
+        P3DS_LOGI("render3ds: shaders: %lu instructions in %d programs (max 512), light variants %s, skinning %s",
+            (unsigned long)gDvlb->DVLP.codeSize, int(gDvlb->numDVLE), gVariants ? "0/1/8" : "off",
+            gSkinVariant ? "GPU" : "CPU");
 
         gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
         if (gLinearBasePa + __ctru_linear_heap_size > 0x28000000)
@@ -5337,13 +5931,20 @@ namespace Render3DS
         shaderProgramFree(&gProgram);
         shaderProgramFree(&gProbeProgram);
         shaderProgramFree(&gFlatProgram);
+        shaderProgramFree(&gProgramSkin);
         shaderProgramFree(&gProgram1);
         shaderProgramFree(&gProgram0);
         DVLB_Free(gDvlb);
+        DVLB_Free(gProbeDvlb);
         C3D_RenderTargetDelete(gTarget);
         if (gUnusedTex1Ready)
             C3D_TexDelete(&gUnusedTex1);
         C3D_Fini();
+    }
+
+    bool gpuSkinning()
+    {
+        return gActive && gSkinVariant && gFailure == nullptr;
     }
 
     bool isActive()
@@ -5390,9 +5991,30 @@ namespace Render3DS
         return softGui() ? "ui CPU" : "ui GPU (gpu-ui, deprecated)";
     }
 
+    void noteGuiCollected()
+    {
+        gGuiCollected = true;
+    }
+
+    namespace
+    {
+        bool gHudOnly = false;
+    }
+
+    void setHudOnly(bool hudOnly)
+    {
+        gHudOnly = hudOnly;
+    }
+
+    bool hudOnly()
+    {
+        return gHudOnly;
+    }
+
     void invalidateInterface()
     {
         P3DS_LOGI("render3ds: interface redrawn whole (applet)");
+        reloadVramTextures(); // the transition's capture lands in VRAM
         gSoftTop.mValid = false;
         gSoftBottom.mValid = false;
         gBottomHash = 0;

@@ -14,6 +14,7 @@ namespace Files
 {
 #ifdef OPENMW_PLATFORM_3DS
     struct SharedArchiveFile;
+    struct ReadAhead;
 #endif
 #ifdef OPENMW3DS_DEBUG
     // Logs the SD reads made through ConstrainedFileStreamBuf since the last call, by request size (count,
@@ -26,6 +27,9 @@ namespace Files
     {
     public:
         ConstrainedFileStreamBuf(const std::filesystem::path& fname, std::size_t start, std::size_t length);
+#ifdef OPENMW_PLATFORM_3DS
+        ~ConstrainedFileStreamBuf() override;
+#endif
 
         int_type underflow() final;
 
@@ -52,9 +56,17 @@ namespace Files
         std::size_t mChunk = 0; // current read size
         std::size_t mBufferPos = 0; // stream position (relative to mOrigin) of mBuffer[0]
         std::size_t mFilePos = 0; // stream position the file handle is at
+        std::size_t mHandlePos = 0; // where the file handle is (a read-ahead moves it past mFilePos)
+        // M10: whole files read sequentially in 1 MB reads (the content files at startup): the next read runs on
+        // a helper thread while this one is parsed. Created on the first 1 MB sequential read.
+        std::unique_ptr<ReadAhead> mAhead;
         std::size_t position() const { return mBufferPos + (gptr() - eback()); }
         pos_type seekTo(std::size_t newPos);
         std::size_t readAt(std::size_t pos, char* data, std::size_t size);
+        // The read-ahead's data if it covers pos (waits for it; start: where it begins), or 0 (none: anything in
+        // flight is dropped).
+        std::size_t takeAhead(std::size_t pos, std::size_t keep, std::size_t& start);
+        void requestAhead(std::size_t pos);
 #else
         char mBuffer[8192]{ 0 };
 #endif

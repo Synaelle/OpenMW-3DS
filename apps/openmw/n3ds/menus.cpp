@@ -728,36 +728,30 @@ namespace omw3ds
                     return;
                 case MWGui::GM_Container: // M8: MyGUI's container window on the top screen, the Inventory tab below
                     return;
-                case MWGui::GM_Barter:
-                    if (barter())
-                        return;
-                    break;
+                case MWGui::GM_Barter: // MyGUI's barter window on the top screen, the Inventory tab below (test #74)
+                    return;
                 case MWGui::GM_Travel: // M8: MyGUI's travel window on the bottom screen
                     return;
                 case MWGui::GM_Training: // M8: MyGUI's training window, centred on the bottom screen
                 case MWGui::GM_SpellCreation: // M8: MyGUI's spellmaking window on the top screen
                     return;
-                case MWGui::GM_SpellBuying:
-                    if (spellBuying())
-                        return;
-                    break;
+                case MWGui::GM_SpellBuying: // the windows not ported yet: on the top screen, with the cursor (19/10)
                 case MWGui::GM_MerchantRepair:
-                    if (repair())
-                        return;
-                    break;
+                case MWGui::GM_Alchemy:
+                case MWGui::GM_Repair:
+                case MWGui::GM_Enchanting:
+                case MWGui::GM_Recharge:
+                case MWGui::GM_QuickKeysMenu:
+                case MWGui::GM_Jail:
+                case MWGui::GM_Companion: // the companion's window up there, the Inventory tab below (Give)
+                    return;
                 case MWGui::GM_Book: // M8: MyGUI's book and scroll windows on the top screen (the scaling layer)
                 case MWGui::GM_Scroll:
                     return;
-                case MWGui::GM_Rest:
-                    if (rest())
-                        return;
-                    break;
+                case MWGui::GM_Rest: // on the top screen, with the cursor (19/10)
                 case MWGui::GM_Levelup:
-                    if (levelUp())
-                        return;
-                    break;
-                case MWGui::GM_Journal:
-                    journal();
+                    return;
+                case MWGui::GM_Journal: // MyGUI's journal, a book on the top screen (the books' layer), with the cursor
                     return;
                 case MWGui::GM_MainMenu: // M8: MyGUI's main menu on the two screens (mainmenu.cpp)
                 case MWGui::GM_Name: // M8: the system keyboard (textinput.cpp)

@@ -1,6 +1,7 @@
 #ifndef GAME_MWWORLD_WORLDMODEL_H
 #define GAME_MWWORLD_WORLDMODEL_H
 
+#include <functional>
 #include <list>
 #include <map>
 #include <string>
@@ -103,6 +104,25 @@ namespace MWWorld
 
         bool readRecord(ESM::ESMReader& reader, uint32_t type);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M9: OpenMW keeps every cell the player visited, whole, until a new game or a load. Here the cells left
+        // longest ago are written as a save writes them (only what changed, one in-memory REC_CSTA record each),
+        // freed, and read back on top of the content files when something needs them again (CellStore::load).
+        void touchCell(const CellStore& cell); ///< The scene loaded it: most recently used.
+        /// Evicts the least recently used loaded cells beyond @a maxKept that @a pinned doesn't keep. Returns how
+        /// many were evicted.
+        std::size_t evictCells(const std::function<bool(const CellStore&)>& pinned, std::size_t maxKept);
+        bool isEvicted(const ESM::RefId& id) const { return mEvicted.contains(id); }
+        void restoreEvicted(CellStore& cell);
+        std::size_t evictedCount() const { return mEvicted.size(); }
+        std::size_t evictedBytes() const;
+#ifdef OPENMW3DS_DEBUG
+        /// Debug: reads up to @a count cells evicted with changes back and compares their references (count,
+        /// enabled, position) with what they were when written. Returns false on a mismatch.
+        bool selfTestEviction(std::size_t count);
+#endif
+#endif
+
     private:
         struct GetCellStoreCallback;
 
@@ -116,6 +136,16 @@ namespace MWWorld
         ESM::Cell mDraftCell;
         std::vector<std::pair<ESM::RefId, CellStore*>> mIdCache;
         std::size_t mIdCacheIndex = 0;
+#ifdef OPENMW_PLATFORM_3DS
+        std::unordered_map<ESM::RefId, std::string> mEvicted; // REC_CSTA records
+        std::string mEvictHeader; // the TES3 header the records are read back with
+        std::unordered_map<ESM::RefId, uint64_t> mCellUse;
+        uint64_t mCellUseClock = 0;
+#ifdef OPENMW3DS_DEBUG
+        std::unordered_map<ESM::RefId, uint64_t> mEvictedSignature;
+        static uint64_t signature(CellStore& cell);
+#endif
+#endif
 
         CellStore& getOrInsertCellStore(const ESM::Cell& cell);
 

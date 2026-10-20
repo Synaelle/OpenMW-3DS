@@ -371,7 +371,12 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     // update focus object for GUI
     {
         ScopedProfile<UserStatsType::Focus> profile(frameStart, frameNumber, *timer, *stats);
-        mWorld->updateFocusObject();
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the focus ray walks the scene graph (an intersector cloned at every transform: ~100 allocations a
+        // frame); it only feeds the crosshair's label (activating casts its own ray), so 10 times a second.
+        if (frameNumber % 3 == 0)
+#endif
+            mWorld->updateFocusObject();
     }
 
     // if there is a separate Lua thread, it starts the update now

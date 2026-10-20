@@ -115,7 +115,9 @@ local vanityDelay = core.getGMST('fVanityDelay')
 
 local function updateVanity(dt)
     local vanityAllowed = Player.getControlSwitch(self, Player.CONTROL_SWITCH.VanityMode)
-    if vanityAllowed and idleTimer > vanityDelay and camera.getMode() ~= MODE.Vanity then
+    -- 3DS port: no idle camera (the third-person view turning round the player after fVanityDelay seconds idle;
+    -- the tester, 20/10: not useful there). The rest of this function still leaves vanity mode if something set it.
+    if false and vanityAllowed and idleTimer > vanityDelay and camera.getMode() ~= MODE.Vanity then
         camera.setMode(MODE.Vanity)
     end
     if camera.getMode() == MODE.Vanity then

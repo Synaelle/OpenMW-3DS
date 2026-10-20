@@ -120,6 +120,18 @@ namespace MWScript
         return std::visit(IdGettingVisitor{}, mTarget);
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    void GlobalScripts::releaseTargetsIn(const MWWorld::CellStore& cell)
+    {
+        for (auto& [name, desc] : mScripts)
+        {
+            const MWWorld::Ptr* ptr = desc->getPtrIfPresent();
+            if (ptr != nullptr && !ptr->isEmpty() && ptr->isInCell() && ptr->getCell() == &cell)
+                desc->mTarget = std::make_pair(ptr->getCellRef().getRefNum(), ptr->getCellRef().getRefId());
+        }
+    }
+#endif
+
     GlobalScripts::GlobalScripts(const MWWorld::ESMStore& store)
         : mStore(store)
     {

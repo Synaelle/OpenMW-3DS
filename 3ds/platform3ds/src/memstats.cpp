@@ -1,6 +1,7 @@
 #include <platform3ds/log.hpp>
 #include <platform3ds/memstats.hpp>
 #include <platform3ds/platform.hpp>
+#include <platform3ds/pools.hpp>
 
 #include <3ds.h>
 
@@ -10,9 +11,8 @@ extern "C"
 {
     extern char __start__[];
     extern char __end__[];
-    size_t p3ds_heap_extension_size(); // platform.cpp: linear-heap segment used by malloc (0 if none)
-    size_t p3ds_heap_extension_gap(); // address gap between the two segments (counted by mallinfo)
-    size_t p3ds_heap_arena();
+    size_t p3ds_heap_arena(); // platform.cpp: newlib's arena
+    size_t p3ds_heap_window(); // the app heap newlib can use
 }
 
 namespace p3ds::mem
@@ -35,9 +35,11 @@ namespace p3ds::mem
     Stats queryExact()
     {
         const struct mallinfo mi = mallinfo();
-        const uint32_t gap = uint32_t(p3ds_heap_extension_gap());
-        __atomic_store_n(&gHeapArena, uint32_t(mi.arena) - gap, __ATOMIC_RELAXED);
-        __atomic_store_n(&gHeapUsed, uint32_t(mi.uordblks) - gap, __ATOMIC_RELAXED);
+        const pools::PoolStats large = pools::large();
+        const pools::PoolStats lua = pools::lua();
+        // The Lua pool is one newlib block: count what Lua uses of it, not the whole block.
+        __atomic_store_n(&gHeapArena, uint32_t(mi.arena) + large.used, __ATOMIC_RELAXED);
+        __atomic_store_n(&gHeapUsed, uint32_t(mi.uordblks) - lua.total + lua.used + large.used, __ATOMIC_RELAXED);
         __atomic_store_n(&gWalkTick, svcGetSystemTick(), __ATOMIC_RELAXED);
         return query();
     }
@@ -57,14 +59,17 @@ namespace p3ds::mem
             s.regionUsed = uint32_t(current);
         }
         s.imageSize = uint32_t(__end__ - __start__);
-        s.heapTotal = envGetHeapSize() + uint32_t(p3ds_heap_extension_size());
+        const pools::PoolStats large = pools::large();
+        s.heapTotal = uint32_t(p3ds_heap_window()) + large.total;
+        s.largeTotal = large.total;
+        s.largeUsed = large.used;
         s.linearTotal = envGetLinearHeapSize();
         s.linearFree = linearSpaceFree();
         s.vramFree = vramSpaceFree();
 
         if (__atomic_load_n(&gHeapArena, __ATOMIC_RELAXED) == 0)
             return queryExact(); // never sampled yet (e.g. no watchdog running)
-        s.heapArena = uint32_t(p3ds_heap_arena());
+        s.heapArena = uint32_t(p3ds_heap_arena()) + large.used;
         s.heapUsed = __atomic_load_n(&gHeapUsed, __ATOMIC_RELAXED);
         s.heapUsedAgeMs = uint32_t((svcGetSystemTick() - __atomic_load_n(&gWalkTick, __ATOMIC_RELAXED))
             / (SYSCLOCK_ARM11 / 1000));

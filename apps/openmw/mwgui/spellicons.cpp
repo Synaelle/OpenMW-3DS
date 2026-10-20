@@ -132,7 +132,10 @@ namespace MWGui
                 MyGUI::ImageBox& widget = *mWidgetMap[effectId];
                 if (activeEffects.emplace(effectId).second)
                 {
-                    widget.setPosition(horizontalOffset, verticalOffset);
+#ifdef OPENMW_PLATFORM_3DS
+                    if (widget.getPosition() != MyGUI::IntPoint(horizontalOffset, verticalOffset)) // M10, as below
+#endif
+                        widget.setPosition(horizontalOffset, verticalOffset);
                     widget.setVisible(true);
                     if (source.mDuration >= fadeTime && fadeTime > 0.f)
                         widget.setAlpha(std::min(source.mTimeLeft / fadeTime, 1.f));
@@ -169,8 +172,14 @@ namespace MWGui
         {
             const int newWidth = horizontalOffset > 2 ? horizontalOffset + 2 : 0;
             const int diff = parent->getWidth() - newWidth;
-            parent->setSize(newWidth, parent->getHeight());
-            parent->setPosition(parent->getLeft() + diff, parent->getTop());
+#ifdef OPENMW_PLATFORM_3DS
+            // M10: called every frame; MyGUI redraws the interface on any setCoord, even an unchanged one.
+            if (diff != 0)
+#endif
+            {
+                parent->setSize(newWidth, parent->getHeight());
+                parent->setPosition(parent->getLeft() + diff, parent->getTop());
+            }
         }
 
         for (auto& [effectId, widget] : mWidgetMap)

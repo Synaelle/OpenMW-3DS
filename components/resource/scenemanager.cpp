@@ -4,10 +4,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <typeinfo>
+#include <vector>
 
 #include <osg/AlphaFunc>
 #include <osg/Capability>
 #include <osg/ColorMaski>
+#include <osg/Geometry>
+#include <osg/FrameStamp>
 #include <osg/Group>
 #include <osg/Material>
 #include <osg/Node>
@@ -18,7 +22,9 @@
 #include <osgAnimation/RigGeometry>
 #include <osgAnimation/UpdateBone>
 
+#include <osgParticle/ParticleProcessor>
 #include <osgParticle/ParticleSystem>
+#include <osgParticle/ParticleSystemUpdater>
 
 #include <osgUtil/IncrementalCompileOperation>
 
@@ -898,6 +904,111 @@ namespace Resource
         }
     };
 
+#ifdef OPENMW_PLATFORM_3DS
+    // M10 phase 2: the NIF loader makes each shape a transform holding the shape's properties (a state set) with
+    // its geometry as only child; the optimizer bakes the transform into the geometry but keeps the node, as a
+    // Group, for its state set. ~680 of an interior's ~2850 cull-traversed nodes were those one-child groups
+    // (Arrille's Tradehouse). This folds each into its geometry: the geometry takes the group's state set merged
+    // under its own (StateSet::merge keeps the parent/child override rules), its name if it has none, its user
+    // data, and the group's place. Only plain static groups over a plain Geometry, with the optimizer's own
+    // restrictions (no descriptions, no reserved names); per model, before instancing.
+    class CollapseShapeGroups3DS : public osg::NodeVisitor
+    {
+    public:
+        explicit CollapseShapeGroups3DS(const CanOptimizeCallback& names)
+            : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+            , mNames(names)
+        {
+        }
+
+        void apply(osg::Group& group) override
+        {
+            traverse(group);
+            if (typeid(group) != typeid(osg::Group) || group.getNumChildren() != 1 || group.getNumParents() != 1)
+                return;
+            if (group.getUpdateCallback() != nullptr || group.getCullCallback() != nullptr
+                || group.getEventCallback() != nullptr || group.getNumDescriptions() > 0
+                || group.getDataVariance() == osg::Object::DYNAMIC || group.getNodeMask() != ~0u
+                || !group.getCullingActive() || mNames.isReservedName(group.getName()))
+                return;
+            osg::Node* child = group.getChild(0);
+            if (typeid(*child) != typeid(osg::Geometry) || child->getNumParents() != 1 || child->getNodeMask() != ~0u)
+                return;
+            mFound.emplace_back(&group);
+        }
+
+        unsigned collapse()
+        {
+            for (const osg::ref_ptr<osg::Group>& group : mFound)
+            {
+                osg::ref_ptr<osg::Node> child = group->getChild(0);
+                if (const osg::StateSet* outer = group->getStateSet())
+                {
+                    osg::ref_ptr<osg::StateSet> merged = new osg::StateSet(*outer, osg::CopyOp::SHALLOW_COPY);
+                    if (const osg::StateSet* inner = child->getStateSet())
+                        merged->merge(*inner);
+                    child->setStateSet(merged);
+                }
+                if (child->getName().empty())
+                    child->setName(group->getName());
+                if (child->getUserDataContainer() == nullptr && group->getUserDataContainer() != nullptr)
+                    child->setUserDataContainer(osg::clone(group->getUserDataContainer(), osg::CopyOp::SHALLOW_COPY));
+                group->getParent(0)->replaceChild(group.get(), child.get());
+            }
+            const unsigned count = static_cast<unsigned>(mFound.size());
+            mFound.clear();
+            return count;
+        }
+
+    private:
+        const CanOptimizeCallback& mNames;
+        std::vector<osg::ref_ptr<osg::Group>> mFound;
+    };
+#endif
+
+#ifdef OPENMW_PLATFORM_3DS
+    // M10 phase 2: OSG simulates particles in the cull traversal (the emitter, the affector programs and the
+    // updater, each in its traverse()); indoors that was most of the scene cull (Arrille's Tradehouse in Zeste:
+    // 38 candle and chandelier flames, 836 particles, 7.2 of the cells' 8.6 ms). Each particle system now runs every
+    // other frame, half of them on even frames and half on odd ones (by address): skipping a traverse leaves the
+    // processor's last time where it was, so the next run steps the whole elapsed time (the same simulation, in
+    // 15 Hz steps). The particles are still drawn every frame. The callback is stateless (it reads the particle
+    // system from the node), so instances can share it.
+    class ParticleRate3DS : public osg::NodeCallback
+    {
+    public:
+        void operator()(osg::Node* node, osg::NodeVisitor* nv) override
+        {
+            const osgParticle::ParticleSystem* system = nullptr;
+            if (auto* processor = dynamic_cast<osgParticle::ParticleProcessor*>(node))
+                system = processor->getParticleSystem();
+            else if (auto* updater = dynamic_cast<osgParticle::ParticleSystemUpdater*>(node))
+                system = updater->getNumParticleSystems() > 0 ? updater->getParticleSystem(0) : nullptr;
+            if (system != nullptr && nv->getFrameStamp() != nullptr
+                && ((nv->getFrameStamp()->getFrameNumber() + (reinterpret_cast<uintptr_t>(system) >> 4)) & 1) != 0)
+                return;
+            traverse(node, nv);
+        }
+    };
+
+    class ThrottleParticles3DS : public osg::NodeVisitor
+    {
+    public:
+        ThrottleParticles3DS()
+            : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+        {
+        }
+
+        void apply(osg::Node& node) override
+        {
+            if (dynamic_cast<osgParticle::ParticleProcessor*>(&node) != nullptr
+                || dynamic_cast<osgParticle::ParticleSystemUpdater*>(&node) != nullptr)
+                node.addCullCallback(new ParticleRate3DS); // one each: addCullCallback() may nest into it
+            traverse(node);
+        }
+    };
+#endif
+
     static bool canOptimize(std::string_view filename)
     {
         const std::string_view::size_type slashpos = filename.find_last_of('/');
@@ -1043,6 +1154,12 @@ namespace Resource
                 loaded->accept(*shaderVisitor);
             }
 
+#ifdef OPENMW_PLATFORM_3DS
+            {
+                ThrottleParticles3DS throttle;
+                loaded->accept(throttle);
+            }
+#endif
             OMW3DS_DETAIL("post.optimize");
             if (canOptimize(path.value()))
             {
@@ -1054,6 +1171,15 @@ namespace Resource
                     = getOptimizationOptions() | SceneUtil::Optimizer::SHARE_DUPLICATE_STATE;
 
                 optimizer.optimize(loaded, options);
+#ifdef OPENMW_PLATFORM_3DS
+                {
+                    static const CanOptimizeCallback names;
+                    CollapseShapeGroups3DS collapse(names);
+                    loaded->accept(collapse);
+                    if (collapse.collapse() > 0)
+                        shareState(loaded); // the merged state sets, shared again where equal
+                }
+#endif
             }
             else
                 shareState(loaded);

@@ -417,7 +417,11 @@ namespace MWRender
             cullingMode &= ~(osg::CullStack::SMALL_FEATURE_CULLING);
         else
         {
+#ifdef OPENMW_PLATFORM_3DS
+            mViewer->getCamera()->setSmallFeatureCullingPixelSize(Settings::camera().smallFeaturePixels3DS());
+#else
             mViewer->getCamera()->setSmallFeatureCullingPixelSize(Settings::camera().mSmallFeatureCullingPixelSize);
+#endif
             cullingMode |= osg::CullStack::SMALL_FEATURE_CULLING;
         }
 
@@ -1432,6 +1436,12 @@ namespace MWRender
             {
                 setViewDistance(Settings::camera().mViewingDistance);
             }
+#ifdef OPENMW_PLATFORM_3DS
+            else if (it->first == "Camera" && it->second == "far small details")
+            {
+                mViewer->getCamera()->setSmallFeatureCullingPixelSize(Settings::camera().smallFeaturePixels3DS());
+            }
+#endif
             else if (it->first == "General"
                 && (it->second == "texture filter" || it->second == "texture mipmap" || it->second == "anisotropy"))
             {

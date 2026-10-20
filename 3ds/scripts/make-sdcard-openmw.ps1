@@ -57,10 +57,14 @@ OpenMW 3DS - OpenMW hardware test package ($stamp)
 ===================================================
 This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
 the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #70: test #69 plus the two notes):
-  The button hint bar is gone from the bottom screen (it covered the item details while looting); the
-  frame rate under the minimap is the number alone. Everything else as in test #69.
-  New: the CIA and openmw/test-menu.txt (uploaded). Logs: logs/test70-.../.
+What this tests (hardware test #77: M10 phase 1, the interface's per-frame cost):
+  The interface no longer redoes its work every frame when nothing on it changed, and the minimap moves ~4
+  times a second (its arrow in 16 steps). The frame rate should be higher, mostly while walking outside. A short
+  run is enough: Seyda Neen outside for 3-4 minutes, walking and looking around, then an interior; check the
+  HUD still updates (health, magicka, fatigue, the minimap, messages). Also new since #76: every window not
+  ported yet (spell buying, rest, level-up, journal, alchemy, repair, enchanting, companions...) opens on the top
+  screen, used with the cursor. New: the CIA, openmw/test-menu.txt, openmw/ui3ds (layers, OMW3DS texts)
+  (uploaded). Logs: logs/test77-A/.
   Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
   illegal") and quick save. That's harmless.
 
@@ -187,3 +191,32 @@ $lines | Set-Content (Join-Path $update 'UPDATE.txt')
 $manifest | ConvertTo-Json | Set-Content $manifestPath
 Write-Host "Update: $update"
 $lines | ForEach-Object { Write-Host $_ }
+
+# Test archive (the tester, 19/10: "archive the whole environment for previous tests"): the whole SD
+# environment of this package in out\test-archive\<test>\ (<test> from test-menu.txt's "logs" line), so an
+# old test can be put back exactly with scripts\restore-test.ps1. Files are stored once by content in
+# out\test-archive\.store and hard-linked: a test costs only the files it changed (the game data, ~230 MB,
+# once). Packaging the same test again replaces its archive.
+$testName = (Get-Content (Join-Path $sd 'openmw\test-menu.txt') | Where-Object { $_ -match '^logs\s+(\S+)' } |
+    Select-Object -First 1) -replace '^logs\s+', ''
+if ($testName) {
+    $archiveRoot = Join-Path $out 'test-archive'
+    $store = Join-Path $archiveRoot '.store'
+    $archive = Join-Path $archiveRoot $testName
+    New-Item -ItemType Directory -Force $store | Out-Null
+    if (Test-Path $archive) { Remove-Item -Recurse -Force $archive }
+    foreach ($rel in $manifest.Keys) {
+        $stored = Join-Path $store $manifest[$rel]
+        if (-not (Test-Path $stored)) { Copy-Item (Join-Path $sd $rel) $stored }
+        $dst = Join-Path $archive ('sd\' + $rel.Replace('/', '\'))
+        New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
+        New-Item -ItemType HardLink -Path $dst -Target $stored | Out-Null
+    }
+    $manifest | ConvertTo-Json | Set-Content (Join-Path $archive 'manifest.json')
+    @("Test: $testName", "Build: $buildId (bottom screen: build $shortBuild)", "Packaged: $stamp",
+        "Program with symbols: $archived") | Set-Content (Join-Path $archive 'BUILD.txt')
+    Write-Host "Archived: $archive"
+}
+
+# Old ELFs: stripped to their symbols or deleted (scripts\prune-elf-archive.ps1).
+& "$PSScriptRoot\prune-elf-archive.ps1" | Out-Host

@@ -19,6 +19,11 @@ namespace Settings
 
         SettingValue<bool> mCrosshair{ mIndex, "HUD", "crosshair" };
         SettingValue<bool> mMouseEmulationCursor{ mIndex, "HUD", "mouse emulation cursor" };
+#ifdef OPENMW_PLATFORM_3DS
+        // Small health, magicka and fatigue bars without values at the top screen's bottom, as in Skyrim
+        // (Options > Preferences, the tester 19/10); the bottom screen's bars hide meanwhile (test #78).
+        SettingValue<bool> mTopBars3DS{ mIndex, "HUD", "top bars" };
+#endif
     };
 }
 

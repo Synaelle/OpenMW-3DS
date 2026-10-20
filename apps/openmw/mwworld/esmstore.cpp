@@ -367,7 +367,11 @@ namespace MWWorld
         IDMap::const_iterator it = mStoreImp->mIds.find(id);
         if (it == mStoreImp->mIds.end())
         {
+#ifdef OPENMW_PLATFORM_3DS
+            return findStatic(id);
+#else
             return 0;
+#endif
         }
         return it->second;
     }
@@ -396,7 +400,11 @@ namespace MWWorld
     {
         for (const auto& store : mDynamicStores)
             store->clearDynamic();
+#ifdef OPENMW_PLATFORM_3DS
+        mStoreImp->mIds.clear();
+#else
         mStoreImp->mIds = mStoreImp->mStaticIds;
+#endif
 
         movePlayerRecord();
     }
@@ -607,7 +615,14 @@ namespace MWWorld
         getWritable<ESM4::ActorCreature>().preprocessReferences(get<ESM4::Cell>());
 
         rebuildIdsIndex();
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: one copy of the index of every record (~2 MB): mIds holds only what changed since (records created
+        // or overridden in play), find() falls back to mStaticIds.
+        mStoreImp->mStaticIds = std::move(mStoreImp->mIds);
+        mStoreImp->mIds = IDMap();
+#else
         mStoreImp->mStaticIds = mStoreImp->mIds;
+#endif
     }
 
     void ESMStore::rebuildIdsIndex()

@@ -55,7 +55,7 @@ AccessControlInfo:
   IORegisterMapping:
     - 1ff00000-1ff7ffff   # DSP memory
   MemoryMapping:
-    - 1f000000-1f5fffff:r # VRAM
+    - 1f000000-1f5fffff   # VRAM, writable: scene textures are read into it (test #74; read-only, test #71 faulted)
 
   SystemCallAccess:
     ControlMemory: 1

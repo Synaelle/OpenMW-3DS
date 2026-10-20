@@ -70,6 +70,13 @@ namespace MWGui
         getWidget(nextButton, "NextGenderButton");
         prevButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousGender);
         nextButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextGender);
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS layout's bigger, invisible touch areas around the arrows.
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "PrevGenderHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousGender);
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "NextGenderHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextGender);
+#endif
 
         setText("FaceChoiceT",
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sRaceMenu3", "Change Face"));
@@ -77,6 +84,13 @@ namespace MWGui
         getWidget(nextButton, "NextFaceButton");
         prevButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousFace);
         nextButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextFace);
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS layout's bigger, invisible touch areas around the arrows.
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "PrevFaceHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousFace);
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "NextFaceHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextFace);
+#endif
 
         setText("HairChoiceT",
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sRaceMenu4", "Change Hair"));
@@ -84,6 +98,13 @@ namespace MWGui
         getWidget(nextButton, "NextHairButton");
         prevButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousHair);
         nextButton->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextHair);
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS layout's bigger, invisible touch areas around the arrows.
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "PrevHairHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectPreviousHair);
+        if (MyGUI::Widget* hit = mMainWidget->findWidget(mPrefix + "NextHairHit3DS"))
+            hit->eventMouseButtonClick += MyGUI::newDelegate(this, &RaceDialog::onSelectNextHair);
+#endif
 
         setText("RaceT", MWBase::Environment::get().getWindowManager()->getGameSettingString("sRaceMenu5", "Race"));
         getWidget(mRaceList, "RaceList");

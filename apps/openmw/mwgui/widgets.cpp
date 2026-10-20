@@ -509,6 +509,13 @@ namespace MWGui::Widgets
 
     void MWDynamicStat::setValue(int cur, int max)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the inventory window sets its encumbrance bar every frame, hidden or not, and a bar set to the
+        // values it shows still redraws the interface.
+        if (mShown3DS && cur == mValue && max == mMax)
+            return;
+        mShown3DS = true;
+#endif
         mValue = cur;
         mMax = max;
 

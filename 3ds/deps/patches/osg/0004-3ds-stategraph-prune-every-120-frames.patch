@@ -1,0 +1,23 @@
+diff --git a/src/osgUtil/SceneView.cpp b/src/osgUtil/SceneView.cpp
+index c6310a0..c509170 100644
+--- a/src/osgUtil/SceneView.cpp
++++ b/src/osgUtil/SceneView.cpp
+@@ -910,7 +910,18 @@ bool SceneView::cullStage(const osg::Matrixd& projection,const osg::Matrixd& mod
+     // reset at the start of each frame (see top of this method) but
+     // a clean has been used instead to try to minimize the amount of
+     // allocation and deleting of the StateGraph nodes.
++#ifdef __3DS__
++    // Nintendo 3DS port: prune every 120th frame only. CullVisitor::pushStateSet makes the StateGraph
++    // nodes on the way down, before knowing whether a drawable below will be added; every object
++    // visited but culled away (off screen, too small) leaves empty nodes, pruned here and made again
++    // the next frame: ~300 allocations and frees a frame in a lit interior, on a slow allocator. A
++    // StateGraph holds a ref_ptr to its StateSet (OSGUTIL_RENDERBACKEND_USE_REF_PTR), so no stale
++    // pointer can match; StateSets no longer used are released up to 120 frames later.
++    if (getFrameStamp() == nullptr || getFrameStamp()->getFrameNumber() % 120 == 0)
++        rendergraph->prune();
++#else
+     rendergraph->prune();
++#endif
+ 
+     // set the number of dynamic objects in the scene.
+     _dynamicObjectCount += renderStage->computeNumberOfDynamicRenderLeaves();

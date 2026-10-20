@@ -1,5 +1,9 @@
 #include "luastate.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/pools.hpp>
+#endif
+
 #ifndef NO_LUAJIT
 #include <luajit.h>
 #endif // NO_LUAJIT
@@ -113,10 +117,19 @@ namespace LuaUtil
 
         void* newPtr = nullptr;
         if (nsize == 0)
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::pools::luaRealloc(ptr, 0);
+#else
             free(ptr);
+#endif
         else
         {
+#ifdef OPENMW_PLATFORM_3DS
+            // Lua's own pool: its churn every frame stays out of the main heap (M9).
+            newPtr = p3ds::pools::luaRealloc(ptr, nsize);
+#else
             newPtr = realloc(ptr, nsize);
+#endif
             if (!newPtr)
             {
                 Log(Debug::Error) << "Lua realloc " << osize << "->" << nsize << " failed";
@@ -172,7 +185,18 @@ namespace LuaUtil
             Log(Debug::Error) << "Failed to initialize LuaUtil::LuaState with custom allocator; disabling Lua profiler";
         }
         Log(Debug::Info) << "Initializing LuaUtil::LuaState without profiler";
+#ifdef OPENMW_PLATFORM_3DS
+        // luaL_newstate with Lua's own pool (M9) instead of realloc: the same panic handler as lauxlib's.
+        LuaStatePtr state(lua_newstate(
+            [](void*, void* ptr, size_t, size_t nsize) { return p3ds::pools::luaRealloc(ptr, nsize); }, nullptr));
+        if (state != nullptr)
+            lua_atpanic(state.get(), [](lua_State* L) {
+                Log(Debug::Error) << "PANIC: unprotected error in call to Lua API (" << lua_tostring(L, -1) << ")";
+                return 0;
+            });
+#else
         LuaStatePtr state(luaL_newstate());
+#endif
         if (state == nullptr)
             throw std::runtime_error("Failed to create Lua runtime");
         return state;

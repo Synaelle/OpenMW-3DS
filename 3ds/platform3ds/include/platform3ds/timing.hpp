@@ -16,9 +16,18 @@ namespace p3ds
         return double(t) * 1000.0 / double(SYSCLOCK_ARM11);
     }
 
+    // The tick when the game started (the first call, in the platform's startup): the system tick counts from the
+    // console's boot (the tester, 20/10: the bottom screen's timer started at ~350 s).
+    inline uint64_t startTick()
+    {
+        static const uint64_t start = ticks();
+        return start;
+    }
+
+    // Seconds since the game started (the log's timestamps, the bottom screen's timer).
     inline double secondsSinceBoot()
     {
-        return double(ticks()) / double(SYSCLOCK_ARM11);
+        return double(ticks() - startTick()) / double(SYSCLOCK_ARM11);
     }
 
     class ScopedTimer

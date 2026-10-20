@@ -43,6 +43,7 @@
 #include <vector>
 
 #include <platform3ds/log.hpp>
+#include <platform3ds/platform.hpp>
 #include <platform3ds/memprobe.hpp> // p3ds::perf::Phase (frame breakdown)
 #endif
 #ifdef OPENMW3DS_DEBUG
@@ -259,6 +260,14 @@ namespace
         {
             if (++gActorCostFrames < 150)
                 return;
+            if (!p3ds::debugMode()) // detailed profiling: the start menu's Debug choices only (M15)
+            {
+                gActorCosts.clear();
+                gActorCostFrames = 0;
+                gSweepCount = 0;
+                gSweepTicks = 0;
+                return;
+            }
             std::vector<const ActorCost*> sorted;
             uint64_t total = 0;
             for (const auto& [key, cost] : gActorCosts)

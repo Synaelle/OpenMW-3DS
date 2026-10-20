@@ -17,6 +17,8 @@ if (OPENMW_PLATFORM_3DS)
     # POSIX declarations (strnlen, fileno, ...) that newlib hides in strict C++20 mode.
     add_compile_options("SHELL:-include ${OPENMW3DS_ROOT}/deps/compat/include/openmw3ds_int32.h")
     add_compile_definitions(_GNU_SOURCE OPENMW_PLATFORM_3DS=1)
+    # The port's own version (main menu, credits): 0.1.0 is the first release (LIMITATIONS.md M21).
+    add_compile_definitions(OPENMW3DS_VERSION="0.1.0-dev")
     include_directories(SYSTEM ${OPENMW3DS_DEPS_PREFIX}/include)
 endif()
 

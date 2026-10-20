@@ -5,6 +5,7 @@
 #include <MyGUI_TextBox.h>
 #include <MyGUI_UString.h>
 #include <MyGUI_Widget.h>
+#include <MyGUI_LanguageManager.h>
 #include <MyGUI_Window.h>
 
 namespace MWGui
@@ -58,8 +59,16 @@ namespace MWGui
     {
         MyGUI::Window* window = static_cast<MyGUI::Window*>(mMainWidget);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the caption holds the text with its #{tags} replaced, so a tagged title ("#{sSkillHandtohand}", set
+        // every frame with empty hands) never matched it and the window's title bar was laid out again each frame.
+        const MyGUI::UString text = MyGUI::LanguageManager::getInstance().replaceTags(MyGUI::UString(title));
+        if (window->getCaption() != text)
+            window->setCaption(text);
+#else
         if (window->getCaption() != title)
             window->setCaptionWithReplacing(MyGUI::UString(title));
+#endif
     }
 
     MyGUI::Widget* Layout::getWidget(std::string_view name) const

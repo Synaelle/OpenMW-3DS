@@ -28,6 +28,22 @@
             <Property key="NeedMouse" value="false"/>
         </Widget>
 
+        <!-- Skyrim-like bars at the bottom of the top screen, magicka, health, fatigue, no values; shown by the
+             [HUD] top bars setting (n3ds/hud3ds.cpp) -->
+        <Widget type="Widget" skin="" position="20 224 360 8" align="Left Top" name="TopBars3DS">
+            <Property key="Visible" value="false"/>
+            <Property key="NeedMouse" value="false"/>
+            <Widget type="ProgressBar" skin="MW_EnergyBar_Blue" position="0 0 110 8" align="Left Top" name="TopMagicka3DS">
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+            <Widget type="ProgressBar" skin="MW_EnergyBar_Red" position="125 0 110 8" align="Left Top" name="TopHealth3DS">
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+            <Widget type="ProgressBar" skin="MW_EnergyBar_Green" position="250 0 110 8" align="Left Top" name="TopFatigue3DS">
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+        </Widget>
+
         <!-- ================================================================ bottom screen -->
 
         <Widget type="Widget" skin="MW_DialogNoTransp" position="40 262 320 218" align="Left Top" name="Bottom3DS">
@@ -153,49 +169,59 @@
                 <Property key="NeedMouse" value="false"/>
             </Widget>
 
-            <!-- Quick keys 1-9 (n3ds/hud3ds.cpp): touch one to use it -->
+            <!-- Quick keys 1-9 (n3ds/hud3ds.cpp): touch one to use it. The frame is drawn under a frameless button: as the
+                 button's skin, the HUD_Box parts took the touches (hardware test #71). -->
             <Widget type="Widget" skin="" position="3 174 306 34" align="Left Top" name="QuickKeys3DS">
-                <Widget type="Button" skin="HUD_Box" position="0 0 34 34" name="QuickKey3DS1">
+                <Widget type="Widget" skin="HUD_Box" position="0 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="0 0 34 34" name="QuickKey3DS1">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon1">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="34 0 34 34" name="QuickKey3DS2">
+                <Widget type="Widget" skin="HUD_Box" position="34 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="34 0 34 34" name="QuickKey3DS2">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon2">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="68 0 34 34" name="QuickKey3DS3">
+                <Widget type="Widget" skin="HUD_Box" position="68 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="68 0 34 34" name="QuickKey3DS3">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon3">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="102 0 34 34" name="QuickKey3DS4">
+                <Widget type="Widget" skin="HUD_Box" position="102 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="102 0 34 34" name="QuickKey3DS4">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon4">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="136 0 34 34" name="QuickKey3DS5">
+                <Widget type="Widget" skin="HUD_Box" position="136 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="136 0 34 34" name="QuickKey3DS5">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon5">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="170 0 34 34" name="QuickKey3DS6">
+                <Widget type="Widget" skin="HUD_Box" position="170 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="170 0 34 34" name="QuickKey3DS6">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon6">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="204 0 34 34" name="QuickKey3DS7">
+                <Widget type="Widget" skin="HUD_Box" position="204 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="204 0 34 34" name="QuickKey3DS7">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon7">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="238 0 34 34" name="QuickKey3DS8">
+                <Widget type="Widget" skin="HUD_Box" position="238 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="238 0 34 34" name="QuickKey3DS8">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon8">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>
                 </Widget>
-                <Widget type="Button" skin="HUD_Box" position="272 0 34 34" name="QuickKey3DS9">
+                <Widget type="Widget" skin="HUD_Box" position="272 0 34 34"><Property key="NeedMouse" value="false"/></Widget>
+                <Widget type="Button" skin="" position="272 0 34 34" name="QuickKey3DS9">
                     <Widget type="ItemWidget" skin="MW_ItemIconNoShadow" position="-4 -4 42 42" name="QuickKey3DSIcon9">
                         <Property key="NeedMouse" value="false"/>
                     </Widget>

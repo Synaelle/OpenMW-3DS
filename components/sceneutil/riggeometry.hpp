@@ -7,6 +7,10 @@
 #include <memory>
 #include <string_view>
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+#endif
+
 namespace SceneUtil
 {
     class Skeleton;
@@ -101,12 +105,27 @@ namespace SceneUtil
             std::vector<std::pair<BoneWeights, VertexList>> mInfluences;
             osg::Matrixf mTransform;
             std::string mRootBone;
+#ifdef OPENMW_PLATFORM_3DS
+            // GPU skinning (M10): the mesh in bone batches, built once for every copy sharing this data (the
+            // source geometry it was built from; null mesh: it can't be skinned on the GPU).
+            osg::ref_ptr<Render3DS::SkinMesh> mSkin3DS;
+            const osg::Geometry* mSkinSource3DS = nullptr;
+            bool mSkinBuilt3DS = false;
+#endif
         };
         std::shared_ptr<InfluenceData> mData;
         std::vector<Bone*> mNodes;
 
         unsigned int mLastFrameNumber{ 0 };
         bool mBoundsFirstFrame{ true };
+
+#ifdef OPENMW_PLATFORM_3DS
+        // This drawable's pose for the GPU skinning (render3ds.hpp SkinPose), the drawn geometry's user data;
+        // null: skinned on the CPU.
+        osg::ref_ptr<Render3DS::SkinPose> mPose3DS;
+        bool mPoseChecked3DS{ false };
+        Render3DS::SkinMesh* skinMesh3DS();
+#endif
 
         bool initFromParentSkeleton(osg::NodeVisitor* nv);
 

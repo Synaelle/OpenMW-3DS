@@ -306,6 +306,23 @@ namespace SceneUtil
 
         std::map<std::pair<const osg::RefMatrix*, std::vector<int>>, osg::ref_ptr<osg::StateSet>> mLightListStateSets;
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: one state set per combination of lights, kept across frames, its uniforms refilled once a frame (the
+        // map above is keyed by the frame's view matrix, a new object each frame: every object's light-list state
+        // set, and the StateGraph nodes under it, were made anew every frame: ~1000 allocations a frame in a lit
+        // interior on the main thread).
+        struct PersistentLightList
+        {
+            osg::ref_ptr<osg::StateSet> mStateSet;
+            osg::ref_ptr<osg::Uniform> mData;
+            size_t mFrame = ~size_t(0);
+            const osg::RefMatrix* mView = nullptr;
+        };
+        std::map<std::vector<int>, PersistentLightList> mPersistentLightLists;
+        void fillLightListUniform(osg::Uniform& data, const LightList& lightList, size_t frameNum,
+            const osg::RefMatrix* viewMatrix);
+#endif
+
         size_t mLightingMask;
 
         osg::ref_ptr<Light> mSun;

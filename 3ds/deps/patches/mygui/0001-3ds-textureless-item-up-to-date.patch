@@ -1,0 +1,17 @@
+diff --git a/MyGUIEngine/src/MyGUI_RenderItem.cpp b/MyGUIEngine/src/MyGUI_RenderItem.cpp
+index 79ae616..f8ae105 100644
+--- a/MyGUIEngine/src/MyGUI_RenderItem.cpp
++++ b/MyGUIEngine/src/MyGUI_RenderItem.cpp
+@@ -29,7 +29,12 @@ namespace MyGUI
+ 	void RenderItem::renderToTarget(IRenderTarget* _target, bool _update)
+ 	{
+ 		if (mTexture == nullptr)
++		{
++			// Nothing to draw without a texture: up to date (the 3DS port skips unchanged interface frames, and an
++			// emptied image, e.g. OpenMW's hidden loading-screen scene, otherwise stays out of date forever).
++			mOutOfDate = false;
+ 			return;
++		}
+ 
+ 		mRenderTarget = _target;
+ 

@@ -493,8 +493,14 @@ namespace MWRender
     // --------------------------------------------------------------------------------------------------
 
     RaceSelectionPreview::RaceSelectionPreview(osg::Group* parent, Resource::ResourceSystem* resourceSystem)
+#ifdef OPENMW_PLATFORM_3DS
+        // 256x256 (the window shows ~176x200 pixels): 512 KB of VRAM for color and depth instead of 2 MB.
+        : CharacterPreview(
+            parent, resourceSystem, MWMechanics::getPlayer(), 256, 256, osg::Vec3f(0, 125, 8), osg::Vec3f(0, 0, 8))
+#else
         : CharacterPreview(
             parent, resourceSystem, MWMechanics::getPlayer(), 512, 512, osg::Vec3f(0, 125, 8), osg::Vec3f(0, 0, 8))
+#endif
         , mBase(*mCharacter.get<ESM::NPC>()->mBase)
         , mRef(ESM::makeBlankCellRef(), &mBase)
         , mPitchRadians(osg::DegreesToRadians(6.f))

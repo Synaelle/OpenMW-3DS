@@ -9,13 +9,17 @@
 // memory, textures from the PC-cooked pack, OpenMW's lighting evaluated per vertex on the PICA).
 // See LIMITATIONS.md section 4 ("option C").
 
+#include <osg/Matrixf>
+#include <osg/Referenced>
 #include <osg/ref_ptr>
 
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace osg
 {
+    class Geometry;
     class Image;
     class Texture;
 }
@@ -46,6 +50,13 @@ namespace Render3DS
     // Both screens' interface drawn whole again: after a system applet (the keyboard), whose transition writes
     // the screens' capture into VRAM over the top overlay texture (test #63).
     void invalidateInterface();
+    // MyGUI laid its layers out again this frame (myguirendermanager.cpp): its batches may differ from the last
+    // ones. Without it, the backend knows they're the same and skips its fingerprint of them.
+    void noteGuiCollected();
+    // Only the HUD is up (in game, no menu, no page; n3ds/hud3ds.cpp): its layout may then run at most every 3rd
+    // frame (myguirendermanager.cpp).
+    void setHudOnly(bool hudOnly);
+    bool hudOnly();
 
     // MyGUI's canvas has the console's shape: the top screen (400x240) at (0, 0) and the bottom screen (320x240)
     // centred under it at (40, 240). Its vertices arrive in the canvas's clip space; each screen draws them through
@@ -128,6 +139,11 @@ namespace Render3DS
         uint32_t mLightSlotWrites = 0; // light slots uploaded (4 vectors each)
         uint32_t mShaderRuns[9] = {}; // vertex shader runs (vertices/indices drawn) by active point-light count
         uint32_t mProgramSwitches = 0; // shader variant changes between draws
+        uint32_t mSkinnedDraws = 0; // draws skinned on the GPU (batches of skinned meshes)
+        // Draws by kind (M10, fewer draws): sky passes, terrain layers, particle systems, small (under 64
+        // triangles) and other scene geometry. Skinned ones are mSkinnedDraws.
+        uint32_t mSkyDraws = 0, mTerrainDraws = 0, mParticleDraws = 0, mSmallDraws = 0, mOtherDraws = 0;
+        uint32_t mSmallCulled = 0; // parts of models left out, smaller than the small feature culling size
         uint32_t mParticleVertices = 0; // particle quads built on the CPU this frame (6 vertices each)
         uint32_t mBadParticles = 0; // particles left out: non-finite corners (a zero-scale effect, see buildParticles)
         uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
@@ -143,6 +159,9 @@ namespace Render3DS
     // PC-cooked texture pack (tools/cook_textures.py). Missing pack = every texture falls back to OSG's
     // loaders (DDS can't be displayed, see ImageManager).
     bool openTexturePack(const char* path);
+    // An expansion's pack (tools/cook_textures.py --addon: its BSA's textures only), after the main one: its textures
+    // override the main pack's. false when the file isn't there (the expansion isn't installed).
+    bool openAddonTexturePack(const char* path);
 
     // A texture from the pack as an osg::Image whose data is already in PICA format in linear memory.
     // nullptr if the pack has no texture for this normalized VFS path (extension ignored).
@@ -151,6 +170,35 @@ namespace Render3DS
     // The size of the original image a pack texture was cooked from (MyGUI measures skins in its pixels); false
     // for any other image.
     bool cookedSourceSize(const osg::Image& image, int& width, int& height);
+
+    // GPU skinning (M10). A skinned mesh (sceneutil/riggeometry.cpp) split into batches of at most kSkinBones
+    // bones, each batch drawn by the skinned shader variant (skin1.v.pica) with its bones' matrices as uniforms:
+    // the mesh's vertices are uploaded once, shared by every actor wearing it, instead of skinned on the CPU and
+    // uploaded again every frame. Built once per mesh, read-only afterwards.
+    constexpr int kSkinBones = 14;
+    struct SkinBatch
+    {
+        std::vector<uint16_t> mBones; // palette slot -> the mesh's bone (RigGeometry's bone list)
+        std::vector<uint16_t> mVertices; // the batch's vertices: source vertex index
+        std::vector<uint8_t> mSlots; // 4 per vertex: palette slot x 3 (the slot's first row); unused slots 0
+        std::vector<uint8_t> mWeights; // 4 per vertex: 0..255, summing to 255
+        std::vector<uint16_t> mIndices; // triangle list, batch vertex indices
+    };
+    struct SkinMesh : osg::Referenced
+    {
+        osg::ref_ptr<const osg::Geometry> mSource; // bind-pose arrays: positions, normals, colors, texcoords
+        std::vector<SkinBatch> mBatches;
+    };
+    // This frame's pose of one skinned drawable, set as the drawn geometry's user data by RigGeometry's cull: one
+    // matrix per bone of the mesh, bone space to the drawable's space (OSG row-vector order, as RigGeometry's CPU
+    // skinning applies them). The backend draws the geometry from mMesh with these instead of its own vertices.
+    struct SkinPose : osg::Referenced
+    {
+        osg::ref_ptr<const SkinMesh> mMesh;
+        std::vector<osg::Matrixf> mBones;
+    };
+    // Whether skinned meshes are drawn by the skinned shader; otherwise RigGeometry skins them on the CPU.
+    bool gpuSkinning();
 }
 
 #endif

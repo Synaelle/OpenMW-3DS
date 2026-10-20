@@ -507,6 +507,12 @@ namespace SceneUtil
         mLights.clear();
         mLightsInViewSpace.clear();
         mLightListStateSets.clear();
+#ifdef OPENMW_PLATFORM_3DS
+        // Combinations not used for 300 frames are dropped (lights of unloaded cells, ones out of reach).
+        if (frameNum % 300 == 0)
+            for (auto it = mPersistentLightLists.begin(); it != mPersistentLightLists.end();)
+                it = it->second.mFrame + 300 < frameNum ? mPersistentLightLists.erase(it) : std::next(it);
+#endif
     }
 
     void LightManager::addLight(LightSource* lightSource, const osg::Matrixf& worldMat, size_t frameNum)
@@ -538,6 +544,30 @@ namespace SceneUtil
         for (const LightSourceViewBound* light : lightList)
             lightIds.push_back(light->mLightSource->getId());
 
+#ifdef OPENMW_PLATFORM_3DS
+        {
+            PersistentLightList& kept = mPersistentLightLists[lightIds];
+            // A second view in the same frame (another camera) gets its own state set, as before.
+            if (kept.mStateSet == nullptr || kept.mFrame != frameNum || kept.mView == viewMatrix)
+            {
+                if (kept.mStateSet == nullptr)
+                {
+                    kept.mStateSet = new osg::StateSet;
+                    kept.mData = generateLightBufferUniform();
+                    kept.mStateSet->addUniform(kept.mData);
+                    kept.mStateSet->addUniform(new osg::Uniform("PointLightCount", static_cast<int>(lightList.size())));
+                }
+                if (kept.mFrame != frameNum)
+                {
+                    fillLightListUniform(*kept.mData, lightList, frameNum, viewMatrix);
+                    kept.mFrame = frameNum;
+                    kept.mView = viewMatrix;
+                }
+                return kept.mStateSet;
+            }
+        }
+#endif
+
         auto [found, inserted] = mLightListStateSets.try_emplace(std::make_pair(viewMatrix, std::move(lightIds)));
         if (!inserted)
             return found->second;
@@ -566,6 +596,26 @@ namespace SceneUtil
         found->second = stateset;
         return stateset;
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    void LightManager::fillLightListUniform(
+        osg::Uniform& data, const LightList& lightList, size_t frameNum, const osg::RefMatrix* viewMatrix)
+    {
+        // As getLightListStateSet's own loop below.
+        for (size_t i = 0; i < lightList.size(); ++i)
+        {
+            auto* light = lightList[i]->mLightSource->getLight(frameNum);
+            osg::Matrixf lightMat;
+            configurePosition(lightMat, light->getPosition() * (*viewMatrix));
+            configureAmbient(lightMat, light->getAmbient());
+            configureDiffuse(lightMat, light->getDiffuse());
+            configureSpecular(lightMat, light->getSpecular());
+            configureAttenuation(lightMat, light->getConstantAttenuation(), light->getLinearAttenuation(),
+                light->getQuadraticAttenuation(), lightList[i]->mLightSource->getRadius() * mPointLightRadiusMultiplier);
+            data.setElement(static_cast<unsigned int>(i), lightMat);
+        }
+    }
+#endif
 
     const std::vector<LightManager::LightSourceViewBound>& LightManager::getLightsInViewSpace(
         osgUtil::CullVisitor* cv, const osg::RefMatrix* viewMatrix, size_t frameNum)

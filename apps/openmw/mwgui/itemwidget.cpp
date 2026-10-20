@@ -111,6 +111,9 @@ namespace MWGui
         if (mCurrentIcon != icon)
         {
             mCurrentIcon = icon;
+#ifdef OPENMW_PLATFORM_3DS
+            mCleared3DS = false;
+#endif
 
             if (mItemShadow)
                 mItemShadow->setImageTexture(icon.value());
@@ -121,15 +124,26 @@ namespace MWGui
 
     void ItemWidget::setFrame(const std::string& frame, const MyGUI::IntCoord& coord)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the HUD's weapon box gets its item every frame, and these redraw the interface even unchanged.
+        if (mFrame && coord != mCurrentFrameCoord)
+#else
         if (mFrame)
+#endif
         {
             mFrame->setImageTile(MyGUI::IntSize(coord.width, coord.height)); // Why is this needed? MyGUI bug?
             mFrame->setImageCoord(coord);
+#ifdef OPENMW_PLATFORM_3DS
+            mCurrentFrameCoord = coord;
+#endif
         }
 
         if (mCurrentFrame != frame)
         {
             mCurrentFrame = frame;
+#ifdef OPENMW_PLATFORM_3DS
+            mCleared3DS = false;
+#endif
             mFrame->setImageTexture(frame);
         }
     }
@@ -158,6 +172,12 @@ namespace MWGui
 
         if (ptr.isEmpty())
         {
+#ifdef OPENMW_PLATFORM_3DS
+            // M10: the HUD clears its empty spell box every frame; each clear redraws the interface.
+            if (mCleared3DS && mCurrentIcon.empty() && mCurrentFrame.empty())
+                return;
+            mCleared3DS = true;
+#endif
             if (mFrame)
                 mFrame->setImageTexture({});
             if (mItemShadow)
@@ -228,6 +248,9 @@ namespace MWGui
         if (mCurrentIcon != icon)
         {
             mCurrentIcon = icon;
+#ifdef OPENMW_PLATFORM_3DS
+            mCleared3DS = false;
+#endif
             if (mItemShadow)
                 mItemShadow->setImageTexture(icon.value());
             if (mItem)

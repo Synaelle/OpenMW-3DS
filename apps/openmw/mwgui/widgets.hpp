@@ -279,6 +279,9 @@ namespace MWGui
 
         private:
             int mValue, mMax;
+#ifdef OPENMW_PLATFORM_3DS
+            bool mShown3DS = false; // setValue() applied once: later calls with the same values change nothing
+#endif
             MyGUI::TextBox* mTextWidget;
             MyGUI::ProgressBar* mBarWidget;
             MyGUI::TextBox* mBarTextWidget;

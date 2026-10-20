@@ -5,14 +5,17 @@
 #include <limits>
 #ifdef OPENMW_PLATFORM_3DS
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include <components/debug/debuglog.hpp>
 #include <platform3ds/memprobe.hpp> // ticks
+#include <platform3ds/platform.hpp>
 #endif
 
 #include <components/misc/omw3dsdetail.hpp>
@@ -26,6 +29,22 @@ namespace Files
     {
         File::ScopedHandle mHandle;
         std::mutex mMutex; // a read is seek + read
+    };
+
+    // One read in flight on a helper thread (test #89: Morrowind.esm took 11.5 s on hardware, 8.2 s of it the SD
+    // reads and the rest the parsing between them, one after the other). While a read is pending, only the helper
+    // touches the file handle.
+    struct ReadAhead
+    {
+        std::thread mThread;
+        std::mutex mMutex;
+        std::condition_variable mWake, mDone;
+        std::unique_ptr<char[]> mBuffer; // mKeep bytes of room in front (the kept tail goes there), then the data
+        std::size_t mBufferSize = 0;
+        std::size_t mPos = 0, mSize = 0, mGot = 0;
+        bool mPending = false; // requested and not taken yet
+        bool mReady = false; // the read finished
+        bool mQuit = false;
     };
 
     namespace
@@ -88,6 +107,8 @@ namespace Files
 #ifdef OPENMW3DS_DEBUG
     void logReadStats(std::string_view what)
     {
+        if (!p3ds::debugMode()) // detailed profiling: the start menu's Debug choices only (M15)
+            return;
         std::string line;
         char entry[96];
         for (std::size_t i = 0; i < std::size(gReadBuckets); ++i)
@@ -154,14 +175,16 @@ namespace Files
         else
         {
             const uint64_t start = p3ds::memprobe::ticks();
-            if (pos != mFilePos)
+            if (pos != mHandlePos)
             {
                 File::seek(mFile, mOrigin + pos);
 #ifdef OPENMW3DS_DEBUG
                 ++gSeeks;
 #endif
             }
+            mHandlePos = std::numeric_limits<std::size_t>::max(); // unknown if the read throws
             got = File::read(mFile, data, size);
+            mHandlePos = pos + got;
             ticks = p3ds::memprobe::ticks() - start;
         }
 #ifdef OPENMW3DS_DEBUG
@@ -186,6 +209,23 @@ namespace Files
         std::size_t keep = 0;
         if (sequential && mKeep > 0)
             keep = std::min<std::size_t>(mKeep, egptr() - eback());
+        if (mShared == nullptr && mAhead != nullptr)
+        {
+            // The read-ahead covers pos: right after this fill, or a little further on (ESMReader skipped the
+            // rest of a record past the fill's end).
+            std::size_t start = 0;
+            if (const std::size_t got = takeAhead(pos, keep, start); got > 0)
+            {
+                if (start != pos)
+                    keep = 0;
+                mFilePos = start + got;
+                mBufferPos = start - keep;
+                char* data = mBuffer.get() + mKeep;
+                setg(data - keep, data + (pos - start), data + got);
+                requestAhead(mFilePos);
+                return traits_type::to_int_type(*gptr());
+            }
+        }
         const std::size_t toRead = std::min(mChunk, mSize - pos);
         if (keep + toRead > mBufferSize)
         {
@@ -204,7 +244,98 @@ namespace Files
         setg(mBuffer.get(), mBuffer.get() + keep, mBuffer.get() + keep + got);
         if (got == 0)
             return traits_type::eof();
+        // Reading a whole file at full size (a sequential scan; random access reads 32 KB): the next read starts
+        // now.
+        if (mShared == nullptr && mChunk == mCapacity && mCapacity == kMaxFileChunk)
+            requestAhead(mFilePos);
         return traits_type::to_int_type(*gptr());
+    }
+
+    std::size_t ConstrainedFileStreamBuf::takeAhead(std::size_t pos, std::size_t keep, std::size_t& start)
+    {
+        if (mAhead == nullptr)
+            return 0;
+        OMW3DS_DETAIL("io.wait"); // waiting for the read-ahead
+        std::unique_lock lock(mAhead->mMutex);
+        if (!mAhead->mPending)
+            return 0;
+        mAhead->mDone.wait(lock, [&] { return mAhead->mReady; });
+        mAhead->mPending = false;
+        mAhead->mReady = false;
+        if (pos < mAhead->mPos || pos >= mAhead->mPos + mAhead->mGot)
+            return 0; // seeked away (or the read failed): read again the usual way
+        start = mAhead->mPos;
+        // The kept tail of this fill goes in front of the new data, and the buffers swap.
+        if (keep > 0 && start == pos)
+            std::memcpy(mAhead->mBuffer.get() + mKeep - keep, egptr() - keep, keep);
+        std::swap(mBuffer, mAhead->mBuffer);
+        std::swap(mBufferSize, mAhead->mBufferSize);
+#ifdef OPENMW3DS_DEBUG
+        countRead(mAhead->mSize, mAhead->mGot, 0);
+#endif
+        return mAhead->mGot;
+    }
+
+    void ConstrainedFileStreamBuf::requestAhead(std::size_t pos)
+    {
+        if (pos >= mSize)
+            return;
+        if (mAhead == nullptr)
+        {
+            mAhead = std::make_unique<ReadAhead>();
+            mAhead->mThread = std::thread([this, ahead = mAhead.get()] {
+                std::unique_lock lock(ahead->mMutex);
+                while (true)
+                {
+                    ahead->mWake.wait(lock, [&] { return ahead->mQuit || (ahead->mPending && !ahead->mReady); });
+                    if (ahead->mQuit)
+                        return;
+                    const std::size_t at = ahead->mPos, size = ahead->mSize;
+                    lock.unlock();
+                    std::size_t got = 0;
+                    try
+                    {
+                        if (at != mHandlePos)
+                            File::seek(mFile, mOrigin + at);
+                        got = File::read(mFile, ahead->mBuffer.get() + mKeep, size);
+                        mHandlePos = at + got;
+                    }
+                    catch (const std::exception&)
+                    {
+                        mHandlePos = std::numeric_limits<std::size_t>::max(); // the main thread reads it again
+                    }
+                    lock.lock();
+                    ahead->mGot = got;
+                    ahead->mReady = true;
+                    ahead->mDone.notify_all();
+                }
+            });
+        }
+        const std::size_t size = std::min(mCapacity, mSize - pos);
+        std::lock_guard lock(mAhead->mMutex);
+        if (mAhead->mBufferSize < mKeep + size)
+        {
+            mAhead->mBuffer.reset(new char[mKeep + size]);
+            mAhead->mBufferSize = mKeep + size;
+        }
+        mAhead->mPos = pos;
+        mAhead->mSize = size;
+        mAhead->mGot = 0;
+        mAhead->mPending = true;
+        mAhead->mReady = false;
+        mAhead->mWake.notify_one();
+    }
+
+    ConstrainedFileStreamBuf::~ConstrainedFileStreamBuf()
+    {
+        if (mAhead == nullptr)
+            return;
+        {
+            std::lock_guard lock(mAhead->mMutex);
+            mAhead->mQuit = true;
+            mAhead->mWake.notify_one();
+        }
+        mAhead->mThread.join(); // after its read in flight, if any
     }
 
     std::streambuf::pos_type ConstrainedFileStreamBuf::seekTo(std::size_t newPos)

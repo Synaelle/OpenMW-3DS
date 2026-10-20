@@ -12,9 +12,11 @@ namespace p3ds::mem
         uint32_t regionTotal = 0;
         uint32_t regionUsed = 0; // code + heaps (libctru commits both heaps up front) + stacks
         uint32_t imageSize = 0; // executable image: text + rodata + data + bss
-        uint32_t heapTotal = 0; // app heap (malloc/new)
-        uint32_t heapUsed = 0; // bytes in use by malloc, as of the last heap walk (queryExact)
-        uint32_t heapArena = 0; // heap already obtained by malloc via sbrk (live)
+        uint32_t heapTotal = 0; // app heap newlib can use + the large pool's regions (pools.hpp)
+        uint32_t heapUsed = 0; // bytes in use by malloc and the pools, as of the last heap walk (queryExact)
+        uint32_t heapArena = 0; // newlib's arena (obtained by sbrk) + the large pool's used bytes (live)
+        uint32_t largeTotal = 0; // the large pool's regions (linear memory)
+        uint32_t largeUsed = 0;
         uint32_t heapUsedAgeMs = 0; // how old heapUsed is
         uint32_t linearTotal = 0; // GPU-visible linear heap
         uint32_t linearFree = 0;

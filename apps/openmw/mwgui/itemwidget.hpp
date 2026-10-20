@@ -18,6 +18,9 @@ namespace MWGui
     {
         MYGUI_RTTI_DERIVED(ItemWidget)
     public:
+#ifdef OPENMW_PLATFORM_3DS
+        VFS::Path::NormalizedView currentIcon3DS() const { return mCurrentIcon; }
+#endif
         ItemWidget();
 
         /// Register needed components with MyGUI's factory manager
@@ -55,6 +58,10 @@ namespace MWGui
 
         VFS::Path::Normalized mCurrentIcon;
         std::string mCurrentFrame;
+#ifdef OPENMW_PLATFORM_3DS
+        MyGUI::IntCoord mCurrentFrameCoord{ -1, -1, -1, -1 };
+        bool mCleared3DS = false; // setItem(empty) already applied: nothing set since
+#endif
 
         static std::map<std::string, float> mScales;
     };

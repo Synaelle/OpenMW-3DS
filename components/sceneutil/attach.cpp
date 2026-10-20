@@ -112,6 +112,44 @@ namespace SceneUtil
         }
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        // A skinned part's nodes are culled as if they were as big as the actor: with the 3DS's small feature
+        // culling (6 pixels, settings-3ds.cfg) an NPC a few metres away lost its hands and forearms, separate small
+        // meshes (test #92). Not setCullingActive(false): OSG then stops culling every parent too, the whole actor
+        // drawn off screen.
+        struct ActorSizedBound3DS : osg::Node::ComputeBoundingSphereCallback
+        {
+            osg::BoundingSphere computeBound(const osg::Node& node) const override
+            {
+                osg::BoundingSphere bound = node.computeBound();
+                if (bound.valid() && bound.radius() < 60.f) // roughly half an NPC's height
+                    bound.radius() = 60.f;
+                return bound;
+            }
+        };
+
+        struct KeepSkinnedPart3DS : osg::NodeVisitor
+        {
+            KeepSkinnedPart3DS()
+                : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN)
+            {
+            }
+            void apply(osg::Group& group) override
+            {
+                static const osg::ref_ptr<ActorSizedBound3DS> callback = new ActorSizedBound3DS;
+                if (group.getComputeBoundingSphereCallback() == nullptr)
+                {
+                    group.setComputeBoundingSphereCallback(callback);
+                    group.dirtyBound();
+                }
+                traverse(group);
+            }
+        };
+    }
+#endif
+
     osg::ref_ptr<osg::Node> attach(osg::ref_ptr<const osg::Node> toAttach, osg::Node* master, std::string_view filter,
         osg::Group* attachNode, Resource::SceneManager* sceneManager, const osg::Quat* attitude)
     {
@@ -125,6 +163,10 @@ namespace SceneUtil
             // add a ref to the original template to hint to the cache that it is still being used and should be kept in
             // cache.
             SceneUtil::addTemplateRef(*handle, toAttach.get());
+#ifdef OPENMW_PLATFORM_3DS
+            KeepSkinnedPart3DS keep;
+            handle->accept(keep);
+#endif
 
             if (handle->getNumChildren() == 1)
             {

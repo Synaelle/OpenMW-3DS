@@ -99,6 +99,42 @@ namespace
 
 namespace NifOsg
 {
+#ifdef OPENMW_PLATFORM_3DS
+    namespace
+    {
+        // M10: the particles' random numbers, a xorshift. Misc::Rng's minstd_rand reduces modulo 2^31-1, a 64-bit
+        // division the 3DS's CPU does in software (~1.9% of the main thread in a candle-lit interior, the Zeste
+        // profile of 20/10). Visual only: the game's own generator (saved in savegames) is untouched.
+        uint32_t sParticleRng = 0x9E3779B9u;
+
+        uint32_t particleNext()
+        {
+            sParticleRng ^= sParticleRng << 13;
+            sParticleRng ^= sParticleRng >> 17;
+            sParticleRng ^= sParticleRng << 5;
+            return sParticleRng;
+        }
+
+        float rollClosedProbability() // [0, 1]
+        {
+            return float(particleNext() >> 8) * (1.f / 16777215.f);
+        }
+
+        template <class T>
+        T rollDice(T max) // [0, max)
+        {
+            return max > 0 ? static_cast<T>((uint64_t(particleNext()) * uint64_t(max)) >> 32) : 0;
+        }
+    }
+#define OMW3DS_PARTICLE_RNG
+#endif
+#ifdef OMW3DS_PARTICLE_RNG
+#define PARTICLE_ROLL_CLOSED() rollClosedProbability()
+#define PARTICLE_ROLL_DICE(max) rollDice(max)
+#else
+#define PARTICLE_ROLL_CLOSED() Misc::Rng::rollClosedProbability()
+#define PARTICLE_ROLL_DICE(max) Misc::Rng::rollDice(max)
+#endif
 
     ParticleSystem::ParticleSystem()
         : osgParticle::ParticleSystem()
@@ -202,18 +238,18 @@ namespace NifOsg
 
     void ParticleShooter::shoot(osgParticle::Particle* particle) const
     {
-        float hdir = mHorizontalDir + mHorizontalAngle * (2.f * Misc::Rng::rollClosedProbability() - 1.f);
-        float vdir = mVerticalDir + mVerticalAngle * (2.f * Misc::Rng::rollClosedProbability() - 1.f);
+        float hdir = mHorizontalDir + mHorizontalAngle * (2.f * PARTICLE_ROLL_CLOSED() - 1.f);
+        float vdir = mVerticalDir + mVerticalAngle * (2.f * PARTICLE_ROLL_CLOSED() - 1.f);
 
         osg::Vec3f dir
             = (osg::Quat(vdir, osg::Vec3f(0, 1, 0)) * osg::Quat(hdir, osg::Vec3f(0, 0, 1))) * osg::Vec3f(0, 0, 1);
 
-        float vel = mMinSpeed + (mMaxSpeed - mMinSpeed) * Misc::Rng::rollClosedProbability();
+        float vel = mMinSpeed + (mMaxSpeed - mMinSpeed) * PARTICLE_ROLL_CLOSED();
         particle->setVelocity(dir * vel);
 
         // Not supposed to set this here, but there doesn't seem to be a better way of doing it
         particle->setLifeTime(std::max(
-            std::numeric_limits<float>::epsilon(), mLifetime + mLifetimeRandom * Misc::Rng::rollClosedProbability()));
+            std::numeric_limits<float>::epsilon(), mLifetime + mLifetimeRandom * PARTICLE_ROLL_CLOSED()));
     }
 
     GrowFadeAffector::GrowFadeAffector(float growTime, float fadeTime)
@@ -487,7 +523,7 @@ namespace NifOsg
             }
             else
             {
-                size_t randomIndex = Misc::Rng::rollDice(mTargets.size());
+                size_t randomIndex = PARTICLE_ROLL_DICE(mTargets.size());
                 recordIndex = mTargets[randomIndex];
             }
 
@@ -533,7 +569,7 @@ namespace NifOsg
 
                 auto p1 = parent.getTrans();
                 auto p2 = current.getTrans();
-                current.setTrans((p2 - p1) * Misc::Rng::rollClosedProbability() + p1);
+                current.setTrans((p2 - p1) * PARTICLE_ROLL_CLOSED() + p1);
 
                 emitterToPs = current * emitterToPs;
             }
@@ -554,7 +590,7 @@ namespace NifOsg
             if (particle)
             {
                 if (useGeometryEmitter)
-                    particle->setPosition((*geometryVertices)[Misc::Rng::rollDice(geometryVertices->getNumElements())]);
+                    particle->setPosition((*geometryVertices)[PARTICLE_ROLL_DICE(geometryVertices->getNumElements())]);
                 else if (mPlacer)
                     mPlacer->place(particle);
 

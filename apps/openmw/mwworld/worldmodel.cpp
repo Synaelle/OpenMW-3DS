@@ -4,6 +4,9 @@
 #include <cassert>
 #include <optional>
 #include <stdexcept>
+#ifdef OPENMW_PLATFORM_3DS
+#include <sstream>
+#endif
 
 #include <components/debug/debuglog.hpp>
 #include <components/esm/defs.hpp>
@@ -12,6 +15,7 @@
 #include <components/esm3/cellstate.hpp>
 #include <components/esm3/esmreader.hpp>
 #include <components/esm3/esmwriter.hpp>
+#include <components/esm3/formatversion.hpp>
 #include <components/esm3/loadregn.hpp>
 #include <components/esm4/loadwrld.hpp>
 #include <components/loadinglistener/loadinglistener.hpp>
@@ -167,6 +171,10 @@ void MWWorld::WorldModel::clear()
     mCells.clear();
     std::fill(mIdCache.begin(), mIdCache.end(), std::make_pair(ESM::RefId(), (MWWorld::CellStore*)nullptr));
     mIdCacheIndex = 0;
+#ifdef OPENMW_PLATFORM_3DS
+    mEvicted.clear();
+    mCellUse.clear();
+#endif
 }
 
 MWWorld::Ptr MWWorld::WorldModel::getPtrAndCache(const ESM::RefId& name, CellStore& cellStore)
@@ -500,7 +508,11 @@ std::vector<MWWorld::Ptr> MWWorld::WorldModel::getAll(ESM::RefId id, ESM::RefId 
 
 size_t MWWorld::WorldModel::countSavedGameRecords() const
 {
-    return std::count_if(mCells.begin(), mCells.end(), [](const auto& v) { return v.second.hasState(); });
+    return std::count_if(mCells.begin(), mCells.end(), [](const auto& v) { return v.second.hasState(); })
+#ifdef OPENMW_PLATFORM_3DS
+        + mEvicted.size()
+#endif
+        ;
 }
 
 void MWWorld::WorldModel::write(ESM::ESMWriter& writer, Loading::Listener& progress) const
@@ -511,7 +523,163 @@ void MWWorld::WorldModel::write(ESM::ESMWriter& writer, Loading::Listener& progr
             writeCell(writer, cellStore);
             progress.increaseProgress();
         }
+#ifdef OPENMW_PLATFORM_3DS
+    // Evicted cells: their record as it was written (outside any open record, so no size bookkeeping).
+    for (const auto& [id, record] : mEvicted)
+    {
+        writer.write(record.data(), record.size());
+        progress.increaseProgress();
+    }
+#endif
 }
+
+#ifdef OPENMW_PLATFORM_3DS
+void MWWorld::WorldModel::touchCell(const CellStore& cell)
+{
+    mCellUse[cell.getCell()->getId()] = ++mCellUseClock;
+}
+
+std::size_t MWWorld::WorldModel::evictedBytes() const
+{
+    std::size_t bytes = 0;
+    for (const auto& [id, record] : mEvicted)
+        bytes += record.size();
+    return bytes;
+}
+
+std::size_t MWWorld::WorldModel::evictCells(const std::function<bool(const CellStore&)>& pinned, std::size_t maxKept)
+{
+    std::vector<std::pair<uint64_t, CellStore*>> candidates;
+    for (auto& [id, cellStore] : mCells)
+    {
+        if (cellStore.getState() != CellStore::State_Loaded || cellStore.getCell()->isEsm4()
+            || cellStore.hasMovedRefs() || pinned(cellStore))
+            continue;
+        const auto use = mCellUse.find(id);
+        candidates.emplace_back(use == mCellUse.end() ? 0 : use->second, &cellStore);
+    }
+    if (candidates.size() <= maxKept)
+        return 0;
+    std::sort(candidates.begin(), candidates.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    candidates.resize(candidates.size() - maxKept);
+
+    std::size_t evicted = 0;
+    for (const auto& [use, cellStore] : candidates)
+    {
+        const ESM::RefId id = cellStore->getCell()->getId();
+        if (cellStore->hasState())
+        {
+            try
+            {
+                ESM::ESMWriter writer;
+                writer.setFormatVersion(ESM::CurrentSaveGameFormatVersion);
+                writer.setVersion(0);
+                writer.setType(0);
+                writer.setAuthor("");
+                writer.setDescription("");
+                std::ostringstream stream;
+                writer.save(stream);
+                const std::size_t headerEnd = static_cast<std::size_t>(stream.tellp());
+                writeCell(writer, *cellStore);
+                writer.close();
+                std::string bytes = stream.str();
+                if (mEvictHeader.empty())
+                    mEvictHeader = bytes.substr(0, headerEnd);
+                mEvicted[id] = bytes.substr(headerEnd);
+#ifdef OPENMW3DS_DEBUG
+                mEvictedSignature[id] = signature(*cellStore);
+#endif
+            }
+            catch (const std::exception& e)
+            {
+                Log(Debug::Warning) << "Cell eviction: could not write " << id << ", kept: " << e.what();
+                mEvicted.erase(id);
+                continue;
+            }
+        }
+        Log(Debug::Info) << "Cell eviction: " << cellStore->getCell()->getDescription()
+                         << (mEvicted.contains(id) ? " written and freed" : " freed (unchanged)");
+        if (cellStore->isExterior())
+            mExteriors.erase(cellStore->getCell()->getExteriorCellLocation());
+        else
+            mInteriors.erase(std::string(cellStore->getCell()->getNameId()));
+        for (auto& entry : mIdCache)
+            if (entry.second == cellStore)
+                entry = { ESM::RefId(), nullptr };
+        mCellUse.erase(id);
+        mCells.erase(id); // its references leave the Ptr registry as they are destroyed
+        ++evicted;
+    }
+    return evicted;
+}
+
+#ifdef OPENMW3DS_DEBUG
+uint64_t MWWorld::WorldModel::signature(CellStore& cell)
+{
+    uint64_t sum = 0;
+    std::size_t refs = 0;
+    cell.forEach(
+        [&](const Ptr& ptr) {
+            const ESM::Position& pos = ptr.getRefData().getPosition();
+            sum = sum * 1099511628211ull + uint64_t(ptr.getCellRef().getRefNum().mIndex)
+                + uint64_t(ptr.getCellRef().getCount(false)) * 7 + (ptr.getRefData().isEnabled() ? 1 : 0)
+                + uint64_t(int64_t(pos.pos[0] * 4) + int64_t(pos.pos[1] * 4) * 3 + int64_t(pos.pos[2] * 4) * 5);
+            ++refs;
+            return true;
+        },
+        true);
+    return sum ^ (uint64_t(refs) << 48);
+}
+
+bool MWWorld::WorldModel::selfTestEviction(std::size_t count)
+{
+    bool ok = true;
+    std::vector<ESM::RefId> ids;
+    for (const auto& [id, record] : mEvicted)
+        if (ids.size() < count)
+            ids.push_back(id);
+    for (const ESM::RefId& id : ids)
+    {
+        const uint64_t want = mEvictedSignature[id];
+        CellStore* cell = findCell(id, true);
+        const uint64_t got = cell != nullptr ? signature(*cell) : 0;
+        const bool same = got == want;
+        ok = ok && same;
+        Log(same ? Debug::Info : Debug::Error)
+            << "Cell eviction self-test: " << (cell != nullptr ? cell->getCell()->getDescription() : id.toDebugString())
+            << (same ? " read back identical" : " DIFFERS after reading back");
+    }
+    return ok;
+}
+#endif
+
+void MWWorld::WorldModel::restoreEvicted(CellStore& cell)
+{
+    const auto it = mEvicted.find(cell.getCell()->getId());
+    if (it == mEvicted.end())
+        return;
+    std::string record = std::move(it->second);
+    mEvicted.erase(it);
+    try
+    {
+        ESM::ESMReader reader;
+        reader.open(std::make_unique<std::istringstream>(mEvictHeader + record), "evicted cell");
+        if (reader.hasMoreRecs())
+        {
+            const ESM::NAME name = reader.getRecName();
+            reader.getRecHeader();
+            readRecord(reader, name.toInt());
+        }
+        Log(Debug::Info) << "Cell eviction: " << cell.getCell()->getDescription() << " read back (" << record.size()
+                         << " bytes of changes)";
+    }
+    catch (const std::exception& e)
+    {
+        Log(Debug::Error) << "Cell eviction: could not read back " << cell.getCell()->getId() << ": " << e.what();
+    }
+}
+#endif
 
 struct MWWorld::WorldModel::GetCellStoreCallback : public CellStore::GetCellStoreCallback
 {

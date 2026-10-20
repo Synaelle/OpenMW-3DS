@@ -74,6 +74,9 @@
 #include <components/resource/resourcesystem.hpp>
 
 #include "../mwbase/environment.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include "worldmodel.hpp"
+#endif
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/world.hpp"
 
@@ -728,11 +731,29 @@ namespace MWWorld
             loadRefs();
 
             mState = State_Loaded;
+#ifdef OPENMW_PLATFORM_3DS
+            // An evicted cell: its saved changes go back on top of the content files' references.
+            if (MWWorld::WorldModel* model = MWBase::Environment::get().getWorldModel();
+                model != nullptr && model->isEvicted(mCellVariant.getId()))
+                model->restoreEvicted(*this);
+#endif
         }
     }
 
     void CellStore::preload()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // Listing ids would miss what the saved changes added: load it whole.
+        if (mState == State_Unloaded)
+        {
+            if (MWWorld::WorldModel* model = MWBase::Environment::get().getWorldModel();
+                model != nullptr && model->isEvicted(mCellVariant.getId()))
+            {
+                load();
+                return;
+            }
+        }
+#endif
         if (mState == State_Unloaded)
         {
             listRefs();

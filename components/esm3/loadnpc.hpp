@@ -1,6 +1,7 @@
 #ifndef OPENMW_ESM_NPC_H
 #define OPENMW_ESM_NPC_H
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,6 +22,53 @@ namespace ESM
 
     class ESMReader;
     class ESMWriter;
+
+#ifdef OPENMW_PLATFORM_3DS
+    // A sorted vector with the parts of std::map's interface NPC stats use (M9: 2675 NPC records kept 35 map nodes
+    // each, ~1 KB more per record than this).
+    class StatMap
+    {
+    public:
+        using value_type = std::pair<ESM::RefId, unsigned char>;
+        using const_iterator = std::vector<value_type>::const_iterator;
+
+        const_iterator begin() const { return mItems.begin(); }
+        const_iterator end() const { return mItems.end(); }
+        bool empty() const { return mItems.empty(); }
+        std::size_t size() const { return mItems.size(); }
+        void clear() { mItems.clear(); }
+        void reserve(std::size_t count) { mItems.reserve(count); }
+        const_iterator find(const ESM::RefId& key) const
+        {
+            const auto it = lowerBound(key);
+            return it != mItems.end() && it->first == key ? const_iterator(it) : mItems.end();
+        }
+        void emplace(const ESM::RefId& key, unsigned char value)
+        {
+            const auto it = lowerBound(key);
+            if (it == mItems.end() || !(it->first == key))
+                mItems.insert(it, value_type(key, value));
+        }
+        unsigned char& operator[](const ESM::RefId& key)
+        {
+            auto it = lowerBound(key);
+            if (it == mItems.end() || !(it->first == key))
+                it = mItems.insert(it, value_type(key, 0));
+            return it->second;
+        }
+        bool operator==(const StatMap& other) const { return mItems == other.mItems; }
+
+    private:
+        std::vector<value_type>::iterator lowerBound(const ESM::RefId& key) const
+        {
+            auto& items = const_cast<std::vector<value_type>&>(mItems);
+            return std::lower_bound(items.begin(), items.end(), key,
+                [](const value_type& item, const ESM::RefId& k) { return item.first < k; });
+        }
+
+        std::vector<value_type> mItems;
+    };
+#endif
 
     /*
      * NPC definition
@@ -79,9 +127,15 @@ namespace ESM
 
         struct NPDTstruct52
         {
+#ifdef OPENMW_PLATFORM_3DS
+            StatMap mAttributes;
+            // mSkill can grow up to 200, it must be unsigned
+            StatMap mSkills;
+#else
             std::map<ESM::RefId, unsigned char> mAttributes;
             // mSkill can grow up to 200, it must be unsigned
             std::map<ESM::RefId, unsigned char> mSkills;
+#endif
             int16_t mLevel;
 
             uint16_t mHealth, mMana, mFatigue;

@@ -43,9 +43,16 @@ namespace MWGui
         mSlider->setScrollRange(maxCount);
         mItemText->setCaptionWithReplacing(item);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // 3DS (hardware test #71): on the bottom screen (40, 240, 320 x 240), not centred across both.
+        (void)viewSize;
+        const int width = 316;
+        setCoord(40 + (320 - width) / 2, 240 + (240 - mMainWidget->getHeight()) / 2, width, mMainWidget->getHeight());
+#else
         int width = std::max(mItemText->getTextSize().width + 160, 320);
         setCoord(viewSize.width / 2 - width / 2, viewSize.height / 2 - mMainWidget->getHeight() / 2, width,
             mMainWidget->getHeight());
+#endif
 
         // by default, the text edit field has the focus of the keyboard
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mItemEdit);

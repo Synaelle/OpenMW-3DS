@@ -59,10 +59,15 @@ def emblem(size):
     return premultiplied.convert("RGBA")
 
 
-def compose(width, height, emblem_size):
-    image = background(width, height)
+def compose(width, height, emblem_size, transparent=False):
+    """The emblem centred on the dark background, or alone on transparency (the banner, the tester 2026-10-20: it
+    shows over the HOME Menu's theme; the SMDH icon has no transparency, so it keeps the background)."""
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0)) if transparent else background(width, height)
     mark = emblem(emblem_size)
-    image.paste(mark, ((width - mark.width) // 2, (height - mark.height) // 2), mark)
+    if transparent:
+        image.alpha_composite(mark, ((width - mark.width) // 2, (height - mark.height) // 2))
+    else:
+        image.paste(mark, ((width - mark.width) // 2, (height - mark.height) // 2), mark)
     return image
 
 
@@ -88,7 +93,7 @@ def convert_audio():
 def main():
     compose(48, 48, 44).save(os.path.join(PACKAGING, "icon.png"))
     print("icon.png: 48x48")
-    compose(256, 128, 116).save(os.path.join(PACKAGING, "banner.png"))
+    compose(256, 128, 116, transparent=True).save(os.path.join(PACKAGING, "banner.png"))
     print("banner.png: 256x128")
     convert_audio()
 

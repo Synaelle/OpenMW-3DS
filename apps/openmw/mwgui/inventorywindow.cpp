@@ -98,7 +98,11 @@ namespace MWGui
     {
         mPreviewTexture
             = std::make_unique<MyGUIPlatform::OSGTexture>(mPreview->getTexture(), mPreview->getTextureStateSet());
+#ifdef OPENMW_PLATFORM_3DS
+        rebuildPreview3DS();
+#else
         mPreview->rebuild();
+#endif
 
         mMainWidget->castType<MyGUI::Window>()->eventWindowChangeCoord
             += MyGUI::newDelegate(this, &InventoryWindow::onWindowResize);
@@ -191,7 +195,11 @@ namespace MWGui
         mFilterMisc->setStateSelected(false);
 
         mPreview->updatePtr(mPtr);
+#ifdef OPENMW_PLATFORM_3DS
+        rebuildPreview3DS();
+#else
         mPreview->rebuild();
+#endif
         mPreview->update();
 
         dirtyPreview();
@@ -499,6 +507,14 @@ namespace MWGui
         if (focus == mFilterEdit)
             MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(nullptr);
 
+#ifdef OPENMW_PLATFORM_3DS
+        if (mPreviewStale3DS)
+        {
+            mPreviewStale3DS = false;
+            mPreview->rebuild();
+            mPreview->update();
+        }
+#endif
         if (!mPtr.isEmpty())
         {
             updateEncumbranceBar();
@@ -951,8 +967,21 @@ namespace MWGui
 
     void InventoryWindow::rebuildAvatar()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        rebuildPreview3DS();
+#else
         mPreview->rebuild();
+#endif
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    void InventoryWindow::rebuildPreview3DS()
+    {
+        mPreviewStale3DS = !mMainWidget->getVisible();
+        if (!mPreviewStale3DS)
+            mPreview->rebuild();
+    }
+#endif
 
     void InventoryWindow::onInventoryUpdate(const MWWorld::Ptr& ptr)
     {

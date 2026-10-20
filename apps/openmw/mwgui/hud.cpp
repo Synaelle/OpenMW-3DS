@@ -33,6 +33,21 @@
 
 namespace MWGui
 {
+    namespace
+    {
+        void setProgress(MyGUI::ProgressBar* bar, size_t range, size_t position)
+        {
+#ifdef OPENMW_PLATFORM_3DS
+            // M10: the mechanics set the weapon and spell bars every frame, and a bar set to the values it shows
+            // still redraws the interface (MyGUI's ProgressBar re-lays its track).
+            if (bar->getProgressRange() == range && bar->getProgressPosition() == std::min(position, range))
+                return;
+#endif
+            bar->setProgressRange(range);
+            bar->setProgressPosition(position);
+        }
+    }
+
     HUD::HUD(CustomMarkerCollection& customMarkers, DragAndDrop* dragAndDrop, MWRender::LocalMap* localMapRender)
         : WindowBase("openmw_hud.layout")
         , LocalMapBase(customMarkers, localMapRender, Settings::map().mLocalMapHudFogOfWar)
@@ -121,6 +136,18 @@ namespace MWGui
         if (id != "FBar")
             current = std::max(0, current);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the stats watcher calls this whenever the float changes (fatigue: every frame while walking); a bar
+        // set to the same values still redraws the interface (MyGUI's ProgressBar re-lays its track), and the 3DS
+        // shows the values on its own panel (n3ds/hud3ds.cpp), not in these tooltips.
+        {
+            MyGUI::ProgressBar* bar = id == "HBar" ? mHealth : id == "MBar" ? mMagicka : mStamina;
+            const size_t range = static_cast<size_t>(std::max(0, modified));
+            if (bar->getProgressRange() == range
+                && bar->getProgressPosition() == std::min(range, static_cast<size_t>(std::max(0, current))))
+                return;
+        }
+#endif
         MyGUI::Widget* w;
         std::string valStr = MyGUI::utility::toString(current) + " / " + MyGUI::utility::toString(modified);
         if (id == "HBar")
@@ -346,8 +373,7 @@ namespace MWGui
             mWeaponSpellBox->setVisible(true);
         }
 
-        mSpellStatus->setProgressRange(100);
-        mSpellStatus->setProgressPosition(successChancePercent);
+        setProgress(mSpellStatus, 100, successChancePercent);
 
         mSpellBox->setUserString("ToolTipType", "Spell");
         mSpellBox->setUserString("Spell", spellId.serialize());
@@ -377,8 +403,7 @@ namespace MWGui
             mWeaponSpellBox->setVisible(true);
         }
 
-        mSpellStatus->setProgressRange(100);
-        mSpellStatus->setProgressPosition(chargePercent);
+        setProgress(mSpellStatus, 100, chargePercent);
 
         mSpellBox->setUserString("ToolTipType", "ItemPtr");
         mSpellBox->setUserData(MWWorld::Ptr(item));
@@ -401,8 +426,7 @@ namespace MWGui
         mWeapBox->setUserString("ToolTipType", "ItemPtr");
         mWeapBox->setUserData(MWWorld::Ptr(item));
 
-        mWeapStatus->setProgressRange(100);
-        mWeapStatus->setProgressPosition(durabilityPercent);
+        setProgress(mWeapStatus, 100, durabilityPercent);
 
         mWeapImage->setItem(item);
     }
@@ -418,8 +442,7 @@ namespace MWGui
             mWeaponSpellBox->setVisible(true);
         }
 
-        mSpellStatus->setProgressRange(100);
-        mSpellStatus->setProgressPosition(0);
+        setProgress(mSpellStatus, 100, 0);
         mSpellImage->setItem(MWWorld::Ptr());
         mSpellBox->clearUserStrings();
         mSpellBox->setUserData(MyGUI::Any::Null);
@@ -436,13 +459,10 @@ namespace MWGui
             mWeaponSpellBox->setVisible(true);
         }
 
-        mWeapStatus->setProgressRange(100);
-        mWeapStatus->setProgressPosition(0);
+        setProgress(mWeapStatus, 100, 0);
 
         MWBase::World* world = MWBase::Environment::get().getWorld();
         MWWorld::Ptr player = world->getPlayerPtr();
-
-        mWeapImage->setItem(MWWorld::Ptr());
 
         constexpr VFS::Path::NormalizedView werewolfHand("icons/k/tx_werewolf_hand.dds");
         constexpr VFS::Path::NormalizedView stealthHandToHand("icons/k/stealth_handtohand.dds");
@@ -450,7 +470,14 @@ namespace MWGui
         const VFS::Path::NormalizedView icon
             = (player.getClass().getNpcStats(player).isWerewolf()) ? werewolfHand : stealthHandToHand;
 
-        mWeapImage->setIcon(icon);
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: called every frame with empty hands; clearing then setting the fist again redrew the interface.
+        if (mWeapImage->currentIcon3DS() != icon)
+#endif
+        {
+            mWeapImage->setItem(MWWorld::Ptr());
+            mWeapImage->setIcon(icon);
+        }
 
         mWeapBox->clearUserStrings();
         mWeapBox->setUserString("ToolTipType", "Layout");
@@ -546,9 +573,21 @@ namespace MWGui
         if (!mWeaponVisible && !mSpellVisible)
             mWeaponSpellBox->setVisible(false);
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the mechanics call setSneakVisible() every frame, and MyGUI redraws a widget (and all it holds) on
+        // any setPosition, even to where it already is: move only what moves.
+        const auto setPosition = [](MyGUI::Widget* widget, int left, int top) {
+            if (widget->getPosition() != MyGUI::IntPoint(left, top))
+                widget->setPosition(left, top);
+        };
+        setPosition(mWeapBox, mWeapBoxBaseLeft - weapDx, mWeapBox->getTop());
+        setPosition(mSpellBox, mSpellBoxBaseLeft - spellDx, mSpellBox->getTop());
+        setPosition(mSneakBox, mSneakBoxBaseLeft - sneakDx, mSneakBox->getTop());
+#else
         mWeapBox->setPosition(mWeapBoxBaseLeft - weapDx, mWeapBox->getTop());
         mSpellBox->setPosition(mSpellBoxBaseLeft - spellDx, mSpellBox->getTop());
         mSneakBox->setPosition(mSneakBoxBaseLeft - sneakDx, mSneakBox->getTop());
+#endif
 
         const MyGUI::IntSize& viewSize = MyGUI::RenderManager::getInstance().getViewSize();
 
@@ -561,8 +600,13 @@ namespace MWGui
         if (!mMapVisible)
             mCellNameBox->setVisible(false);
 
+#ifdef OPENMW_PLATFORM_3DS
+        setPosition(mEffectBox, (viewSize.width - mEffectBoxBaseRight) - mEffectBox->getWidth() + effectsDx,
+            mEffectBox->getTop());
+#else
         mEffectBox->setPosition(
             (viewSize.width - mEffectBoxBaseRight) - mEffectBox->getWidth() + effectsDx, mEffectBox->getTop());
+#endif
     }
 
     void HUD::updateEnemyHealthBar()
@@ -609,10 +653,8 @@ namespace MWGui
         mSpellName.clear();
         mWeaponSpellBox->setVisible(false);
 
-        mWeapStatus->setProgressRange(100);
-        mWeapStatus->setProgressPosition(0);
-        mSpellStatus->setProgressRange(100);
-        mSpellStatus->setProgressPosition(0);
+        setProgress(mWeapStatus, 100, 0);
+        setProgress(mSpellStatus, 100, 0);
 
         mWeapImage->setItem(MWWorld::Ptr());
         mSpellImage->setItem(MWWorld::Ptr());

@@ -150,12 +150,22 @@ namespace ESM
                         Log(Debug::Verbose) << ss.str();
                     }
 
+#ifdef OPENMW_PLATFORM_3DS
+                    // M10: the game compiles scripts from their text (SCTX) and never reads the original compiler's
+                    // bytecode (only the editor and save() do; static scripts are never saved): not kept.
+                    esm.skip(subSize);
+#else
                     mScriptData.resize(subSize);
                     esm.getExact(mScriptData.data(), mScriptData.size());
+#endif
                     break;
                 }
                 case fourCC("SCTX"):
+#ifdef OPENMW_PLATFORM_3DS
+                    mScriptText.load(esm);
+#else
                     mScriptText = esm.getHString();
+#endif
                     break;
                 case SREC_DELE:
                     esm.skipHSub();

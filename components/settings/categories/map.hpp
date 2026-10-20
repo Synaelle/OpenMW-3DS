@@ -25,6 +25,10 @@ namespace Settings
         SettingValue<int> mLocalMapWidgetSize{ mIndex, "Map", "local map widget size", makeMaxSanitizerInt(1) };
         SettingValue<bool> mGlobal{ mIndex, "Map", "global" };
         SettingValue<bool> mAllowZooming{ mIndex, "Map", "allow zooming" };
+#ifdef OPENMW_PLATFORM_3DS
+        // The HUD's minimap on the bottom screen (Options > Preferences): off saves its redraws while walking.
+        SettingValue<bool> mMinimap3DS{ mIndex, "Map", "minimap" };
+#endif
         SettingValue<int> mMaxLocalViewingDistance{ mIndex, "Map", "max local viewing distance",
             makeMaxSanitizerInt(Constants::CellGridRadius) };
     };

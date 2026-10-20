@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- OpenMW's main menu layout for the 3DS: the version line in plain text, without the edit box's frame (the
+     tester, 20/10); mainmenu.cpp places it and writes "<the port's version> (built on OpenMW <version>)". -->
+<MyGUI type="Layout">
+    <!-- The entire screen -->
+    <Widget type="Widget" layer="MainMenu" position="0 0 300 300" name="_Main">
+        <Widget type="EditBox" skin="SandText" position="0 250 280 50" align="Bottom Right" name="VersionText">
+            <Property key="TextAlign" value="Right"/>
+            <Property key="TextShadow" value="true"/>
+            <Property key="TextShadowColour" value="0 0 0"/>
+            <Property key="Static" value="true"/>
+            <Property key="NeedMouse" value="false"/>
+        </Widget>
+    </Widget>
+</MyGUI>

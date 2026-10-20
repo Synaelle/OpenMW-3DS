@@ -1,0 +1,15 @@
+diff --git a/MyGUIEngine/src/MyGUI_EditText.cpp b/MyGUIEngine/src/MyGUI_EditText.cpp
+index ea3beca..3dcd814 100644
+--- a/MyGUIEngine/src/MyGUI_EditText.cpp
++++ b/MyGUIEngine/src/MyGUI_EditText.cpp
+@@ -135,6 +135,10 @@ namespace MyGUI
+ 
+ 	void EditText::setCaption(const UString& _value)
+ 	{
++		// The 3DS port skips unchanged interface frames: a caption set to the text it shows is no change (OpenMW's
++		// HUD sets some every frame).
++		if (mCaption == _value)
++			return;
+ 		mCaption = _value;
+ 		mUtf32Caption = mCaption.asUTF32();
+ 		mTextOutDate = true;

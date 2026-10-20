@@ -600,10 +600,13 @@ endif()
 
 add_library(components STATIC ${COMPONENT_FILES})
 if (OPENMW_PLATFORM_3DS)
-    # DVLE order matters (backend.cpp init): scene, probe, flat, then the scene shader's light variants.
-    ctr_add_shader_library(render3ds_shaders OUTPUT scene.shbin render3ds/scene.v.pica render3ds/probe.v.pica
-        render3ds/flat.v.pica render3ds/scene1.v.pica render3ds/scene0.v.pica)
-    dkp_add_embedded_binary_library(render3ds_shaders_bin render3ds_shaders)
+    # DVLE order matters (backend.cpp init): scene, flat, then the scene shader's light variants and the skinned
+    # one. One DVLB: the PICA holds 512 instructions and a frame switches between them by entry point alone. The
+    # self-test's probe shader is a DVLB of its own (M10: its room went to the skinned variant).
+    ctr_add_shader_library(render3ds_shaders OUTPUT scene.shbin render3ds/scene.v.pica render3ds/flat.v.pica
+        render3ds/scene1.v.pica render3ds/scene0.v.pica render3ds/skin1.v.pica)
+    ctr_add_shader_library(render3ds_probe_shader OUTPUT probe.shbin render3ds/probe.v.pica)
+    dkp_add_embedded_binary_library(render3ds_shaders_bin render3ds_shaders render3ds_probe_shader)
     target_link_libraries(components platform3ds render3ds_shaders_bin citro3d)
 endif()
 

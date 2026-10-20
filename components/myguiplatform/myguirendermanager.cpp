@@ -1,8 +1,15 @@
 #include "myguirendermanager.hpp"
 
 #include <cstring>
+#include <map>
+#include <string>
 #include <vector>
 
+#include <components/debug/debuglog.hpp>
+
+#include <MyGUI_LayerManager.h>
+#include <MyGUI_OverlappedLayer.h>
+#include <MyGUI_SharedLayer.h>
 #include <MyGUI_Timer.h>
 
 #include <osg/Drawable>
@@ -601,10 +608,68 @@ namespace MyGUIPlatform
             return;
 #endif
         p3ds::perf::Phase phase("guiCull"); // MyGUI layout -> batches, in the cull traversal
+        // M10: nothing to lay out again when no layer is out of date (MyGUI marks a layer when a widget moves,
+        // shows, hides or changes its text, colour or image): last frame's batches still describe the interface,
+        // and the backend sees them unchanged (its own fast path). ~2.8 ms a frame on the console (test #71).
+        {
+            static bool collected = false;
+            static unsigned calls = 0, lastLayout = 0; // frames (collections asked), the last one laid out
+            ++calls;
+            bool outOfDate = mUpdate || !collected;
+            MyGUI::LayerManager::EnumeratorLayer layers = MyGUI::LayerManager::getInstance().getEnumerator();
+            while (!outOfDate && layers.next())
+            {
+                MyGUI::ILayer* layer = layers.current();
+                if (auto* overlapped = dynamic_cast<MyGUI::OverlappedLayer*>(layer))
+                    outOfDate = overlapped->isOutOfDate();
+                else if (auto* shared = dynamic_cast<MyGUI::SharedLayer*>(layer))
+                {
+                    // An empty shared layer has no node to ask (MyGUI's isOutOfDate() would dereference it): it
+                    // draws nothing, so only losing or gaining its node is a change.
+                    static std::map<const MyGUI::ILayer*, size_t> nodeCounts;
+                    const size_t nodes = shared->getLayerNodeCount();
+                    auto [known, added] = nodeCounts.emplace(layer, nodes);
+                    outOfDate = added || known->second != nodes || (nodes != 0 && shared->isOutOfDate());
+                    known->second = nodes;
+                }
+                else
+                    outOfDate = true; // a layer type that can't tell
+#ifdef OPENMW3DS_DEBUG
+                // Which layer keeps the interface from being skipped (logged every 150 collections).
+                if (outOfDate)
+                {
+                    static std::map<std::string, int> counts;
+                    static int total = 0;
+                    ++counts[layer->getName()];
+                    if (++total % 150 == 0)
+                    {
+                        std::string line;
+                        for (const auto& [name, count] : counts)
+                            line += " " + name + "=" + std::to_string(count);
+                        Log(Debug::Info) << "3ds gui out of date:" << line;
+                        counts.clear();
+                    }
+                }
+#endif
+            }
+            if (!outOfDate)
+                return;
+            // M10: with only the HUD up, its changes (the minimap's steps, the compass, the bars while running:
+            // ~40% of frames while walking, each a layout, a fingerprint and a redraw) show at most every 3rd frame
+            // (10 a second); menus and pages keep every frame. The layers stay out of date, so the next allowed
+            // frame lays everything out.
+            if (collected && !mUpdate && Render3DS::hudOnly() && calls - lastLayout < 3)
+                return;
+            lastLayout = calls;
+            collected = true;
+        }
 #endif
         begin();
         onRenderToTarget(this, mUpdate);
         end();
+#ifdef OPENMW_PLATFORM_3DS
+        Render3DS::noteGuiCollected();
+#endif
 
         mUpdate = false;
     }

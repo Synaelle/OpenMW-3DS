@@ -13,6 +13,17 @@
 #include <components/misc/strings/algorithm.hpp>
 #include <components/misc/utf8stream.hpp>
 
+#ifdef __3DS__
+#include <chrono>
+
+#include <3ds/types.h>
+#include <3ds/result.h>
+extern "C"
+{
+#include <3ds/archive.h>
+}
+#endif
+
 bool MWState::operator<(const Slot& left, const Slot& right)
 {
     return left.mTimeStamp < right.mTimeStamp;
@@ -43,7 +54,19 @@ void MWState::Character::addSlot(const std::filesystem::path& path, const std::s
 {
     Slot slot;
     slot.mPath = path;
+#ifdef __3DS__
+    // The SD card driver's stat leaves the time at 0 (the saves showed 1970.01.01); its own call has it.
+    u64 mtime = 0;
+    if (R_SUCCEEDED(archive_getmtime(path.string().c_str(), &mtime)) && mtime != 0)
+        slot.mTimeStamp = std::filesystem::file_time_type::clock::now()
+            + std::chrono::duration_cast<std::filesystem::file_time_type::duration>(
+                std::chrono::system_clock::from_time_t(static_cast<std::time_t>(mtime))
+                - std::chrono::system_clock::now());
+    else
+        slot.mTimeStamp = std::filesystem::last_write_time(path);
+#else
     slot.mTimeStamp = std::filesystem::last_write_time(path);
+#endif
 
     ESM::ESMReader reader;
     reader.open(slot.mPath);

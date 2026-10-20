@@ -124,9 +124,10 @@ if (OPENMW_PLATFORM_3DS)
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwsound/(openaloutput|ffmpegdecoder|movieaudiofactory|alext|efx|efxpresets)\\.[ch]pp$")
     list(FILTER OPENMW_FILES EXCLUDE REGEX "mwgui/videowidget\\.cpp$")
     list(APPEND OPENMW_FILES n3ds/sound3ds.hpp n3ds/ndspoutput.cpp n3ds/sounddecoder3ds.cpp n3ds/videowidget_null.cpp
-        n3ds/main3ds.cpp n3ds/frame3ds.cpp n3ds/hydration.cpp n3ds/menus.cpp n3ds/hud3ds.cpp)
+        n3ds/main3ds.cpp n3ds/frame3ds.cpp n3ds/hydration.cpp n3ds/menus.cpp n3ds/hud3ds.cpp n3ds/memrelief.cpp
+        n3ds/credits3ds.cpp)
     if (OPENMW3DS_DEBUG) # debug tools: autorun scripts, scripted input, teleport buttons
-        list(APPEND OPENMW_FILES n3ds/debugtools.cpp n3ds/hidinject.cpp)
+        list(APPEND OPENMW_FILES n3ds/debugtools.cpp n3ds/hidinject.cpp n3ds/benchmark3ds.cpp)
     endif()
     # Per-frame hot code at -O2 (the rest stays -Os: image size is memory): animation, physics, AI.
     set(OMW3DS_HOT_FILES ${OPENMW_FILES})
@@ -175,7 +176,7 @@ if(BUILD_OPENMW)
         include(${OPENMW3DS_ROOT}/cmake/Ctr3dsPackaging.cmake)
         omw3ds_package(openmw
             TITLE "OpenMW"
-            DESCRIPTION "OpenMW (Morrowind engine) for New 3DS"
+            DESCRIPTION "OpenMW engine port for New 3DS" # no game name in the title metadata (the tester, 20/10)
             AUTHOR "OpenMW 3DS port"
             PRODUCT_CODE "CTR-P-OMW3"
             UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp

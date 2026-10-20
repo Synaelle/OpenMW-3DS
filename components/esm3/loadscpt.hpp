@@ -7,6 +7,9 @@
 
 #include <components/esm/defs.hpp>
 #include <components/esm/refid.hpp>
+#ifdef OPENMW_PLATFORM_3DS
+#include "lazystring.hpp"
+#endif
 
 namespace ESM
 {
@@ -42,7 +45,12 @@ namespace ESM
         std::vector<unsigned char> mScriptData;
 
         /// Script source code
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: read from the content file when the script is compiled (~0.5 MB for Morrowind.esm up front).
+        LazyString mScriptText;
+#else
         std::string mScriptText;
+#endif
 
         void load(ESMReader& esm, bool& isDeleted);
         void save(ESMWriter& esm, bool isDeleted = false) const;

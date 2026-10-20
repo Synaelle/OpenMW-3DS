@@ -91,6 +91,12 @@ namespace MWScript
         const GlobalScriptDesc* getScriptIfPresent(const ESM::RefId& name) const;
 
         void updatePtrs(const MWWorld::Ptr& base, const MWWorld::Ptr& updated);
+#ifdef OPENMW_PLATFORM_3DS
+        void releaseTargetsIn(const MWWorld::CellStore& cell);
+        ///< Targets resolved to objects of a cell about to be freed go back to {RefNum, RefId} (resolved again
+        /// on use), as after loading a save.
+#endif
+
         ///< Update the Ptrs stored in mTarget. Should be called after the reference has been moved to a new cell.
     };
 }

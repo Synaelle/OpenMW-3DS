@@ -46,6 +46,10 @@ namespace ESM
         {
             dst.mLevel = src.mLevel;
             dst.mAttributes.clear();
+#ifdef OPENMW_PLATFORM_3DS
+            dst.mAttributes.reserve(Attribute::Length);
+            dst.mSkills.reserve(Skill::Length);
+#endif
             for (int i = 0; i < Attribute::Length; ++i)
                 dst.mAttributes.emplace(ESM::Attribute::indexToRefId(i), src.mAttributes[i]);
             for (int i = 0; i < Skill::Length; ++i)
@@ -59,7 +63,8 @@ namespace ESM
             dst.mGold = src.mGold;
         }
 
-        void writeBaseStats(ESMWriter& esm, NAME name, const std::map<ESM::RefId, unsigned char>& stats)
+        template <class Stats>
+        void writeBaseStats(ESMWriter& esm, NAME name, const Stats& stats)
         {
             for (const auto& [stat, value] : stats)
             {
@@ -72,7 +77,8 @@ namespace ESM
             }
         }
 
-        void readBaseStats(ESMReader& esm, NAME name, std::map<ESM::RefId, unsigned char>& stats)
+        template <class Stats>
+        void readBaseStats(ESMReader& esm, NAME name, Stats& stats)
         {
             while (esm.isNextSub(name))
             {

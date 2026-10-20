@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The 3DS port's credits (n3ds/credits3ds.cpp): the main menu's Credits, on the top screen, a scrolling text
+     read from credits3ds.txt and a Close button. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 400 240" name="_Main">
+        <Widget type="EditBox" skin="MW_TextBoxEdit" position="6 6 380 192" align="Stretch" name="CreditsText">
+            <Property key="MultiLine" value="true"/>
+            <Property key="ReadOnly" value="true"/>
+            <Property key="WordWrap" value="true"/>
+            <Property key="VisibleVScroll" value="true"/>
+            <Property key="TextAlign" value="Left Top"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="314 204 72 24" align="Right Bottom" name="CloseButton">
+            <Property key="Caption" value="#{sClose}"/>
+        </Widget>
+    </Widget>
+</MyGUI>
