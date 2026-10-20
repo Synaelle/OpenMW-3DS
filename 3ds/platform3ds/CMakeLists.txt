@@ -6,9 +6,12 @@ add_library(platform3ds STATIC
     src/crash.cpp
     src/memstats.cpp
     src/textfb.cpp
+    src/loadscreen.cpp
+    src/menuart.cpp
     src/debugscreen.cpp
     src/screenshot.cpp
     src/memprobe.cpp
+    src/pools.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/buildinfo.c
 )
 
@@ -48,6 +51,8 @@ target_compile_options(platform3ds PUBLIC -fno-omit-frame-pointer)
 # (libctru's is 32 KB, see platform.cpp); one lock for libctru's linear allocator (platform.cpp).
 target_link_options(platform3ds INTERFACE -Wl,--wrap=abort -Wl,--wrap=__syscall_thread_create
     -Wl,--wrap=linearAlloc -Wl,--wrap=linearMemAlign -Wl,--wrap=linearRealloc -Wl,--wrap=linearGetSize
-    -Wl,--wrap=linearFree -Wl,--wrap=linearSpaceFree)
+    -Wl,--wrap=linearFree -Wl,--wrap=linearSpaceFree
+    # Memory pools beside newlib's malloc (pools.cpp).
+    -Wl,--wrap=malloc -Wl,--wrap=free -Wl,--wrap=realloc -Wl,--wrap=calloc -Wl,--wrap=malloc_usable_size)
 
 target_link_libraries(platform3ds PUBLIC ctru m)

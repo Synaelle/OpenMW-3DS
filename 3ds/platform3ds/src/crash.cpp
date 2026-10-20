@@ -1,7 +1,10 @@
 #include <platform3ds/crash.hpp>
+#include <platform3ds/timing.hpp>
+#include <platform3ds/loadscreen.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/memstats.hpp>
+#include <platform3ds/pools.hpp>
 #include <platform3ds/platform.hpp>
 #include <platform3ds/textfb.hpp>
 
@@ -185,6 +188,35 @@ namespace p3ds::crash
             putKB(s.linearTotal);
             put("\n  vram free ");
             putKB(s.vramFree);
+            {
+                const pools::NewlibStats n = pools::newlib();
+                const pools::PoolStats l = pools::large();
+                const pools::PoolStats u = pools::lua();
+                put("\n  newlib used ");
+                putKB(n.used);
+                put(" of ");
+                putKB(n.arena);
+                put(", largest free ");
+                putKB(n.largestFree);
+                put(", top ");
+                putKB(n.top);
+                put("\n  large pool used ");
+                putKB(l.used);
+                put(" of ");
+                putKB(l.total);
+                put(" (");
+                putDec(l.regions);
+                put(" regions), largest free ");
+                putKB(l.largestFree);
+                put(", misses ");
+                putDec(l.failures);
+                put("\n  lua pool used ");
+                putKB(u.used);
+                put(" of ");
+                putKB(u.total);
+                put(", largest free ");
+                putKB(u.largestFree);
+            }
             put("\n  sbrk failures ");
             putDec(p3ds_sbrk_failures);
             put(", last incr ");
@@ -237,6 +269,10 @@ namespace p3ds::crash
             drawText(6, 6, gPath, color::cyan, color::darkRed, kCols - 7);
             drawText(1, 8, gWaitForInput ? "Press START to exit." : "Exiting...", color::white, color::darkRed);
             present();
+            // The screen first, then the report: writing it takes a second or two (file creation on the SD card),
+            // and in test #73 (out of memory) something else ended the process in that time - the system's error
+            // screen instead of this one.
+            writeReportFile();
 
             if (gWaitForInput)
             {
@@ -325,7 +361,6 @@ namespace p3ds::crash
 
             appendBacktrace(regs->sp, regs->r[11], regs->pc, regs->lr);
             appendMemAndLog();
-            writeReportFile();
 
             char headline[40] = "";
             strncpy(headline, exceptionName(info->type), sizeof(headline) - 1);
@@ -418,7 +453,6 @@ namespace p3ds::crash
         (void)lr;
         appendBacktrace(sp, fp, 0, 0);
         appendMemAndLog();
-        writeReportFile();
         showScreenAndExit(reason);
         __builtin_unreachable();
     }
@@ -468,7 +502,6 @@ namespace p3ds::crash
             put(gStep);
             put("\nThe main thread didn't quit within 3 s.\n");
             appendMemAndLog();
-            writeReportFile();
             log::flush();
             showScreenAndExit("panic: forced quit");
             __builtin_unreachable();
@@ -488,7 +521,6 @@ namespace p3ds::crash
             putDec(stalledSec);
             put(" s\n");
             appendMemAndLog();
-            writeReportFile();
 
             static char headline[48];
             strcpy(headline, "hang: ");
@@ -500,25 +532,20 @@ namespace p3ds::crash
         // Bottom row, redrawn every second by the watchdog thread (core 1) whatever the main thread is
         // doing: if it stops changing, the console really is frozen. Only draws text and flushes the
         // framebuffer (single-buffered, see textfb), so it never conflicts with the main thread's swaps.
-        void drawHeartbeat(int tick, uint32_t heapUsed)
+        // At heap walks (loads): what is free where, and the largest block each part could still hand out.
+        void logPools()
         {
-            if (__atomic_load_n(&gInCrash, __ATOMIC_RELAXED) != 0)
-                return; // the crash screen owns the display
-            static const char kSpinner[] = { '|', '/', '-', '\\' };
-            const u32 uptime = u32(svcGetSystemTick() / SYSCLOCK_ARM11);
-            const u32 idle = sinceKickMs() / 1000;
-            char line[textfb::kCols + 1];
-            snprintf(line, sizeof(line), "%c %5lus %-15.15s idle %3lus %5.1fMB", kSpinner[(tick / 2) % 4],
-                (unsigned long)uptime, gStep, (unsigned long)idle, mem::toMB(heapUsed));
-            size_t n = strlen(line);
-            while (n < size_t(textfb::kCols))
-                line[n++] = ' ';
-            line[textfb::kCols] = '\0';
-            const uint16_t fg = idle < 10 ? textfb::color::green : (idle < 30 ? textfb::color::yellow : textfb::color::red);
-            if (textfb::gpuOwned())
-                return; // M8's GUI draws the bottom screen: not ours to touch
-            textfb::drawText(0, textfb::kRows - 1, line, fg, textfb::color::header);
-            GSPGPU_FlushDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
+            const pools::NewlibStats n = pools::newlib();
+            const pools::PoolStats l = pools::large();
+            const pools::PoolStats u = pools::lua();
+            P3DS_LOGI("mem/pools: newlib %.1f of %.1f MB, largest free %u KB, top %u KB, free <1K %.1f <16K %.1f "
+                      "<256K %.1f >=256K %.1f MB; large %.1f of %.1f MB (%u regions), largest free %u KB, %u "
+                      "misses; lua %.1f of %.1f MB, largest free %u KB; linear free %.1f MB",
+                mem::toMB(n.used), mem::toMB(n.arena), unsigned(n.largestFree / 1024), unsigned(n.top / 1024),
+                mem::toMB(n.freeBySize[0]), mem::toMB(n.freeBySize[1]), mem::toMB(n.freeBySize[2]),
+                mem::toMB(n.freeBySize[3]), mem::toMB(l.used), mem::toMB(l.total), unsigned(l.regions),
+                unsigned(l.largestFree / 1024), unsigned(l.failures), mem::toMB(u.used), mem::toMB(u.total),
+                unsigned(u.largestFree / 1024), mem::toMB(linearSpaceFree()));
         }
 
         void watchdogMain(void*)
@@ -550,18 +577,30 @@ namespace p3ds::crash
                 // stalls anyway); otherwise "used" is from the last walk.
                 const bool logTick = ++tick % 10 == 0;
                 const bool inGame = strcmp(gStep, "engine frame") == 0;
-                const bool walk = logTick
-                    && (!inGame || mem::query().heapArena > mem::arenaAtLastWalk() + 1024u * 1024u);
+                // Never in game since M9: the arena now counts the large pool's use, which goes up and down, so the
+                // 1 MB rule walked every few seconds and froze the game ~470 ms each time (test #73).
+                // sdmc:/openmw/memwalk: in game too (comparing builds' heap in game, in Zeste: no freeze there).
+                static const bool walkInGame = [] {
+                    std::FILE* f = std::fopen("sdmc:/openmw/memwalk", "r");
+                    if (f != nullptr)
+                        std::fclose(f);
+                    return f != nullptr;
+                }();
+                const bool walk = logTick && (!inGame || walkInGame);
                 const mem::Stats s = walk ? mem::queryExact() : mem::query();
                 if (s.heapUsed > peakHeap)
                     peakHeap = s.heapUsed;
-                if (tick % 2 == 0)
-                    drawHeartbeat(tick, s.heapUsed);
+                // The bottom screen while the game starts (M15: the debug heartbeat line is gone; its figures are
+                // in the log): moved on every half second.
+                if (__atomic_load_n(&gInCrash, __ATOMIC_RELAXED) == 0)
+                    loadscreen::tick();
                 if (logTick)
                 {
                     P3DS_LOGI("mem: heap %.1f MB used%s (arena %.1f / %.1f, peak %.1f), linear free %.1f MB [%s]",
                         mem::toMB(s.heapUsed), walk ? "" : " (last walk)", mem::toMB(s.heapArena),
                         mem::toMB(s.heapTotal), mem::toMB(peakHeap), mem::toMB(s.linearFree), gStep);
+                    if (walk)
+                        logPools();
                     memprobe::logThreads();
                     memprobe::logReporters();
                     unsigned stackPeak = 0, stackSize = 0;
@@ -681,6 +720,11 @@ namespace
         tSlot = i;
     }
 
+    // M10 (Zeste profile, 20/10: allocation was ~25% of the main thread's instructions): the per-thread net
+    // balance asks each block's size on every new and delete; it only feeds diagnostics (the memstage lines'
+    // "thread net", mem/threads, memprobe's per-record figures), so it runs only with sdmc:/openmw/memprofile.
+    bool gThreadAccounting = false;
+
     inline void accountThread(int64_t delta)
     {
         p3ds_thread_net_bytes += delta;
@@ -691,9 +735,21 @@ namespace
 
 namespace p3ds::memprobe
 {
+    void enableThreadAccounting()
+    {
+        gThreadAccounting = true;
+    }
+
+    bool threadAccounting()
+    {
+        return gThreadAccounting;
+    }
+
     // Logs each thread's net operator-new balance (called by the watchdog).
     void logThreads()
     {
+        if (!gThreadAccounting)
+            return;
         const int n = __atomic_load_n(&gThreadSlotCount, __ATOMIC_ACQUIRE);
         char line[256];
         int len = snprintf(line, sizeof(line), "mem/threads (net new MB):");
@@ -948,6 +1004,36 @@ namespace p3ds::memprobe
         return gCallerTid != 0;
     }
 
+    void callerProfileStopByCount(const char* label)
+    {
+        if (gCallerTid == 0 && gLive == nullptr)
+            return;
+        LightLock_Lock(&gCallerLock);
+        gCallerTid = 0;
+        P3DS_LOGI("caller profile [%s] by allocations (symbolize with addr2line; %lu untracked):", label,
+            (unsigned long)gCallerDropped);
+        for (int k = 0; k < 40; ++k)
+        {
+            int best = -1;
+            for (int i = 0; i < kCallerSlots; ++i)
+                if (gCallers[i].caller != nullptr && (best < 0 || gCallers[i].count > gCallers[best].count))
+                    best = i;
+            if (best < 0 || gCallers[best].count == 0)
+                break;
+            P3DS_LOGI("  caller 0x%08lX  %7lu allocs  gross %7.2f MB  net %7.2f MB",
+                (unsigned long)uintptr_t(gCallers[best].caller), (unsigned long)gCallers[best].count,
+                double(gCallers[best].bytes) / 1048576.0, double(gCallers[best].net) / 1048576.0);
+            gCallers[best].caller = nullptr;
+        }
+        LiveEntry* live = gLive;
+        gLive = nullptr;
+        p3ds_linear_gpu_reserve += gLiveReserveTaken;
+        gLiveReserveTaken = 0;
+        LightLock_Unlock(&gCallerLock);
+        if (live != nullptr)
+            linearFree(live);
+    }
+
     void callerProfileStop(const char* label)
     {
         if (gCallerTid == 0 && gLive == nullptr)
@@ -991,9 +1077,12 @@ void* operator new(std::size_t size)
     {
         if (void* p = std::malloc(size))
         {
-            if (!tRegistered)
-                registerThreadCounter();
-            accountThread(int64_t(malloc_usable_size(p)));
+            if (gThreadAccounting)
+            {
+                if (!tRegistered)
+                    registerThreadCounter();
+                accountThread(int64_t(malloc_usable_size(p)));
+            }
             if (gCallerTid != 0)
                 recordAlloc(__builtin_return_address(0), p, size);
             return p;
@@ -1020,9 +1109,12 @@ void* operator new(std::size_t size, const std::nothrow_t&) noexcept
             __builtin_return_address(0));
         return nullptr;
     }
-    if (!tRegistered)
-        registerThreadCounter();
-    accountThread(int64_t(malloc_usable_size(p)));
+    if (gThreadAccounting)
+    {
+        if (!tRegistered)
+            registerThreadCounter();
+        accountThread(int64_t(malloc_usable_size(p)));
+    }
     if (gCallerTid != 0)
         recordAlloc(__builtin_return_address(0), p, size);
     return p;
@@ -1047,7 +1139,8 @@ void operator delete(void* p) noexcept
 {
     if (p != nullptr)
     {
-        accountThread(-int64_t(malloc_usable_size(p)));
+        if (gThreadAccounting)
+            accountThread(-int64_t(malloc_usable_size(p)));
         if (gLive != nullptr)
             recordFree(p);
     }

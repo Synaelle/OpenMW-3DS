@@ -15,12 +15,14 @@
 #include <MyGUI_EditBox.h>
 #include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
+#include <MyGUI_ProgressBar.h>
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_RenderManager.h>
 #include <MyGUI_ResourceManager.h>
 #include <MyGUI_TextBox.h>
 
 #include <3ds.h>
+#include <platform3ds/platform.hpp>
 #include <MyGUI_Window.h>
 
 
@@ -30,6 +32,7 @@
 #include <components/misc/resourcehelpers.hpp>
 #include <components/render3ds/render3ds.hpp>
 #include <components/resource/resourcesystem.hpp>
+#include <components/settings/values.hpp>
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/statemanager.hpp"
@@ -104,6 +107,23 @@ namespace omw3ds
 
         // An item on quick key `slot` (0-8), as QuickKeysMenu assigns it: items with a "cast when used" or "cast
         // once" enchantment cast it, the others are used or equipped.
+        // Offers the player's item to the merchant, as a click on it in OpenMW's inventory window while bartering
+        // does (a count dialog for a stack); with a companion or a container open, moves it to them (M17).
+        static void sell(const MWWorld::Ptr& item)
+        {
+            MWGui::InventoryWindow* inv = inventory();
+            if (inv == nullptr)
+                return;
+            for (size_t i = 0; i < inv->mSortModel->getItemCount(); ++i)
+                if (inv->mSortModel->getItem(i).mBase == item)
+                {
+                    if (windows().getMode() == MWGui::GM_Companion || windows().getMode() == MWGui::GM_Container)
+                        inv->mPendingControllerAction = MWGui::InventoryWindow::ControllerAction::Transfer;
+                    inv->onItemSelectedFromSourceModel(static_cast<int>(inv->mSortModel->mapToSource(i)));
+                    return;
+                }
+        }
+
         static void assignItem(int slot, const MWWorld::Ptr& item)
         {
             MWGui::QuickKeysMenu* menu = windows().mQuickKeysMenu;
@@ -180,6 +200,7 @@ namespace omw3ds
             ESM::QuickKeys::Type mType = ESM::QuickKeys::Type::Unassigned;
             ESM::RefId mId;
             bool mShown = false; // mType/mId are on screen
+            int mCount = -1; // the count shown (items: how many the player carries, all stacks)
         };
 
         std::array<Slot, kSlots> sSlots;
@@ -210,6 +231,8 @@ namespace omw3ds
                 slot.mButton->eventMouseButtonClick += MyGUI::newDelegate(&onStripSlotClicked);
             }
             hud->getWidget(sFps, "Fps3DS");
+            // A debug readout: only after the start menu's Debug choices (M15).
+            sFps->setVisible(p3ds::debugMode());
             sStripBoundTo = hud;
             return true;
         }
@@ -218,6 +241,8 @@ namespace omw3ds
         // changing on the top overlay broke its redraw in test #61).
         void updateFps()
         {
+            if (sFps == nullptr || !sFps->getVisible())
+                return;
             static uint64_t lastTick = 0;
             static unsigned frames = 0;
             ++frames;
@@ -232,6 +257,18 @@ namespace omw3ds
             lastTick = now;
             if (sFps != nullptr)
                 sFps->setCaption(std::to_string(int(fps + 0.5))); // the number alone (test #69)
+        }
+
+        // How many of an item the player carries, every stack (a quick key shows it, as the inventory does).
+        int countItem(const ESM::RefId& id)
+        {
+            const MWWorld::Ptr player = MWMechanics::getPlayer();
+            MWWorld::InventoryStore& store = player.getClass().getInventoryStore(player);
+            int count = 0;
+            for (MWWorld::ContainerStoreIterator it = store.begin(); it != store.end(); ++it)
+                if (it->getCellRef().getRefId() == id)
+                    count += it->getCellRef().getCount();
+            return count;
         }
 
         MWWorld::Ptr findItem(const ESM::RefId& id)
@@ -271,14 +308,32 @@ namespace omw3ds
             if (!bindStrip())
                 return;
             updateFps();
+            // The items' counts (the tester, 20/10: "10 potions on a quick key"), ~3 times a second.
+            static unsigned frames = 0;
+            const bool recount = ++frames % 10 == 0;
             for (int i = 0; i < kSlots; ++i)
             {
                 Slot& slot = sSlots[i];
                 ESM::QuickKeys::Type type;
                 ESM::RefId id;
                 Hud3DS::quickKeyState(i, type, id);
+                const bool item = type == ESM::QuickKeys::Type::Item || type == ESM::QuickKeys::Type::MagicItem;
                 if (slot.mShown && slot.mType == type && slot.mId == id)
+                {
+                    if (item && recount)
+                    {
+                        const int count = countItem(id);
+                        if (count == 0 && slot.mCount != 0)
+                            slot.mShown = false; // run out: shown again (empty) next frame
+                        else if (count != slot.mCount)
+                        {
+                            slot.mCount = count;
+                            slot.mIcon->setCount(count);
+                        }
+                    }
                     continue;
+                }
+                slot.mCount = -1;
                 slot.mType = type;
                 slot.mId = id;
                 slot.mShown = true;
@@ -288,6 +343,8 @@ namespace omw3ds
                     case ESM::QuickKeys::Type::Item:
                     case ESM::QuickKeys::Type::MagicItem:
                         slot.mIcon->setItem(findItem(id));
+                        slot.mCount = countItem(id);
+                        slot.mIcon->setCount(std::max(slot.mCount, 1)); // 1 shows nothing (getCountString), 0 too
                         break;
                     case ESM::QuickKeys::Type::Magic:
                         showSpell(*slot.mIcon, id);
@@ -369,6 +426,7 @@ namespace omw3ds
                 getWidget(mDrop, "DropButton3DS");
                 getWidget(mEncumbrance, "Encumbrance3DS");
                 getWidget(mGold, "Gold3DS");
+                getWidget(mDetails, "Details3DS");
                 mItemView->eventItemClicked += MyGUI::newDelegate(this, &ItemsPage::onItemClicked);
                 mUse->eventMouseButtonClick += MyGUI::newDelegate(this, &ItemsPage::onUse);
                 mDrop->eventMouseButtonClick += MyGUI::newDelegate(this, &ItemsPage::onDrop);
@@ -413,6 +471,19 @@ namespace omw3ds
             }
 
             void hide() { setVisible(false); }
+
+            // While looting or trading, the button hint strip of the window on the top screen takes the bottom 18
+            // rows (M17, test #97): the page is that much shorter, its item grid too.
+            void setLooting(bool looting)
+            {
+                if (looting == mLooting)
+                    return;
+                mLooting = looting;
+                const int cut = looting ? 18 : 0;
+                mMainWidget->setSize(mMainWidget->getWidth(), 218 - cut);
+                static_cast<MyGUI::Widget*>(mItemView)->setSize(mItemView->getWidth(), 128 - cut);
+                mDetails->setPosition(mDetails->getLeft(), 156 - cut);
+            }
 
             // While shown: the inventory changes under it (pickups, quick keys, spells). Rebuilding the item
             // widgets loses a touch in progress, so only when something changed.
@@ -503,6 +574,17 @@ namespace omw3ds
                     + MWGui::ToolTips::toString(mSelected.getClass().getWeight(mSelected)) + "  V: "
                     + MWGui::ToolTips::toString(mSelected.getClass().getValue(mSelected)));
                 const bool wearable = !mSelected.getClass().getEquipmentSlots(mSelected).first.empty();
+                if (bartering())
+                {
+                    // Bartering: the item is offered to the merchant (the barter window's deal on the top screen);
+                    // with a companion, given to them.
+                    mPicker.reset(false); // no Quick key either (it hides Use and Drop too)
+                    mUse->setVisible(true);
+                    mUse->setCaptionWithReplacing(windows().getMode() == MWGui::GM_Companion ? "#{OMW3DS:Give}"
+                            : windows().getMode() == MWGui::GM_Container                   ? "#{OMW3DS:Put}"
+                                                                                           : "#{Interface:Sell}");
+                    return;
+                }
                 mUse->setCaptionWithReplacing(
                     equipped ? "#{OMW3DS:Unequip}" : (wearable ? "#{sEquip}" : "#{sUse}"));
             }
@@ -537,10 +619,23 @@ namespace omw3ds
             }
 
             // As in the inventory window: equips, unequips, or uses (potions, books, scrolls, ingredients...).
+            static bool bartering() // or trading with a companion, or a container open (M17: the item goes in)
+            {
+                return windows().isGuiMode()
+                    && (windows().getMode() == MWGui::GM_Barter || windows().getMode() == MWGui::GM_Companion
+                        || windows().getMode() == MWGui::GM_Container);
+            }
+
             void onUse(MyGUI::Widget*)
             {
                 if (mSelected.isEmpty())
                     return;
+                if (bartering())
+                {
+                    Hud3DS::sell(mSelected);
+                    refresh();
+                    return;
+                }
                 const int index = findStack();
                 const MWWorld::Ptr player = MWMechanics::getPlayer();
                 if (index >= 0 && mModel->getItem(index).mType == MWGui::ItemStack::Type_Equipped)
@@ -582,6 +677,8 @@ namespace omw3ds
             int mCategory = MWGui::SortFilterItemModel::Category_All;
             unsigned mFrames = 0;
             size_t mSignature = 0;
+            MyGUI::Widget* mDetails = nullptr;
+            bool mLooting = false;
         };
 
         // ------------------------------------------------------------------ tabs
@@ -717,9 +814,13 @@ namespace omw3ds
             // In game mode, while the GUI draws the bottom screen; OpenMW's menus (dialogue, containers...) still go
             // to the M6 text menus.
             // ... and while a container is open (M8: its window on the top screen, the Inventory tab below).
-            const bool looting = windows().isGuiMode() && windows().getMode() == MWGui::GM_Container;
+            // ... and while bartering (the merchant's window on the top screen, test #74).
+            const bool looting = windows().isGuiMode()
+                && (windows().getMode() == MWGui::GM_Container || windows().getMode() == MWGui::GM_Barter
+                    || windows().getMode() == MWGui::GM_Companion);
             const bool active = Render3DS::guiOwnsBottomScreen() && (!windows().isGuiMode() || looting);
             const Tab tab = !active ? Tab::None : looting ? Tab::Items : sTab;
+            Render3DS::setHudOnly(active && !looting && sTab == Tab::None && !windows().isGuiMode());
             sTabBar->setVisible(active);
             for (MyGUI::Button* button : sTabButtons)
                 button->setStateSelected(*button->getUserData<Tab>() == sTab);
@@ -730,6 +831,7 @@ namespace omw3ds
                 sHomeColour = homeColour;
             }
 
+            sItems->setLooting(looting);
             if (tab != sShown)
             {
                 if (tab == Tab::Items)
@@ -804,6 +906,14 @@ namespace omw3ds
             // HUD::updatePositions moves the boxes left when one is hidden (PC's single row); here they keep their
             // places, in two columns.
             std::array<std::pair<MyGUI::Widget*, MyGUI::IntPoint>, 3> mBoxes{};
+            // The Skyrim-like bars on the top screen ([HUD] top bars): health, magicka, fatigue, and what they show
+            // (a change of position redraws the interface, so only real changes reach them).
+            MyGUI::Widget* mTopBars = nullptr;
+            std::array<MyGUI::ProgressBar*, 3> mTopBar{};
+            std::array<std::pair<size_t, size_t>, 3> mTopShown{};
+            std::array<MyGUI::Widget*, 3> mBottomBars{}; // the bottom screen's bars, hidden while those show
+            MyGUI::Widget* mCellName = nullptr;
+            MyGUI::IntPoint mCellNamePosition;
         };
 
         Panel sPanel;
@@ -821,6 +931,15 @@ namespace omw3ds
             const char* values[] = { "HealthValue3DS", "MagickaValue3DS", "FatigueValue3DS" };
             for (size_t i = 0; i < sPanel.mValues.size(); ++i)
                 hud.getWidget(sPanel.mValues[i], values[i]);
+            hud.getWidget(sPanel.mTopBars, "TopBars3DS");
+            const char* topBars[] = { "TopHealth3DS", "TopMagicka3DS", "TopFatigue3DS" };
+            for (size_t i = 0; i < sPanel.mTopBar.size(); ++i)
+                hud.getWidget(sPanel.mTopBar[i], topBars[i]);
+            const char* bottomBars[] = { "HealthFrame", "MagickaFrame", "FatigueFrame" };
+            for (size_t i = 0; i < sPanel.mBottomBars.size(); ++i)
+                hud.getWidget(sPanel.mBottomBars[i], bottomBars[i]);
+            hud.getWidget(sPanel.mCellName, "CellName");
+            sPanel.mCellNamePosition = sPanel.mCellName->getPosition();
             hud.getWidget(sPanel.mWeaponName, "WeaponName3DS");
             hud.getWidget(sPanel.mSpellName, "SpellName3DS");
             const char* boxes[] = { "WeapBox", "SpellBox", "SneakBox" };
@@ -875,6 +994,28 @@ namespace omw3ds
                 setText(*sPanel.mValues[i], sPanel.mValueText[i],
                     std::to_string(current) + "/" + std::to_string(static_cast<int>(values[i].getModified())));
             }
+
+            const bool topBars = Settings::hud().mTopBars3DS;
+            if (sPanel.mTopBars->getVisible() != topBars)
+            {
+                sPanel.mTopBars->setVisible(topBars);
+                for (MyGUI::Widget* bar : sPanel.mBottomBars) // one set of bars at a time (the tester, test #78)
+                    bar->setVisible(!topBars);
+                // The cell name, shown at the top screen's lower right when it changes, goes above the bars.
+                sPanel.mCellName->setPosition(sPanel.mCellNamePosition - MyGUI::IntPoint(0, topBars ? 14 : 0));
+            }
+            if (topBars)
+                for (size_t i = 0; i < sPanel.mTopBar.size(); ++i)
+                {
+                    const size_t range = static_cast<size_t>(std::max(0, static_cast<int>(values[i].getModified())));
+                    const size_t position = std::min(
+                        range, static_cast<size_t>(std::max(0, static_cast<int>(values[i].getCurrent()))));
+                    if (sPanel.mTopShown[i] == std::make_pair(range, position))
+                        continue;
+                    sPanel.mTopShown[i] = { range, position };
+                    sPanel.mTopBar[i]->setProgressRange(range);
+                    sPanel.mTopBar[i]->setProgressPosition(position);
+                }
 
             const auto [weaponVisible, spellVisible] = Hud3DS::boxesVisible();
             sPanel.mWeaponName->setVisible(weaponVisible);

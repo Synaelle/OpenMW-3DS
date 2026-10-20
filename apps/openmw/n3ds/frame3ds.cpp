@@ -1,8 +1,10 @@
 #include "frame3ds.hpp"
 #include "hud3ds.hpp"
+#include "memrelief.hpp"
 #include "menus.hpp"
 #include "sound3ds.hpp"
 #ifdef OPENMW3DS_DEBUG
+#include "benchmark3ds.hpp"
 #include "debugtools.hpp"
 
 extern "C"
@@ -96,6 +98,7 @@ namespace omw3ds
             double mShaderRuns[9] = {};
             double mProgramSwitches = 0;
             double mParticleVertices = 0;
+            double mSky = 0, mTerrain = 0, mParticles = 0, mSkinned = 0, mSmall = 0, mOther = 0, mSmallCulled = 0;
         } gRender;
 
         // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
@@ -284,8 +287,12 @@ namespace omw3ds
                     + widget->getAbsoluteCoord().print();
             };
             const MyGUI::ILayer* layer = root != nullptr ? root->getLayer() : nullptr;
-            P3DS_LOGI("gui touch %d,%d: %s in %s on %s%s", x, y, describe(focus).c_str(), describe(root).c_str(),
-                layer != nullptr ? layer->getName().c_str() : "-", taken ? "" : " (not taken)");
+            std::string chain;
+            for (const MyGUI::Widget* w = focus != nullptr ? focus->getParent() : nullptr; w != nullptr && w != root;
+                 w = w->getParent())
+                chain += " < " + std::string(w->getTypeName()) + " '" + w->getName() + "'";
+            P3DS_LOGI("gui touch %d,%d: %s%s in %s on %s%s", x, y, describe(focus).c_str(), chain.c_str(),
+                describe(root).c_str(), layer != nullptr ? layer->getName().c_str() : "-", taken ? "" : " (not taken)");
         }
 #endif
 
@@ -418,6 +425,8 @@ namespace omw3ds
         gDeferred.push_back(std::move(call));
     }
 
+    uint32_t gRestoresSeen = 0; // p3ds::restoreCount() last handled (onEngineFrame)
+
     bool systemKeyboard(const std::string& hint, std::string& text, size_t maxLength)
     {
         SwkbdState keyboard;
@@ -429,6 +438,9 @@ namespace omw3ds
         const SwkbdButton button = swkbdInputText(&keyboard, buffer.data(), buffer.size());
         P3DS_LOGI("system keyboard: %s", button == SWKBD_BUTTON_CONFIRM ? "confirmed" : "cancelled");
         Render3DS::invalidateInterface(); // the applet's transition clobbers the overlay texture (test #63)
+        // The applet's suspend and restore are handled here: onEngineFrame must not read the VRAM textures again
+        // (test #94: 1.3 s more after every keyboard).
+        gRestoresSeen = p3ds::restoreCount();
         if (button != SWKBD_BUTTON_CONFIRM)
             return false;
         text = buffer.data();
@@ -438,6 +450,28 @@ namespace omw3ds
     void onEngineFrame()
     {
         serviceApt(false);
+        if (p3ds::restoreCount() != gRestoresSeen)
+        {
+            gRestoresSeen = p3ds::restoreCount();
+            Render3DS::invalidateInterface(); // back from the HOME Menu: VRAM textures and the overlay redone
+        }
+        omw3ds::memrelief::onFrame();
+#ifdef OPENMW3DS_DEBUG
+        // M10: what allocates every frame (the Zeste profile of 20/10: allocation ~17-23% of the main thread's
+        // instructions): the main thread's operator-new call sites over 300 frames of play, ranked by count. Only
+        // with sdmc:/openmw/memprofile (callerProfileStart is a no-op without it).
+        {
+            static unsigned playFrames = 0;
+            if (MWBase::Environment::get().getStateManager()->getState() == MWBase::StateManager::State_Running)
+            {
+                ++playFrames;
+                if (playFrames == 300)
+                    p3ds::memprobe::callerProfileStart();
+                else if (playFrames == 600)
+                    p3ds::memprobe::callerProfileStopByCount("300 frames of play, main thread");
+            }
+        }
+#endif
         if (!gDeferred.empty())
         {
             std::vector<std::function<void()>> calls;
@@ -462,6 +496,7 @@ namespace omw3ds
         if (gStats.frameIndex == 100)
             debug::lazyStringSelfCheck();
         debug::runAutorun(gStats.frameIndex);
+        benchmark::onFrame();
 #endif
 
         // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
@@ -480,9 +515,11 @@ namespace omw3ds
         }
         // M8: MyGUI draws the bottom screen, except while an M6 text menu shows there (until each window has its
         // M8 version); the text display then gets the whole screen back.
-        if (gBottomReady && Render3DS::drawsGui())
+        // Without the text display (M15: the loading screen instead, platform3ds/loadscreen.cpp), MyGUI takes the
+        // bottom screen from the first frame.
+        if (Render3DS::drawsGui())
         {
-            const bool guiBottom = !gBottom.menuActive();
+            const bool guiBottom = !gBottomReady || !gBottom.menuActive();
             if (guiBottom != Render3DS::guiOwnsBottomScreen())
             {
                 Render3DS::setGuiOwnsBottomScreen(guiBottom);
@@ -553,6 +590,13 @@ namespace omw3ds
             gRender.mShaderRuns[i] += render.mShaderRuns[i];
         gRender.mProgramSwitches += render.mProgramSwitches;
         gRender.mParticleVertices += render.mParticleVertices;
+        gRender.mSky += render.mSkyDraws;
+        gRender.mTerrain += render.mTerrainDraws;
+        gRender.mParticles += render.mParticleDraws;
+        gRender.mSkinned += render.mSkinnedDraws;
+        gRender.mSmall += render.mSmallDraws;
+        gRender.mOther += render.mOtherDraws;
+        gRender.mSmallCulled += render.mSmallCulled;
 #endif
 
         gLogAccum += frameSeconds;
@@ -572,8 +616,9 @@ namespace omw3ds
                     sound.mSounds, sound.mStreams, sound.mBufferBytes / 1024, sound.mDecodeMs / gLogAccum,
                     sound.mUnderruns, sound.mSkipped);
 #ifdef OPENMW3DS_DEBUG
-            logTimings();
-            if (Render3DS::isActive())
+            if (p3ds::debugMode()) // the detailed lines: the start menu's Debug choices only (M15)
+                logTimings();
+            if (Render3DS::isActive() && p3ds::debugMode())
             {
                 const double n = gLogFrames;
                 P3DS_LOGI("gpu: per frame %.0f draws, %.0f tris, %.0f leaves (%.0f skipped), emit %.1f ms, "
@@ -588,6 +633,10 @@ namespace omw3ds
                           "4: %.0f 5: %.0f 6: %.0f 7: %.0f 8: %.0f (particles %.0f); %.0f shader switches/frame",
                     runs[0] / n, runs[1] / n, runs[2] / n, runs[3] / n, runs[4] / n, runs[5] / n, runs[6] / n,
                     runs[7] / n, runs[8] / n, gRender.mParticleVertices / n, gRender.mProgramSwitches / n);
+                P3DS_LOGI("gpu/draws: per frame sky %.0f, terrain %.0f, particles %.0f, skinned %.0f, small (<64 "
+                          "triangles) %.0f, other %.0f; %.0f parts under the small feature size left out",
+                    gRender.mSky / n, gRender.mTerrain / n, gRender.mParticles / n, gRender.mSkinned / n,
+                    gRender.mSmall / n, gRender.mOther / n, gRender.mSmallCulled / n);
             }
             gRender = RenderSums{};
 #endif
@@ -596,13 +645,14 @@ namespace omw3ds
             gLogWorst = 0;
         }
 
-        if (!gBottomReady)
-            return;
+        // Where the player is (the perf lines' cell and position), with or without the text display.
         if (++gFramesSinceInfo >= 8)
         {
             gFramesSinceInfo = 0;
             refreshWorldInfo();
         }
+        if (!gBottomReady)
+            return;
         gTimer.fill(gStats);
         p3ds::GameSnapshot snap;
         snap.frame = &gStats;

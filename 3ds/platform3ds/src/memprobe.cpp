@@ -1,6 +1,9 @@
+#include <platform3ds/crash.hpp>
+#include <platform3ds/loadscreen.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/memstats.hpp>
+#include <platform3ds/platform.hpp>
 
 #include <3ds.h>
 #include <malloc.h>
@@ -226,17 +229,38 @@ namespace p3ds::memprobe
 
     void stage(const char* label)
     {
+        // A startup stage reached is progress for the hang watchdog (between the content files and the first
+        // loading screen nothing else kicks it: interface and Lua set-up, ~6 s on hardware, past 60 s in an
+        // emulator at unlimited speed).
+        crash::kick();
+        loadscreen::noteStage(label);
         static int64_t last = 0;
+        static uint64_t lastTick = 0;
         const int64_t now = p3ds_thread_net_bytes;
+        const uint64_t tick = svcGetSystemTick();
+        // The time since the previous stage (M9, test #72's load hangs: where a cell change's seconds go).
+        const double ms = lastTick != 0 ? double(tick - lastTick) * 1000.0 / SYSCLOCK_ARM11 : 0.0;
         // The arena, not mallinfo's "used": the heap walk holds the malloc lock (~60+ ms per call on the
         // main thread with a large heap), and stages run during every cell load.
-        P3DS_LOGI("memstage %-28s thread net %6.2f MB (+%5.2f)  arena %6.2f MB", label, double(now) / 1048576.0,
-            double(now - last) / 1048576.0, double(mem::query().heapArena) / 1048576.0);
+        if (!debugMode())
+            ; // detailed profiling: the start menu's Debug choices only (M15)
+        else if (threadAccounting())
+            P3DS_LOGI("memstage %-28s thread net %6.2f MB (+%5.2f)  arena %6.2f MB  +%5.0f ms", label,
+                double(now) / 1048576.0, double(now - last) / 1048576.0, double(mem::query().heapArena) / 1048576.0,
+                ms);
+        else
+            P3DS_LOGI("memstage %-28s arena %6.2f MB  +%5.0f ms", label, double(mem::query().heapArena) / 1048576.0, ms);
         last = now;
+        lastTick = tick;
     }
 
     void report(const char* label)
     {
+        if (!debugMode()) // detailed profiling: the start menu's Debug choices only (M15)
+        {
+            gUsed = 0;
+            return;
+        }
         std::sort(gEntries, gEntries + gUsed, [](const Entry& a, const Entry& b) { return a.bytes > b.bytes; });
         int64_t total = 0;
         for (int i = 0; i < gUsed; ++i)

@@ -16,6 +16,11 @@ namespace p3ds::memprobe
     // Logs every thread's net operator-new balance (the watchdog calls this every 5 s).
     void logThreads();
 
+    // The per-thread net balance (heapUsed, logThreads, stage's "thread net") costs a size lookup on every
+    // new and delete: off unless sdmc:/openmw/memprofile exists (platform init turns it on).
+    void enableThreadAccounting();
+    bool threadAccounting();
+
     // Logs this thread's cumulative net allocations and the heap at a named point (startup profiling).
     void stage(const char* label);
 
@@ -25,6 +30,8 @@ namespace p3ds::memprobe
     void callerProfileStart(bool allThreads = false);
     bool callerProfileActive();
     void callerProfileStop(const char* label);
+    // The same, ranked by number of allocations (per-frame churn: what allocates and frees every frame).
+    void callerProfileStopByCount(const char* label);
 
     // Extra memory consumers the platform layer can't see (e.g. the Lua VM, which allocates with
     // realloc): reporters return bytes in use; the watchdog logs them with the heap stats.

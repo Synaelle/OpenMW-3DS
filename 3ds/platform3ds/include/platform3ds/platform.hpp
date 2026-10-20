@@ -22,6 +22,9 @@ namespace p3ds
         uint32_t ciaUniqueId = 0; // UniqueId from the .rsf; used to tell .cia launches from .3dsx
         // Logs go to kLogDir/<logSubdir>/ instead of kLogDir (a hardware test run's own folder, rotated there).
         const char* logSubdir = nullptr;
+        // The start menu's Debug choices (M15): the detailed profiling lines and the in-game debug tools on. Off for
+        // a normal start, whatever the build.
+        bool debugMode = true;
     };
 
     struct PlatformInfo
@@ -39,10 +42,16 @@ namespace p3ds
     PlatformInfo init(const InitOptions& options = {});
     void shutdown();
 
+    // InitOptions::debugMode of this run.
+    bool debugMode();
+
     // Where this run's logs go: kLogDir, or kLogDir/<InitOptions::logSubdir>.
     const char* logDir();
 
     const PlatformInfo& info();
+
+    // How many times the app came back from the HOME Menu or sleep (applet transitions overwrite VRAM).
+    uint32_t restoreCount();
 
     // Main thread stack high-water mark (the stack is painted at init). Returns false once the
     // bottom of the stack has been overwritten, i.e. it overflowed or is about to.

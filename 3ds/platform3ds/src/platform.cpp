@@ -1,7 +1,9 @@
 #include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
+#include <platform3ds/memprobe.hpp>
 #include <platform3ds/memstats.hpp>
 #include <platform3ds/platform.hpp>
+#include <platform3ds/timing.hpp>
 #include <platform3ds/textfb.hpp>
 
 #include <3ds.h>
@@ -280,21 +282,16 @@ extern "C"
 }
 
 // ---------------------------------------------------------------------------------------------
-// Two-segment sbrk (replaces libsysbase's weak _sbrk_r).
+// sbrk over the app heap only (replaces libsysbase's weak _sbrk_r).
 //
-// The libctru app heap is capped by its virtual window (~95 MB even in the 178 MB mode), while the
-// linear (GPU-visible) heap gets the rest of the memory and is mostly idle until textures and vertex
-// buffers exist. When the app heap is exhausted, malloc continues in a block carved from the linear
-// heap, leaving kLinearGpuReserve for citro3d. newlib's malloc accepts sbrk jumping to a higher,
-// non-contiguous address (it fences off the gap), and never mixes segments afterwards.
+// The libctru app heap is capped by its virtual window (~95 MB even in the 178 MB mode); the linear heap gets
+// the rest of the memory. Until M9 malloc continued into a linear-heap segment when the app heap ran out; the
+// large-allocation pool takes that memory now (pools.cpp), so newlib's arena stays in the app heap.
 extern "C"
 {
-    size_t p3ds_linear_gpu_reserve = 24u * 1024u * 1024u; // keep this much linear memory for the GPU
+    size_t p3ds_linear_gpu_reserve = 24u * 1024u * 1024u; // linear memory left to the GPU by the first pool region
 
     static char* gSbrkCur = nullptr; // current break
-    static char* gSbrkEnd = nullptr; // end of the current segment
-    static char* gExtStart = nullptr; // linear extension segment (once used)
-    static size_t gExtSize = 0;
     // Diagnostics (read by the watchdog; sbrk runs under the malloc lock and must not log).
     volatile uint32_t p3ds_sbrk_failures = 0;
     volatile int32_t p3ds_sbrk_last_fail_incr = 0;
@@ -303,36 +300,9 @@ extern "C"
     void* _sbrk_r(struct _reent* r, ptrdiff_t incr)
     {
         if (gSbrkCur == nullptr)
-        {
             gSbrkCur = fake_heap_start;
-            gSbrkEnd = fake_heap_end;
-        }
-        if (incr >= 0 ? (gSbrkCur + incr > gSbrkEnd) : (gSbrkCur + incr < (gExtStart ? gExtStart : fake_heap_start)))
+        if (incr >= 0 ? (gSbrkCur + incr > fake_heap_end) : (gSbrkCur + incr < fake_heap_start))
         {
-            // Out of the app heap: move once to a linear-heap segment.
-            if (incr > 0 && gExtStart == nullptr)
-            {
-                const size_t avail = linearSpaceFree();
-                if (avail > p3ds_linear_gpu_reserve + size_t(incr))
-                {
-                    gExtSize = (avail - p3ds_linear_gpu_reserve) & ~size_t(0xFFFF);
-                    gExtStart = static_cast<char*>(linearMemAlign(gExtSize, 0x1000));
-                }
-                if (gExtStart != nullptr && gExtStart > gSbrkEnd)
-                {
-                    gSbrkCur = gExtStart;
-                    gSbrkEnd = gExtStart + gExtSize;
-                    char* prev = gSbrkCur;
-                    gSbrkCur += incr;
-                    return prev;
-                }
-                if (gExtStart != nullptr)
-                {
-                    linearFree(gExtStart); // below the app heap: newlib can't use it
-                    gExtStart = nullptr;
-                    gExtSize = 0;
-                }
-            }
             ++p3ds_sbrk_failures;
             p3ds_sbrk_last_fail_incr = int32_t(incr);
             p3ds_sbrk_last_fail_linear_free = uint32_t(linearSpaceFree());
@@ -344,26 +314,17 @@ extern "C"
         return prev;
     }
 
-    // malloc's arena without mallinfo's walk: what sbrk handed out, not counting the gap to the extension.
+    // newlib's arena without mallinfo's walk: what sbrk handed out.
     size_t p3ds_heap_arena()
     {
         char* const cur = gSbrkCur;
-        if (cur == nullptr)
-            return 0;
-        if (gExtStart != nullptr && cur >= gExtStart)
-            return size_t(fake_heap_end - fake_heap_start) + size_t(cur - gExtStart);
-        return size_t(cur - fake_heap_start);
+        return cur == nullptr ? 0 : size_t(cur - fake_heap_start);
     }
 
-    size_t p3ds_heap_extension_size()
+    // The app heap malloc can use: libctru's main stack sits at its start (fake_heap_start is past it).
+    size_t p3ds_heap_window()
     {
-        return gExtSize;
-    }
-
-    // Address gap newlib's malloc counts as allocated once it jumped to the extension segment.
-    size_t p3ds_heap_extension_gap()
-    {
-        return gExtStart ? size_t(gExtStart - fake_heap_end) : 0;
+        return size_t(fake_heap_end - fake_heap_start);
     }
 }
 
@@ -372,6 +333,7 @@ namespace p3ds
     namespace
     {
         PlatformInfo gInfo;
+        uint32_t gRestoreCount = 0;
 
         // Main stack watermark: the unused part is filled with a pattern at init.
         constexpr u32 kStackPattern = 0x5AC3A55Cu;
@@ -443,6 +405,16 @@ namespace p3ds
         return gLogDir;
     }
 
+    namespace
+    {
+        bool gDebugMode = true;
+    }
+
+    bool debugMode()
+    {
+        return gDebugMode;
+    }
+
     static void rotateLogs()
     {
         static const char* const kNames[] = { "openmw3ds", "openmw", "MyGUI" };
@@ -462,6 +434,8 @@ namespace p3ds
     PlatformInfo init(const InitOptions& options)
     {
         const u64 mainTick = svcGetSystemTick();
+        gDebugMode = options.debugMode;
+        startTick(); // the game's time zero (timing.hpp): the log's timestamps and the bottom screen's timer
         paintMainStack();
         mkdir(kBaseDir, 0777);
         // The package ships the folder: creating one costs ~1.5 s on hardware, a stat ~5 ms.
@@ -476,6 +450,8 @@ namespace p3ds
         }
         remove(kAutorunDonePath);
         rotateLogs();
+        if (stat("sdmc:/openmw/memprofile", &logDir) == 0)
+            memprobe::enableThreadAccounting(); // diagnostics (see memprobe.hpp)
 
         textfb::setupBottomScreen();
 
@@ -540,9 +516,16 @@ namespace p3ds
                     crash::setWatchdogPaused(true);
                 else if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONEXIT)
                     crash::setWatchdogPaused(false);
+                if (hook == APTHOOK_ONRESTORE || hook == APTHOOK_ONWAKEUP)
+                    __atomic_add_fetch(&gRestoreCount, 1u, __ATOMIC_RELAXED);
             },
             nullptr);
         return gInfo;
+    }
+
+    uint32_t restoreCount()
+    {
+        return __atomic_load_n(&gRestoreCount, __ATOMIC_RELAXED);
     }
 
     void shutdown()

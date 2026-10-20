@@ -1,0 +1,35 @@
+OpenMW 3DS
+A port of the OpenMW engine to the New Nintendo 3DS.
+
+Unofficial fan project. Not affiliated with or endorsed by Bethesda Softworks, ZeniMax Media or Nintendo. It contains no game content: it needs your own legally owned copy of The Elder Scrolls III: Morrowind.
+
+The Elder Scrolls III: Morrowind (c) Bethesda Softworks LLC, a ZeniMax Media company. The Elder Scrolls and Morrowind are trademarks of ZeniMax Media Inc. Nintendo 3DS is a trademark of Nintendo.
+
+OPENMW
+OpenMW, the open-source Morrowind engine, by the OpenMW team and contributors (openmw.org). GNU General Public License v3. The port's source, including its changes to OpenMW and to the libraries below, is published under the same licence.
+
+LIBRARIES
+OpenSceneGraph (OpenMW's fork): OpenSceneGraph Public License
+MyGUI 3.4.3: MIT License
+Bullet Physics 3.25: zlib License
+SDL 2.32.10: zlib License
+Boost 1.92.0: Boost Software License 1.0
+Recast and Detour: zlib License
+SQLite 3.41.1: public domain
+yaml-cpp: MIT License
+ICU 73.2: Unicode License
+mpg123 1.32.10: GNU LGPL 2.1
+Lua 5.1: MIT License
+FreeType: FreeType License
+zlib: zlib License
+
+FONTS
+MysticCards and DemonicLetters, OpenMW's fonts (MysticCards based on Pelagiad): SIL Open Font License 1.1, its text in resources/vfs/fonts.
+DejaVu Sans Mono: Bitstream Vera and DejaVu licences.
+
+3DS TOOLCHAIN
+devkitPro and devkitARM, libctru and citro3d (zlib License), by the devkitPro team and contributors.
+
+THANKS
+The OpenMW team, for the engine this port stands on.
+The 3DS homebrew community, for libctru, citro3d and the documentation of the hardware.
