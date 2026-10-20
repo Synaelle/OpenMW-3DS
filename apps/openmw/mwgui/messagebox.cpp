@@ -221,6 +221,11 @@ namespace MWGui
         MyGUI::IntPoint pos;
         pos.left = (gameWindowSize.width - mMainWidget->getWidth()) / 2;
         pos.top = (gameWindowSize.height - mMainWidget->getHeight() - height - mBottomPadding);
+#ifdef OPENMW_PLATFORM_3DS
+        // The bottom of the top screen, over the game as in Morrowind (M17: on the bottom screen they covered the
+        // pages and the button hints).
+        pos.top = gameWindowSize.height / 2 - mMainWidget->getHeight() - height - 8;
+#endif
 
         mMainWidget->setPosition(pos);
     }

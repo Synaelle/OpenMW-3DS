@@ -12,18 +12,24 @@
         <Property key="Size" value="600 400"/>
     </Layer>
     <Layer name="Windows" overlapped="true" pick="true"/>
+    <!-- The windows not ported to the two screens yet (19/10): their PC layouts in a 600x400 view scaled onto the
+         top screen like the books, used with the circle pad's cursor (windowmanagerimp.cpp). -->
+    <Layer name="Unported3DS" type="ScalingLayer" pick="true">
+        <Property key="Size" value="600 400"/>
+    </Layer>
     <Layer name="DragAndDrop" overlapped="false" pick="false"/>
     <Layer name="DrowningBar" overlapped="false" pick="false"/>
     <Layer name="MainMenuBackground" overlapped="true" pick="true"/>
     <Layer name="MainMenu" overlapped="true" pick="true"/>
     <Layer name="Settings" overlapped="true" pick="true"/>
-    <Layer name="ControllerButtons" overlapped="true" pick="false"/>
     <Layer name="LoadingScreenBackground" overlapped="false" pick="true"/>
     <Layer name="LoadingScreen" overlapped="false" pick="true"/>
     <Layer name="Debug" overlapped="true" pick="true"/>
     <Layer name="Console" overlapped="true" pick="true"/>
     <Layer name="Modal" overlapped="true" pick="true"/>
     <Layer name="Popup" overlapped="true" pick="true"/>
+    <!-- M17: above the modal windows (character creation, the count dialog): the 3DS hint strip. -->
+    <Layer name="ControllerButtons" overlapped="true" pick="false"/>
     <Layer name="Notification" overlapped="false" pick="false"/>
     <Layer name="Video" overlapped="false" pick="true"/>
     <Layer name="InputBlocker" overlapped="false" pick="true"/>

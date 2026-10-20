@@ -1,7 +1,13 @@
 #include "windowmanagerimp.hpp"
 
 #ifdef OPENMW_PLATFORM_3DS
+#include <platform3ds/memprobe.hpp>
+#endif
+
+#ifdef OPENMW_PLATFORM_3DS
 #include <components/render3ds/render3ds.hpp>
+
+#include "../n3ds/frame3ds.hpp"
 
 #include "../n3ds/hud3ds.hpp"
 #endif
@@ -17,6 +23,10 @@
 #include <MyGUI_ClipboardManager.h>
 #include <MyGUI_FactoryManager.h>
 #include <MyGUI_InputManager.h>
+#include <MyGUI_LayerManager.h>
+
+#include <cmath>
+#include <osg/Math>
 #include <MyGUI_LanguageManager.h>
 #include <MyGUI_LayerManager.h>
 #include <MyGUI_PointerManager.h>
@@ -331,31 +341,49 @@ namespace MWGui
         auto recharge = std::make_unique<Recharge>();
         mGuiModeStates[GM_Recharge] = GuiModeState(recharge.get());
         mWindows.push_back(std::move(recharge));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: recharge");
+#endif
 
         auto menu = std::make_unique<MainMenu>(w, h, mResourceSystem->getVFS(), mVersionDescription);
         mGuiModeStates[GM_MainMenu] = GuiModeState(menu.get());
         mWindows.push_back(std::move(menu));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: menu");
+#endif
 
         mLocalMapRender = std::make_unique<MWRender::LocalMap>(mViewer->getSceneData()->asGroup());
         auto map = std::make_unique<MapWindow>(mCustomMarkers, mDragAndDrop.get(), mLocalMapRender.get(), mWorkQueue);
         mMap = map.get();
         mWindows.push_back(std::move(map));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: map");
+#endif
         mMap->renderGlobalMap();
         trackWindow(mMap, makeMapWindowSettingValues());
 
         auto statsWindow = std::make_unique<StatsWindow>(mDragAndDrop.get());
         mStatsWindow = statsWindow.get();
         mWindows.push_back(std::move(statsWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: statsWindow");
+#endif
         trackWindow(mStatsWindow, makeStatsWindowSettingValues());
 
         auto inventoryWindow = std::make_unique<InventoryWindow>(
             *mDragAndDrop, *mItemTransfer, mViewer->getSceneData()->asGroup(), mResourceSystem);
         mInventoryWindow = inventoryWindow.get();
         mWindows.push_back(std::move(inventoryWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: inventoryWindow");
+#endif
 
         auto spellWindow = std::make_unique<SpellWindow>(mDragAndDrop.get());
         mSpellWindow = spellWindow.get();
         mWindows.push_back(std::move(spellWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: spellWindow");
+#endif
         trackWindow(mSpellWindow, makeSpellsWindowSettingValues());
 
         mGuiModeStates[GM_Inventory] = GuiModeState({ mMap, mInventoryWindow, mSpellWindow, mStatsWindow });
@@ -364,12 +392,20 @@ namespace MWGui
         auto tradeWindow = std::make_unique<TradeWindow>();
         mTradeWindow = tradeWindow.get();
         mWindows.push_back(std::move(tradeWindow));
-        trackWindow(mTradeWindow, makeBarterWindowSettingValues());
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: tradeWindow");
+#endif
+#ifndef OPENMW_PLATFORM_3DS
+        trackWindow(mTradeWindow, makeBarterWindowSettingValues()); // 3DS: its layout places it
+#endif
         mGuiModeStates[GM_Barter] = GuiModeState({ mInventoryWindow, mTradeWindow });
 
         auto console = std::make_unique<Console>(w, h, mConsoleOnlyScripts, mCfgMgr);
         mConsole = console.get();
         mWindows.push_back(std::move(console));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: console");
+#endif
         trackWindow(mConsole, makeConsoleWindowSettingValues());
 
         constexpr VFS::Path::NormalizedView menubookOptionsOverTexture("textures/tx_menubook_options_over.dds");
@@ -377,6 +413,9 @@ namespace MWGui
         auto journal = JournalWindow::create(JournalViewModel::create(), questList, mEncoding);
         mGuiModeStates[GM_Journal] = GuiModeState(journal.get());
         mWindows.push_back(std::move(journal));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: journal");
+#endif
 
         mMessageBoxManager = std::make_unique<MessageBoxManager>(
             mStore->get<ESM::GameSetting>().find("fMessageTimePerChar")->mValue.getFloat());
@@ -384,14 +423,23 @@ namespace MWGui
         auto spellBuyingWindow = std::make_unique<SpellBuyingWindow>();
         mGuiModeStates[GM_SpellBuying] = GuiModeState(spellBuyingWindow.get());
         mWindows.push_back(std::move(spellBuyingWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: spellBuyingWindow");
+#endif
 
         auto travelWindow = std::make_unique<TravelWindow>();
         mGuiModeStates[GM_Travel] = GuiModeState(travelWindow.get());
         mWindows.push_back(std::move(travelWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: travelWindow");
+#endif
 
         auto dialogueWindow = std::make_unique<DialogueWindow>();
         mDialogueWindow = dialogueWindow.get();
         mWindows.push_back(std::move(dialogueWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: dialogueWindow");
+#endif
 #ifndef OPENMW_PLATFORM_3DS
         // 3DS (M8): the dialogue window's layout spans both screens; the saved PC position and size would
         // squeeze it onto the bottom one.
@@ -403,6 +451,9 @@ namespace MWGui
         auto containerWindow = std::make_unique<ContainerWindow>(*mDragAndDrop, *mItemTransfer);
         mContainerWindow = containerWindow.get();
         mWindows.push_back(std::move(containerWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: containerWindow");
+#endif
 #ifndef OPENMW_PLATFORM_3DS
         trackWindow(mContainerWindow, makeContainerWindowSettingValues()); // 3DS (M8): its layout places it
 #endif
@@ -411,26 +462,41 @@ namespace MWGui
         auto hud = std::make_unique<HUD>(mCustomMarkers, mDragAndDrop.get(), mLocalMapRender.get());
         mHud = hud.get();
         mWindows.push_back(std::move(hud));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: hud");
+#endif
 
         mToolTips = std::make_unique<ToolTips>();
 
         auto scrollWindow = std::make_unique<ScrollWindow>();
         mScrollWindow = scrollWindow.get();
         mWindows.push_back(std::move(scrollWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: scrollWindow");
+#endif
         mGuiModeStates[GM_Scroll] = GuiModeState(mScrollWindow);
 
         auto bookWindow = std::make_unique<BookWindow>();
         mBookWindow = bookWindow.get();
         mWindows.push_back(std::move(bookWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: bookWindow");
+#endif
         mGuiModeStates[GM_Book] = GuiModeState(mBookWindow);
 
         auto countDialog = std::make_unique<CountDialog>();
         mCountDialog = countDialog.get();
         mWindows.push_back(std::move(countDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: countDialog");
+#endif
 
         auto settingsWindow = std::make_unique<SettingsWindow>(mCfgMgr);
         mSettingsWindow = settingsWindow.get();
         mWindows.push_back(std::move(settingsWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: settingsWindow");
+#endif
 #ifndef OPENMW_PLATFORM_3DS
         trackWindow(mSettingsWindow, makeSettingsWindowSettingValues()); // 3DS (M8): its layout places it
 #endif
@@ -438,45 +504,75 @@ namespace MWGui
         auto confirmationDialog = std::make_unique<ConfirmationDialog>();
         mConfirmationDialog = confirmationDialog.get();
         mWindows.push_back(std::move(confirmationDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: confirmationDialog");
+#endif
 
         auto alchemyWindow = std::make_unique<AlchemyWindow>();
         trackWindow(alchemyWindow.get(), makeAlchemyWindowSettingValues());
         mGuiModeStates[GM_Alchemy] = GuiModeState(alchemyWindow.get());
         mWindows.push_back(std::move(alchemyWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: alchemyWindow");
+#endif
 
         auto quickKeysMenu = std::make_unique<QuickKeysMenu>();
         mQuickKeysMenu = quickKeysMenu.get();
         mWindows.push_back(std::move(quickKeysMenu));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: quickKeysMenu");
+#endif
         mGuiModeStates[GM_QuickKeysMenu] = GuiModeState(mQuickKeysMenu);
 
         auto levelupDialog = std::make_unique<LevelupDialog>();
         mGuiModeStates[GM_Levelup] = GuiModeState(levelupDialog.get());
         mWindows.push_back(std::move(levelupDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: levelupDialog");
+#endif
 
         auto waitDialog = std::make_unique<WaitDialog>();
         mWaitDialog = waitDialog.get();
         mWindows.push_back(std::move(waitDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: waitDialog");
+#endif
         mGuiModeStates[GM_Rest] = GuiModeState({ mWaitDialog->getProgressBar(), mWaitDialog });
 
         auto spellCreationDialog = std::make_unique<SpellCreationDialog>();
         mGuiModeStates[GM_SpellCreation] = GuiModeState(spellCreationDialog.get());
         mWindows.push_back(std::move(spellCreationDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: spellCreationDialog");
+#endif
 
         auto enchantingDialog = std::make_unique<EnchantingDialog>();
         mGuiModeStates[GM_Enchanting] = GuiModeState(enchantingDialog.get());
         mWindows.push_back(std::move(enchantingDialog));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: enchantingDialog");
+#endif
 
         auto trainingWindow = std::make_unique<TrainingWindow>();
         mGuiModeStates[GM_Training] = GuiModeState({ trainingWindow->getProgressBar(), trainingWindow.get() });
         mWindows.push_back(std::move(trainingWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: trainingWindow");
+#endif
 
         auto merchantRepair = std::make_unique<MerchantRepair>();
         mGuiModeStates[GM_MerchantRepair] = GuiModeState(merchantRepair.get());
         mWindows.push_back(std::move(merchantRepair));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: merchantRepair");
+#endif
 
         auto repair = std::make_unique<Repair>();
         mGuiModeStates[GM_Repair] = GuiModeState(repair.get());
         mWindows.push_back(std::move(repair));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: repair");
+#endif
 
         mSoulgemDialog = std::make_unique<SoulgemDialog>(mMessageBoxManager.get());
 
@@ -485,11 +581,29 @@ namespace MWGui
         trackWindow(companionWindow.get(), makeCompanionWindowSettingValues());
         mGuiModeStates[GM_Companion] = GuiModeState({ mInventoryWindow, companionWindow.get() });
         mWindows.push_back(std::move(companionWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: companionWindow");
+#endif
 
         auto jailScreen = std::make_unique<JailScreen>();
         mJailScreen = jailScreen.get();
         mWindows.push_back(std::move(jailScreen));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: jailScreen");
+#endif
         mGuiModeStates[GM_Jail] = GuiModeState(mJailScreen);
+#ifdef OPENMW_PLATFORM_3DS
+        // The windows not ported to the two screens yet (the tester, 2026-10-19: "any interface not ported should be
+        // on the top screen with the mouse cursor, we will do something cleaner later"): their PC layouts, on the
+        // Unported3DS layer, which scales a 600x400 view onto the top screen (openmw_layers.xml); the circle pad's
+        // cursor and A click them. updateVisible() centres them there whenever they show.
+        // (M17: the level-up window and the spell shop have 3DS layouts now.)
+        for (GuiMode mode : { GM_MerchantRepair, GM_Rest, GM_Alchemy, GM_Repair, GM_Enchanting, GM_Recharge,
+                 GM_QuickKeysMenu, GM_Jail, GM_Companion })
+            for (WindowBase* window : mGuiModeStates[mode].mWindows)
+                if (window != mInventoryWindow)
+                    MyGUI::LayerManager::getInstance().attachToLayerNode("Unported3DS", window->mMainWidget);
+#endif
 
         std::string werewolfFaderTex = "textures\\werewolfoverlay.dds";
         if (mResourceSystem->getVFS()->exists(werewolfFaderTex))
@@ -497,10 +611,16 @@ namespace MWGui
             auto werewolfFader = std::make_unique<ScreenFader>(werewolfFaderTex);
             mWerewolfFader = werewolfFader.get();
             mWindows.push_back(std::move(werewolfFader));
+#ifdef OPENMW_PLATFORM_3DS
+            p3ds::memprobe::stage("initUI: werewolfFader");
+#endif
         }
         auto blindnessFader = std::make_unique<ScreenFader>("black");
         mBlindnessFader = blindnessFader.get();
         mWindows.push_back(std::move(blindnessFader));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: blindnessFader");
+#endif
 
         // fall back to player_hit_01.dds if bm_player_hit_01.dds is not available
         std::string hitFaderTexture = "textures\\bm_player_hit_01.dds";
@@ -514,28 +634,46 @@ namespace MWGui
         auto hitFader = std::make_unique<ScreenFader>(hitFaderTexture, hitFaderLayout, hitFaderCoord);
         mHitFader = hitFader.get();
         mWindows.push_back(std::move(hitFader));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: hitFader");
+#endif
 
         auto screenFader = std::make_unique<ScreenFader>("black");
         mScreenFader = screenFader.get();
         mWindows.push_back(std::move(screenFader));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: screenFader");
+#endif
 
         auto debugWindow = std::make_unique<DebugWindow>();
         mDebugWindow = debugWindow.get();
         mWindows.push_back(std::move(debugWindow));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: debugWindow");
+#endif
         trackWindow(mDebugWindow, makeDebugWindowSettingValues());
 
         auto postProcessorHud = std::make_unique<PostProcessorHud>(mCfgMgr);
         mPostProcessorHud = postProcessorHud.get();
         mWindows.push_back(std::move(postProcessorHud));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: postProcessorHud");
+#endif
         trackWindow(mPostProcessorHud, makePostprocessorWindowSettingValues());
 
         auto controllerButtonsOverlay = std::make_unique<ControllerButtonsOverlay>();
         mControllerButtonsOverlay = controllerButtonsOverlay.get();
         mWindows.push_back(std::move(controllerButtonsOverlay));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: controllerButtonsOverlay");
+#endif
 
         auto inventoryTabsOverlay = std::make_unique<InventoryTabsOverlay>();
         mInventoryTabsOverlay = inventoryTabsOverlay.get();
         mWindows.push_back(std::move(inventoryTabsOverlay));
+#ifdef OPENMW_PLATFORM_3DS
+        p3ds::memprobe::stage("initUI: inventoryTabsOverlay");
+#endif
 
         mControllerTooltipEnabled = Settings::gui().mControllerTooltips;
         mActiveControllerWindows[GM_Inventory] = 1; // Start on Inventory page
@@ -690,7 +828,12 @@ namespace MWGui
             setKeyFocusWidget(nullptr);
 
         // Icons of forced hidden windows are displayed
+#ifdef OPENMW_PLATFORM_3DS
+        setMinimapVisibility(Settings::map().mMinimap3DS && (mAllowed & GW_Map)
+            && (!mMap->pinned() || (mForceHidden & GW_Map)));
+#else
         setMinimapVisibility((mAllowed & GW_Map) && (!mMap->pinned() || (mForceHidden & GW_Map)));
+#endif
         setWeaponVisibility(
             (mAllowed & GW_Inventory) && (!mInventoryWindow->pinned() || (mForceHidden & GW_Inventory)));
         setSpellVisibility((mAllowed & GW_Magic) && (!mSpellWindow->pinned() || (mForceHidden & GW_Magic)));
@@ -767,6 +910,21 @@ namespace MWGui
             default:
                 break;
         }
+#ifdef OPENMW_PLATFORM_3DS
+        // The not-yet-ported windows: fitted into the Unported3DS layer's 600x400 (the top screen), centred.
+        for (WindowBase* window : mGuiModeStates[mode].mWindows)
+        {
+            MyGUI::Widget* widget = window->mMainWidget;
+            if (!widget->getVisible() || widget->getLayer() == nullptr
+                || widget->getLayer()->getName() != "Unported3DS")
+                continue;
+            const int w = std::min(widget->getWidth(), 600);
+            const int h = std::min(widget->getHeight(), 400);
+            widget->setCoord((600 - w) / 2, (400 - h) / 2, w, h);
+        }
+        // Again, now that the mode's windows are up (the call above found barter's not yet visible: no hints).
+        updateControllerButtonsOverlay();
+#endif
     }
 
     void WindowManager::setDrowningTimeLeft(float time, float maxTime)
@@ -914,6 +1072,22 @@ namespace MWGui
         }
         // else: need to know the current grid center, call setActiveMap from changeCell
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M10: the minimap is the interface's only constant change while walking, and every change costs a redraw
+        // of the CPU-drawn bottom screen (test #71: ~4 a second at 23.5 ms in Balmora, and the interface's whole
+        // per-frame work in the frames between). Its arrow turns in 22.5 degree steps and its position follows
+        // every 6th frame (~4 times a second), at once when the arrow's step changes.
+        {
+            static int frames = 0;
+            const float kStep = 2.f * float(osg::PI) / 16.f;
+            const float angle = std::round(std::atan2(playerdirection.x(), playerdirection.y()) / kStep) * kStep;
+            static float lastAngle = 1000.f;
+            if (angle == lastAngle && ++frames % 6 != 0)
+                return;
+            lastAngle = angle;
+            playerdirection = osg::Vec3f(std::sin(angle), std::cos(angle), 0.f);
+        }
+#endif
         mMap->setPlayerDir(playerdirection.x(), playerdirection.y());
         mMap->setPlayerPos(x, y, u, v);
         mHud->setPlayerDir(playerdirection.x(), playerdirection.y());
@@ -1345,6 +1519,10 @@ namespace MWGui
                 mVideoWrapper->setSyncToVBlank(Settings::video().mVsyncMode);
             else if (setting.first == "Video" && (setting.second == "gamma" || setting.second == "contrast"))
                 mVideoWrapper->setGammaContrast(Settings::video().mGamma, Settings::video().mContrast);
+#ifdef OPENMW_PLATFORM_3DS
+            else if (setting.first == "Map" && setting.second == "minimap")
+                updateVisible();
+#endif
         }
 
         if (changeRes)
@@ -1448,6 +1626,10 @@ namespace MWGui
         // M8: the inventory is the bottom screen's Inventory tab, which doesn't pause the game.
         if (mode == GM_Inventory && Render3DS::drawsGui() && omw3ds::toggleInventoryTab3DS())
             return;
+        // The crosshair's label (what the player looks at) goes when a window opens; the focus is updated only
+        // every third frame (engine.cpp), so it could stay over the window until then.
+        if (mToolTips)
+            mToolTips->clear();
 #endif
 
         if (mGuiModes.empty() || mGuiModes.back() != mode)
@@ -1567,6 +1749,9 @@ namespace MWGui
             else
                 reapplyActiveControllerWindow();
         }
+#ifdef OPENMW_PLATFORM_3DS
+        updateControllerButtonsOverlay(); // the strip goes with the last window (M17)
+#endif
     }
 
     void WindowManager::removeGuiMode(GuiMode mode)
@@ -2435,6 +2620,36 @@ namespace MWGui
         SDL_free(text);
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    void WindowManager::selectConsole3DS()
+    {
+        if (mConsole == nullptr)
+            return;
+        // Only from the game itself: not over another window, page or tab (the tester, test #94: not with class
+        // creation, dialogue...). hudOnly: n3ds/hud3ds.cpp, in game with nothing but the HUD up.
+        if (!mConsole->isVisible() && (isGuiMode() || !Render3DS::hudOnly()))
+            return;
+        if (!mConsole->isVisible())
+            toggleConsole();
+        Log(Debug::Info) << "console: Select, window " << (mConsole->isVisible() ? "open" : "not allowed now");
+        if (!mConsole->isVisible())
+            return; // not allowed now (OpenMW's own rules for opening it)
+        mConsole->setCoord(0, 0, Render3DS::kGuiCanvasWidth, Render3DS::kGuiCanvasHeight / 2); // the top screen
+        omw3ds::deferToFrame([this] {
+            if (mConsole == nullptr || !mConsole->isVisible())
+                return;
+            std::string command;
+            if (!omw3ds::systemKeyboard("Console command", command, 256))
+            {
+                toggleConsole(); // the keyboard cancelled: the console closes
+                return;
+            }
+            if (!command.empty())
+                mConsole->execute(command);
+        });
+    }
+
+#endif
     void WindowManager::toggleConsole()
     {
         bool visible = mConsole->isVisible();
@@ -2815,12 +3030,28 @@ namespace MWGui
         if (!Settings::gui().mControllerMenus || !mControllerButtonsOverlay)
             return;
 #ifdef OPENMW_PLATFORM_3DS
-        // No button hint bar on the 3DS (test #69, the tester): it covered the bottom screen's item details.
-        mControllerButtonsOverlay->setVisible(false);
+        // M17: the hints are a strip at the bottom of the bottom screen, which the bottom-screen windows end above
+        // (test #69: the PC bar covered the item details). The pages have the 3DS tab bar instead of the
+        // inventory's page overlay.
         if (mInventoryTabsOverlay)
             mInventoryTabsOverlay->setVisible(false);
+        // None in game: the tabs are touch pages (the tester, test #97). While looting or trading they are the
+        // top screen window's (the Inventory page below makes room: n3ds/hud3ds.cpp).
+        if (!isGuiMode())
+        {
+            mControllerButtonsOverlay->setVisible(false);
+            return;
+        }
+        WindowBase* active = getActiveControllerWindow();
+        const bool shown = active != nullptr && active->isVisible();
+        // At the bottom of the bottom screen; under the top screen's part for the windows that have no room left
+        // at the bottom (layout user string Hints3DS = top: character creation's race page).
+        const bool onTop = shown && active->mMainWidget->getUserString("Hints3DS") == "top";
+        mControllerButtonsOverlay->mMainWidget->setCoord(onTop ? MyGUI::IntCoord(0, 222, 400, 18)
+                                                               : MyGUI::IntCoord(40, 462, 320, 18));
+        mControllerButtonsOverlay->setButtons(shown ? active->getControllerButtons() : nullptr);
         return;
-#endif
+#else
 
         if (mWindows.empty())
             return;
@@ -2842,6 +3073,7 @@ namespace MWGui
         }
         else
             mInventoryTabsOverlay->setVisible(false);
+#endif
     }
 
     void WindowManager::inventoryUpdated(const MWWorld::Ptr& ptr) const

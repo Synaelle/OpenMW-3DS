@@ -42,6 +42,9 @@ namespace Gui
         const VFS::Manager* mVFS;
         float mScalingFactor;
         bool mExportFonts;
+#ifdef OPENMW_PLATFORM_3DS
+        int mSizeOverride = 0; // M17: the button hints' smaller font ("HintFont")
+#endif
 
         void loadFonts();
         void loadFont(FontId fontId, std::string_view fontName);

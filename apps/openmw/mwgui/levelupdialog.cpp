@@ -30,7 +30,11 @@
 namespace
 {
     constexpr unsigned int sMaxCoins = 3;
+#ifdef OPENMW_PLATFORM_3DS
+    constexpr int sColumnOffsets[] = { 26, 170 }; // the bottom screen's 304-pixel list (M17)
+#else
     constexpr int sColumnOffsets[] = { 32, 218 };
+#endif
 }
 namespace MWGui
 {

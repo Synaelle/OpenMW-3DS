@@ -170,7 +170,9 @@ namespace MWGui
         mTotalBalance->setMinValue(
             std::numeric_limits<int>::min() + 1); // disallow INT_MIN since abs(INT_MIN) is undefined
 
-        setCoord(400, 0, 400, 300);
+#ifndef OPENMW_PLATFORM_3DS
+        setCoord(400, 0, 400, 300); // 3DS: the layout's place, the top screen
+#endif
 
         if (Settings::gui().mControllerMenus)
         {

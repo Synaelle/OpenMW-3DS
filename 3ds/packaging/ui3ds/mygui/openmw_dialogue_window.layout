@@ -29,12 +29,12 @@
         </Widget>
 
         <!-- Bottom screen -->
-        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 240">
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
             <!-- The list of topics -->
-            <Widget type="MWList" skin="MW_SimpleList" position="8 8 304 196" name="TopicsList" align="Left Top">
+            <Widget type="MWList" skin="MW_SimpleList" position="8 8 304 178" name="TopicsList" align="Left Top">
             </Widget>
             <!-- The Goodbye button -->
-            <Widget type="Button" skin="MW_Button" position="8 208 304 24" name="ByeButton" align="Left Top">
+            <Widget type="Button" skin="MW_Button" position="8 190 304 24" name="ByeButton" align="Left Top">
                 <Property key="Caption" value="#{sGoodbye}"/>
             </Widget>
         </Widget>

@@ -11,6 +11,38 @@ namespace SDLUtil
 {
     std::string sdlControllerButtonToString(int button)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // M17: the 3DS's own names (the options' Controls page). No stick clicks, no Guide: "None".
+        switch (button)
+        {
+            case SDL_CONTROLLER_BUTTON_A:
+                return "A";
+            case SDL_CONTROLLER_BUTTON_B:
+                return "B";
+            case SDL_CONTROLLER_BUTTON_X:
+                return "X";
+            case SDL_CONTROLLER_BUTTON_Y:
+                return "Y";
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                return "L";
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                return "R";
+            case SDL_CONTROLLER_BUTTON_START:
+                return "START";
+            case SDL_CONTROLLER_BUTTON_BACK:
+                return "SELECT";
+            case SDL_CONTROLLER_BUTTON_DPAD_UP:
+                return "D-pad Up";
+            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+                return "D-pad Down";
+            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+                return "D-pad Left";
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                return "D-pad Right";
+            default:
+                return "#{Interface:None}";
+        }
+#endif
         switch (button)
         {
             case SDL_CONTROLLER_BUTTON_A:
@@ -62,6 +94,25 @@ namespace SDLUtil
 
     std::string sdlControllerAxisToString(int axis)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        switch (axis)
+        {
+            case SDL_CONTROLLER_AXIS_LEFTX:
+                return "Circle Pad X";
+            case SDL_CONTROLLER_AXIS_LEFTY:
+                return "Circle Pad Y";
+            case SDL_CONTROLLER_AXIS_RIGHTX:
+                return "C-Stick X";
+            case SDL_CONTROLLER_AXIS_RIGHTY:
+                return "C-Stick Y";
+            case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
+                return "ZL";
+            case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
+                return "ZR";
+            default:
+                return "#{Interface:None}";
+        }
+#endif
         switch (axis)
         {
             case SDL_CONTROLLER_AXIS_LEFTX:

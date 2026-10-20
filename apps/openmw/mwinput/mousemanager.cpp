@@ -1,5 +1,9 @@
 #include "mousemanager.hpp"
 
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+#endif
+
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_RenderManager.h>
@@ -273,7 +277,13 @@ namespace MWInput
 
         const MyGUI::IntSize& viewSize = MyGUI::RenderManager::getInstance().getViewSize();
         mGuiCursorX = std::clamp<float>(mGuiCursorX, 0.f, viewSize.width - 1.f);
+#ifdef OPENMW_PLATFORM_3DS
+        // The circle pad's pointer serves the top screen's windows (the bottom screen is touched): it stays on the
+        // top screen, its circle (~12 pixels) whole (it went half into the bottom screen, the tester).
+        mGuiCursorY = std::clamp<float>(mGuiCursorY, 0.f, Render3DS::kGuiBottomY - 7.f);
+#else
         mGuiCursorY = std::clamp<float>(mGuiCursorY, 0.f, viewSize.height - 1.f);
+#endif
 
         MyGUI::InputManager::getInstance().injectMouseMove(
             static_cast<int>(mGuiCursorX), static_cast<int>(mGuiCursorY), mMouseWheel);

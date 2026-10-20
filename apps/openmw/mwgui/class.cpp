@@ -378,6 +378,10 @@ namespace MWGui
             MyGUI::Widget* child = widget->getChildAt(i);
             if (!child->getVisible())
                 continue;
+#ifdef OPENMW_PLATFORM_3DS
+            if (!child->getUserString("Frame3DS").empty()) // the 3DS layout's frames (onOpen places them)
+                continue;
+#endif
 
             child->setPosition(child->getLeft(), pos);
             width = std::max(width, child->getWidth());
@@ -453,8 +457,89 @@ namespace MWGui
         layoutVertically(mMainWidget, 4 + 6);
 
         center();
+#ifdef OPENMW_PLATFORM_3DS
+        layout3DS();
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay(); // its place (layout3DS)
+#endif
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // M17. The bottom screen's box when it fits above the hint strip; otherwise the top screen's, as wide as it
+    // (lines wrap less); otherwise split: the question on the top screen, the answers on the bottom one. (It ran
+    // over both screens.)
+    void InfoBoxDialog::layout3DS()
+    {
+        MyGUI::Widget* frame = nullptr;
+        MyGUI::Widget* bottomFrame = nullptr;
+        getWidget(frame, "Frame3DS");
+        getWidget(bottomFrame, "FrameBottom3DS");
+        auto fit = [this](int textWidth, int buttonWidth, int spacing = 6) {
+            mText->setSize(textWidth, mText->getHeight());
+            fitToText(mText);
+            for (MyGUI::Button* button : mButtons)
+            {
+                button->setSize(buttonWidth, 10);
+                fitToText(button);
+            }
+            layoutVertically(mTextBox, 4);
+            layoutVertically(mButtonBar, spacing);
+            for (MyGUI::Button* button : mButtons) // centred in their bar
+                button->setPosition((mButtonBar->getWidth() - button->getWidth()) / 2, button->getTop());
+        };
+        bottomFrame->setVisible(false);
+        mMainWidget->setUserString("Hints3DS", "");
+        for (MyGUI::Button* button : mButtons)
+            button->setFontName("Default");
+
+        // 1. The bottom screen (the layout's sizes).
+        fit(272, 260);
+        mTextBox->setPosition(10, 0);
+        mButtonBar->setPosition(20, 0);
+        layoutVertically(mMainWidget, 4 + 6);
+        if (mMainWidget->getHeight() <= 222)
+        {
+            center();
+            frame->setCoord(0, 0, mMainWidget->getWidth(), mMainWidget->getHeight());
+            return;
+        }
+
+        // 2. The top screen, wide.
+        fit(376, 376);
+        mTextBox->setPosition(4, 0);
+        mButtonBar->setPosition(4, 0);
+        layoutVertically(mMainWidget, 4 + 6);
+        const int width = std::max(mMainWidget->getWidth(), 392);
+        if (mMainWidget->getHeight() <= 240)
+        {
+            mMainWidget->setCoord((400 - width) / 2, (240 - mMainWidget->getHeight()) / 2, width,
+                mMainWidget->getHeight());
+            frame->setCoord(0, 0, width, mMainWidget->getHeight());
+            mTextBox->setPosition((width - mTextBox->getWidth()) / 2, mTextBox->getTop());
+            mButtonBar->setPosition((width - mButtonBar->getWidth()) / 2, mButtonBar->getTop());
+            return;
+        }
+
+        // 3. Split over the two screens: the root covers both, each part in its own frame. The answers get the
+        // whole bottom screen (the hint strip goes under the question); still too long (the Telepaths question),
+        // they take the smaller font of the button hints.
+        mMainWidget->setUserString("Hints3DS", "top");
+        fit(376, 300, 3);
+        if (mButtonBar->getHeight() > 232)
+        {
+            for (MyGUI::Button* button : mButtons)
+                button->setFontName("HintFont");
+            fit(376, 300, 3);
+        }
+        mMainWidget->setCoord(0, 0, 400, 480);
+        frame->setCoord(0, 0, 400, 240);
+        mTextBox->setPosition((400 - mTextBox->getWidth()) / 2, std::max(4, (222 - mTextBox->getHeight()) / 2));
+        const int barHeight = std::min(mButtonBar->getHeight(), 236);
+        bottomFrame->setVisible(true);
+        bottomFrame->setCoord(40, 240, 320, 240);
+        mButtonBar->setPosition(40 + (320 - mButtonBar->getWidth()) / 2, 240 + (240 - barHeight) / 2);
+    }
+
+#endif
     void InfoBoxDialog::setButtonEnabled(size_t index, bool enabled)
     {
         if (index >= mButtons.size())
@@ -546,6 +631,18 @@ namespace MWGui
 #endif
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // Class creation is on the top screen, used with the circle pad's pointer (the tester, test #92): its choice
+    // dialogs open there too, centred.
+    static void onTopScreen3DS(MyGUI::Widget* window)
+    {
+        MyGUI::IntCoord coord = window->getCoord();
+        coord.left = (400 - coord.width) / 2;
+        coord.top = std::max(0, (240 - coord.height) / 2);
+        window->setCoord(coord);
+    }
+#endif
+
     /* CreateClassDialog */
 
     CreateClassDialog::CreateClassDialog()
@@ -600,9 +697,20 @@ namespace MWGui
         mButtons.push_back(descriptionButton);
 #ifdef OPENMW_PLATFORM_3DS
         // M8: no description on the 3DS (the tester's choice); the name is typed on the system keyboard from a
-        // touch on its box, without accepting the class.
+        // click on its box (A with the pointer: the window is on the top screen), without accepting the class.
         descriptionButton->setVisible(false);
-        mEditName->eventMouseButtonClick += MyGUI::newDelegate(this, &CreateClassDialog::onNameClicked);
+        // The click lands on the edit box's inner widgets (its text area), not on the box: all of them open it
+        // (test #93: A on the name did nothing).
+        std::vector<MyGUI::Widget*> nameWidgets{ mEditName };
+        for (size_t i = 0; i < nameWidgets.size(); ++i)
+        {
+            nameWidgets[i]->eventMouseButtonClick += MyGUI::newDelegate(this, &CreateClassDialog::onNameClicked);
+            MyGUI::Widget* client = nameWidgets[i]->getClientWidget();
+            if (client != nullptr && client != nameWidgets[i])
+                nameWidgets.push_back(client);
+            for (size_t c = 0; c < nameWidgets[i]->getChildCount(); ++c)
+                nameWidgets.push_back(nameWidgets[i]->getChildAt(c));
+        }
 #endif
 
         MyGUI::Button* backButton;
@@ -898,6 +1006,9 @@ namespace MWGui
     {
         // Centre dialog
         center();
+#ifdef OPENMW_PLATFORM_3DS
+        onTopScreen3DS(mMainWidget);
+#endif
 
         getWidget(mSpecialization0, "Specialization0");
         getWidget(mSpecialization1, "Specialization1");
@@ -979,6 +1090,9 @@ namespace MWGui
     {
         // Centre dialog
         center();
+#ifdef OPENMW_PLATFORM_3DS
+        onTopScreen3DS(mMainWidget);
+#endif
 
         const auto& store = MWBase::Environment::get().getWorld()->getStore().get<ESM::Attribute>();
         MyGUI::ScrollView* attributes;
@@ -1068,6 +1182,9 @@ namespace MWGui
     {
         // Centre dialog
         center();
+#ifdef OPENMW_PLATFORM_3DS
+        onTopScreen3DS(mMainWidget);
+#endif
 
         std::array<std::pair<MyGUI::ScrollView*, MyGUI::IntCoord>, 3> specializations;
         getWidget(specializations[ESM::Class::Combat].first, "CombatSkills");

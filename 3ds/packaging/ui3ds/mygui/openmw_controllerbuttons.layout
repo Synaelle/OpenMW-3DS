@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- M17: the button hints on the 3DS, a strip at the bottom of the bottom screen (the bottom-screen windows end
+     above it). The 3DS glyphs (tools/make_button_icons.py) are set by ControllerButtonsOverlay; R3 is SELECT. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="BlackBG" layer="ControllerButtons" position="40 462 320 18" name="_Main">
+        <Property key="Visible" value="false"/>
+        <Widget type="HBox" position="0 1 320 17" align="Stretch" name="ButtonBox">
+            <Property key="Padding" value="0"/>
+            <Property key="Spacing" value="6"/>
+            <Widget type="Spacer"/>
+            <Widget type="HBox" name="BtnDpad">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnDpadImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnDpadText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnA">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnAImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnAText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnB">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnBImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnBText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnX">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnXImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnXText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnY">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnYImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnYText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnL1">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnL1Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnL1Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnR1">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnR1Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnR1Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnL2">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnL2Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnL2Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnR2">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnR2Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnR2Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnR3">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 32 16" name="BtnR3Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnR3Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnMenu">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 32 16" name="BtnMenuImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnMenuText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnView">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 32 16" name="BtnViewImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnViewText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnLStick">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnLStickImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnLStickText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnRStick">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnRStickImage">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnRStickText">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="HBox" name="BtnL3">
+                <Property key="Padding" value="0"/>
+                <Property key="Spacing" value="2"/>
+                <Widget type="ImageBox" skin="ImageBox" align="Center" position="0 0 16 16" name="BtnL3Image">
+                    <Property key="Colour" value="#ccb589"/>
+                </Widget>
+                <Widget type="AutoSizedTextBox" skin="SandText" name="BtnL3Text">
+                    <Property key="FontName" value="HintFont"/>
+                    <Property key="Caption" value=""/>
+                    <Property key="ReadOnly" value="true"/>
+                </Widget>
+            </Widget>
+            <Widget type="Spacer"/>
+        </Widget>
+    </Widget>
+</MyGUI>

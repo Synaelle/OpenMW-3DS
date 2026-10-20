@@ -1,5 +1,13 @@
 #include "mainmenu.hpp"
 
+#include <algorithm>
+
+#include <components/version/version.hpp>
+
+#ifdef OPENMW_PLATFORM_3DS
+#include "../n3ds/credits3ds.hpp"
+#endif
+
 #include <MyGUI_Gui.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_RenderManager.h>
@@ -107,7 +115,12 @@ namespace MWGui
         , mBackground(nullptr)
     {
         getWidget(mVersionText, "VersionText");
+#ifdef OPENMW_PLATFORM_3DS
+        // One line in the menu's font (the tester, 20/10): the port's version, then the OpenMW it's built on.
+        mVersionText->setCaption(OPENMW3DS_VERSION " (built on OpenMW " + std::string(Version::getVersion()) + ")");
+#else
         mVersionText->setCaption(versionDescription);
+#endif
 
         constexpr VFS::Path::NormalizedView menuBackgroundVideo("video/menu_background.bik");
 
@@ -176,7 +189,11 @@ namespace MWGui
         if (name == "return")
             winMgr->removeGuiMode(GM_MainMenu);
         else if (name == "credits")
+#ifdef OPENMW_PLATFORM_3DS
+            omw3ds::showCredits(); // the port's credits and licences (no video on the 3DS)
+#else
             winMgr->playVideo("mw_credits.bik", true);
+#endif
         else if (name == "exitgame")
         {
             if (MWBase::Environment::get().getStateManager()->getState() == MWBase::StateManager::State_NoGame)
@@ -401,7 +418,8 @@ namespace MWGui
         // the bottom screen, the title picture on the top one (showBackground), the version at the bottom right.
         if (state == MWBase::StateManager::State_NoGame)
         {
-            mButtonBox->setCoord(40 + (320 - maxwidth) / 2, 240 + (240 - curH) / 2, maxwidth, curH + 8);
+            // Above the button hint strip (M17).
+            mButtonBox->setCoord(40 + (320 - maxwidth) / 2, 240 + std::max(0, (222 - curH) / 2), maxwidth, curH + 8);
             mVersionText->setCoord(40, 240 + 2, 320 - 4, 18);
         }
         else
@@ -410,6 +428,10 @@ namespace MWGui
             mButtonBox->setCoord((400 - maxwidth) / 2, (240 - curH) / 2, maxwidth, curH + 8);
             mVersionText->setCoord(0, 240 - 18, 400 - 4, 18);
         }
+        // M17: the button hints (B goes back to the game when there is one).
+        mControllerButtons.mA = "#{Interface:Select}";
+        mControllerButtons.mB = state == MWBase::StateManager::State_NoGame ? "" : "#{Interface:Back}";
+        MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
 #else
         if (state == MWBase::StateManager::State_NoGame)
         {

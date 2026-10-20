@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <!-- The class choice question (M8, 3DS): a 300-wide box centred on the bottom screen by center(); the buttons
-     are created by InfoBoxDialog::setButtons over the bar's width and the heights fitted on open. -->
+     are created by InfoBoxDialog::setButtons over the bar's width and the heights fitted on open. A question too
+     long for the bottom screen goes on the top one, or (M17) the question on the top screen and its answers on
+     the bottom one, each in a frame of its own (class.cpp): the frames are the root's first children. -->
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Dialog" layer="Modal" position="0 0 300 240" align="Center" name="_Main">
+    <Widget type="Widget" skin="" layer="Modal" position="0 0 300 240" align="Center" name="_Main">
+        <Widget type="Widget" skin="MW_Dialog" position="0 0 300 240" name="Frame3DS">
+            <UserString key="Frame3DS" value="true"/>
+        </Widget>
+        <Widget type="Widget" skin="MW_Dialog" position="0 0 2 2" name="FrameBottom3DS">
+            <UserString key="Frame3DS" value="true"/>
+            <Property key="Visible" value="false"/>
+        </Widget>
         <Widget type="Widget" skin="" position="10 10 280 70" name="TextBox" align="Top HCenter">
             <Widget type="TextBox" skin="SandText" position="4 4 272 62" name="Text" align="Top HCenter">
                 <Property key="TextAlign" value="Center"/>

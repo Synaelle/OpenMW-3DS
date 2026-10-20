@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The spell shop on the bottom screen (M17; until then OpenMW's 450x290 window scaled onto the top screen), as
+     the travel and training windows: 320x222, above the button hint strip, centred there by center(). The widget
+     names are those of spellbuyingwindow.cpp. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="MW_Dialog" layer="Windows" position="0 0 320 222" name="_Main">
+        <Property key="Visible" value="false"/>
+
+        <Widget type="TextBox" skin="NormalText" position="0 3 312 20" align="Center Top">
+            <Property key="TextAlign" value="Center"/>
+            <Property key="Caption" value="#{sServiceSpellsTitle}"/>
+        </Widget>
+        <Widget type="TextBox" skin="SandText" position="6 22 300 18" align="Left Top">
+            <Property key="TextAlign" value="Left"/>
+            <Property key="Caption" value="#{sSpellServiceTitle}"/>
+        </Widget>
+
+        <Widget type="Widget" skin="MW_Box" position="6 42 300 134" align="Left Top">
+            <Widget type="ScrollView" skin="MW_ScrollView" position="4 3 292 128" align="Left Top" name="SpellsView">
+                <Property key="CanvasAlign" value="Left"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="TextBox" skin="SandText" position="6 184 180 24" name="PlayerGold" align="Left Top">
+            <Property key="TextAlign" value="Left VCenter"/>
+        </Widget>
+        <Widget type="AutoSizedButton" skin="MW_Button" position="250 184 56 24" name="CancelButton" align="Left Top">
+            <Property key="ExpandDirection" value="Left"/>
+            <Property key="Caption" value="#{Interface:OK}"/>
+        </Widget>
+    </Widget>
+</MyGUI>

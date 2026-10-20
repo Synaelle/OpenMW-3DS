@@ -1,5 +1,8 @@
 #include "controllerbuttonsoverlay.hpp"
 
+#include <algorithm>
+#include <vector>
+
 #include <MyGUI_Window.h>
 
 #include "../mwbase/environment.hpp"
@@ -73,8 +76,52 @@ namespace MWGui
         if (buttons != nullptr)
         {
             for (const auto& row : sButtonDefs)
+            {
+#ifdef OPENMW_PLATFORM_3DS
+                // No stick clicks on the 3DS (R3: "Info"), and ZL/ZR's other window (the inventory) is the touch
+                // screen's page: not shown (the tester, test #97).
+                if (row.mButton == Button_R3 || row.mButton == Button_L3 || row.mButton == Button_L2
+                    || row.mButton == Button_R2)
+                {
+                    updateButton(row.mButton, {});
+                    continue;
+                }
+#endif
                 buttonCount += updateButton(row.mButton, buttons->*(row.mField));
+            }
 
+#ifdef OPENMW_PLATFORM_3DS
+            // M17: the strip is the bottom screen's width. When a window's hints don't fit, the least needed go
+            // first: the sticks (their use shows on screen), B (back, on every 3DS window), START and SELECT, then
+            // the page and category switches (the tab bars show them).
+            constexpr int kWidth = 312;
+            constexpr int kSpacing = 6; // openmw_controllerbuttons.layout
+            auto width = [this] {
+                int total = 0;
+                int shown = 0;
+                for (const ButtonWidgets& button : mButtons)
+                    if (button.mHBox->getVisible())
+                    {
+                        total += button.mImage->getWidth() + 2 + button.mText->getTextSize().width;
+                        ++shown;
+                    }
+                return total + std::max(0, shown - 1) * kSpacing;
+            };
+            // L and R (ZL and ZR) go together: "L Prev" without "R Next" read wrong (the journal).
+            const std::vector<std::vector<Button>> drops = { { Button_RStick }, { Button_LStick }, { Button_B },
+                { Button_View }, { Button_Menu }, { Button_L2, Button_R2 }, { Button_L1, Button_R1 } };
+            for (const std::vector<Button>& group : drops)
+            {
+                if (width() <= kWidth)
+                    break;
+                for (Button drop : group)
+                    if (mButtons[drop].mHBox->getVisible())
+                    {
+                        updateButton(drop, {});
+                        --buttonCount;
+                    }
+            }
+#endif
             mHBox->notifyChildrenSizeChanged();
         }
 

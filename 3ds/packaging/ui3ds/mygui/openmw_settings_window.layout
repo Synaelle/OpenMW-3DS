@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- The options window on the bottom screen (M8, the tester's design): only Prefs (the difficulty) and Audio.
-     settingswindow.cpp binds many more widgets by name: they live hidden in Hidden3DS, where its code can
-     set them up without showing them. The root's coordinates are the canvas's (the bottom screen at 40,240). -->
+<!-- The options window on the bottom screen (M8, the tester's design): Prefs (the difficulty...), Visuals and
+     Audio (a Controls tab: docs/PLANNED_FEATURES.md). settingswindow.cpp binds many more
+     widgets by name: they live hidden in Hidden3DS, where its code can set them up without showing them. The
+     root's coordinates are the canvas's (the bottom screen at 40,240); it ends above the button hint strip. -->
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_Window" layer="Settings" position="40 240 320 240" name="_Main">
-        <Widget type="TabControl" skin="TabControl" position="4 4 292 176" name="SettingsTab" align="Left Top">
+    <Widget type="Window" skin="MW_Window" layer="Settings" position="40 240 320 222" name="_Main">
+        <!-- Solid: MW_Window's background follows "menu transparency" and showed the HUD through (the tester).
+             DialogBG is the same colour on an opaque texture. -->
+        <Widget type="Widget" skin="DialogBG" position="0 0 312 196" align="Stretch">
+            <Property key="NeedMouse" value="false"/>
+        </Widget>
+        <Widget type="TabControl" skin="TabControl" position="4 4 292 158" name="SettingsTab" align="Left Top">
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Preferences} "/>
-                <Widget type="TextBox" skin="NormalText" position="4 8 284 18" align="Left Top" name="DifficultyText">
+                <Widget type="TextBox" skin="NormalText" position="4 4 284 18" align="Left Top" name="DifficultyText">
                     <Property key="Caption" value="#{OMWEngine:Difficulty}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="4 30 284 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="4 24 280 16" align="Left Top">
                     <Property key="Range" value="201"/>
                     <Property key="Page" value="1"/>
                     <Property key="WheelPage" value="1"/>
@@ -22,21 +28,58 @@
                     <UserString key="SettingMin" value="-100"/>
                     <UserString key="SettingMax" value="100"/>
                 </Widget>
-                <Widget type="TextBox" skin="SandText" position="4 48 140 16" align="Left Top">
+                <Widget type="TextBox" skin="SandText" position="4 41 140 16" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:DifficultyEasy}"/>
                     <Property key="TextAlign" value="Left"/>
                 </Widget>
-                <Widget type="TextBox" skin="SandText" position="130 48 150 16" align="Left Top">
+                <Widget type="TextBox" skin="SandText" position="130 41 150 16" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:DifficultyHard}"/>
                     <Property key="TextAlign" value="Right"/>
+                </Widget>
+                <!-- The HUD's minimap (3DS setting [Map] minimap) -->
+                <Widget type="HBox" position="4 62 280 26">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="Map"/>
+                        <UserString key="SettingName" value="minimap"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:Minimap}"/>
+                    </Widget>
+                </Widget>
+                <!-- Skyrim-like small bars on the top screen (3DS setting [HUD] top bars) -->
+                <Widget type="HBox" position="4 90 280 26">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="HUD"/>
+                        <UserString key="SettingName" value="top bars"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:TopBars}"/>
+                    </Widget>
+                </Widget>
+            </Widget>
+            <Widget type="TabItem">
+                <Property key="Caption" value=" #{OMW3DS:Visuals} "/>
+                <!-- Small details drawn further away (3DS setting [Camera] far small details; off: the 3DS's small
+                     feature culling size, more frame rate in towns) -->
+                <Widget type="HBox" position="4 4 280 26">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="Camera"/>
+                        <UserString key="SettingName" value="far small details"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:FarSmallDetails}"/>
+                    </Widget>
                 </Widget>
             </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMWEngine:Audio} "/>
-                <Widget type="TextBox" skin="NormalText" position="4 8 100 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="4 4 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioMaster}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="108 9 186 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="104 5 176 16" align="Left Top">
                     <Property key="Range" value="10000"/>
                     <Property key="Page" value="300"/>
                     <Property key="WheelPage" value="300"/>
@@ -45,10 +88,10 @@
                     <UserString key="SettingName" value="master volume"/>
                     <UserString key="SettingValueType" value="Float"/>
                 </Widget>
-                <Widget type="TextBox" skin="NormalText" position="4 38 100 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="4 27 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioVoice}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="108 39 186 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="104 28 176 16" align="Left Top">
                     <Property key="Range" value="10000"/>
                     <Property key="Page" value="300"/>
                     <Property key="WheelPage" value="300"/>
@@ -57,10 +100,10 @@
                     <UserString key="SettingName" value="voice volume"/>
                     <UserString key="SettingValueType" value="Float"/>
                 </Widget>
-                <Widget type="TextBox" skin="NormalText" position="4 68 100 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="4 50 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioEffects}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="108 69 186 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="104 51 176 16" align="Left Top">
                     <Property key="Range" value="10000"/>
                     <Property key="Page" value="300"/>
                     <Property key="WheelPage" value="300"/>
@@ -69,10 +112,10 @@
                     <UserString key="SettingName" value="sfx volume"/>
                     <UserString key="SettingValueType" value="Float"/>
                 </Widget>
-                <Widget type="TextBox" skin="NormalText" position="4 98 100 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="4 73 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioFootsteps}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="108 99 186 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="104 74 176 16" align="Left Top">
                     <Property key="Range" value="10000"/>
                     <Property key="Page" value="300"/>
                     <Property key="WheelPage" value="300"/>
@@ -81,10 +124,10 @@
                     <UserString key="SettingName" value="footsteps volume"/>
                     <UserString key="SettingValueType" value="Float"/>
                 </Widget>
-                <Widget type="TextBox" skin="NormalText" position="4 128 100 18" align="Left Top">
+                <Widget type="TextBox" skin="NormalText" position="4 96 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioMusic}"/>
                 </Widget>
-                <Widget type="ScrollBar" skin="MW_HScroll" position="108 129 186 16" align="Left Top">
+                <Widget type="ScrollBar" skin="MW_HScroll" position="104 97 176 16" align="Left Top">
                     <Property key="Range" value="10000"/>
                     <Property key="Page" value="300"/>
                     <Property key="WheelPage" value="300"/>
@@ -95,7 +138,7 @@
                 </Widget>
             </Widget>
         </Widget>
-        <Widget type="AutoSizedButton" skin="MW_Button" position="236 184 60 24" name="OkButton" align="Left Top">
+        <Widget type="AutoSizedButton" skin="MW_Button" position="236 166 60 24" name="OkButton" align="Left Top">
             <Property key="ExpandDirection" value="Left"/>
             <Property key="Caption" value="#{Interface:OK}"/>
         </Widget>

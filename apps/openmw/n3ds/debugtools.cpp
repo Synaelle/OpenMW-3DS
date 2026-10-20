@@ -574,7 +574,9 @@ namespace omw3ds::debug
                     { "class", MWGui::GM_Class }, { "classpick", MWGui::GM_ClassPick },
                     { "classcreate", MWGui::GM_ClassCreate }, { "classgen", MWGui::GM_ClassGenerate },
                     { "birth", MWGui::GM_Birth }, { "review", MWGui::GM_Review }, { "name", MWGui::GM_Name },
-                    { "mainmenu", MWGui::GM_MainMenu }, { "journal", MWGui::GM_Journal } };
+                    { "mainmenu", MWGui::GM_MainMenu }, { "journal", MWGui::GM_Journal },
+                    { "rest", MWGui::GM_Rest }, { "levelup", MWGui::GM_Levelup },
+                    { "quickkeys", MWGui::GM_QuickKeysMenu }, { "alchemy", MWGui::GM_Alchemy } };
                 bool found = false;
                 for (const auto& [name, gm] : modes)
                     if (mode == name)
@@ -621,7 +623,9 @@ namespace omw3ds::debug
                         found = true;
                     }
                 }
-                if (!found && (mode == "dialogue" || mode == "travel" || mode == "spellmaking" || mode == "training"))
+                if (!found && (mode == "dialogue" || mode == "travel" || mode == "spellmaking" || mode == "training"
+                                   || mode == "barter" || mode == "spellbuying" || mode == "merchantrepair"
+                                   || mode == "enchanting"))
                 {
                     const MWWorld::Ptr player = MWMechanics::getPlayer();
                     MWWorld::Ptr nearest;
@@ -632,6 +636,17 @@ namespace omw3ds::debug
                     for (const MWWorld::Ptr& actor : actors)
                     {
                         if (actor == player)
+                            continue;
+                        // An NPC offering the service the window needs.
+                        const int services = actor.getClass().getServices(actor);
+                        if ((mode == "barter" && (services & ESM::NPC::AllItems) == 0)
+                            || (mode == "spellbuying" && (services & ESM::NPC::Spells) == 0)
+                            || (mode == "spellmaking" && (services & ESM::NPC::Spellmaking) == 0)
+                            || (mode == "training" && (services & ESM::NPC::Training) == 0)
+                            || (mode == "merchantrepair" && (services & ESM::NPC::Repair) == 0)
+                            || (mode == "enchanting" && (services & ESM::NPC::Enchanting) == 0)
+                            || (mode == "travel" && actor.getClass().isNpc()
+                                && actor.get<ESM::NPC>()->mBase->getTransport().empty()))
                             continue;
                         const float d = (actor.getRefData().getPosition().asVec3() - player.getRefData().getPosition().asVec3()).length();
                         if (nearest.isEmpty() || d < best)
@@ -646,6 +661,10 @@ namespace omw3ds::debug
                         const MWGui::GuiMode gm = mode == "travel" ? MWGui::GM_Travel
                             : mode == "spellmaking"                ? MWGui::GM_SpellCreation
                             : mode == "training"                   ? MWGui::GM_Training
+                            : mode == "barter"                     ? MWGui::GM_Barter
+                            : mode == "spellbuying"                ? MWGui::GM_SpellBuying
+                            : mode == "merchantrepair"             ? MWGui::GM_MerchantRepair
+                            : mode == "enchanting"                 ? MWGui::GM_Enchanting
                                                                    : MWGui::GM_Dialogue;
                         MWBase::Environment::get().getWindowManager()->pushGuiMode(gm, nearest);
                         found = true;

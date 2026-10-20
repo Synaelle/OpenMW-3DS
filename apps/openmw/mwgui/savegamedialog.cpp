@@ -491,12 +491,21 @@ namespace MWGui
                     mCurrentSlot->mProfile.mInGameTime.mMonth)
              << " " << hour << " " << (pm ? "#{Calendar:pm}" : "#{Calendar:am}") << "\n";
 
+#ifndef OPENMW_PLATFORM_3DS // the time played: left out of the save details on the 3DS (the tester, 20/10)
         if (mCurrentSlot->mProfile.mTimePlayed > 0)
+#else
+        if (false)
+#endif
         {
             text << "#{OMWEngine:TimePlayed}: " << formatTimeplayed(mCurrentSlot->mProfile.mTimePlayed) << "\n";
         }
 
-        text << Misc::fileTimeToString(mCurrentSlot->mTimeStamp, "%Y.%m.%d %T") << "\n";
+#ifdef OPENMW_PLATFORM_3DS
+        // The save's date comes from the SD card's file time; where it's unknown (emulators: 1970 or 2000), no
+        // date rather than a wrong one.
+        if (Misc::toTimeT(mCurrentSlot->mTimeStamp) > 946771200) // 02/01/2000
+#endif
+            text << Misc::fileTimeToString(mCurrentSlot->mTimeStamp, "%Y.%m.%d %T") << "\n";
 
         mCellName->setCaptionWithReplacing(std::format("#{{sCell={}}}", mCurrentSlot->mProfile.mPlayerCellName));
         mInfoText->setCaptionWithReplacing(text.str());

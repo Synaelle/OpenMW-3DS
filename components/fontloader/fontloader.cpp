@@ -274,6 +274,13 @@ namespace Gui
         if (!MyGUI::ResourceManager::getInstance().isExist(scrollFontId.mValue)
             && !Misc::StringUtils::ciEqual(scrollFont, "DemonicLetters"))
             loadFont(scrollFontId, "DemonicLetters");
+#ifdef OPENMW_PLATFORM_3DS
+        // M17: the button hint strip's text (openmw_controllerbuttons.layout), smaller than the interface's so a
+        // window's five or six hints fit the bottom screen's width.
+        mSizeOverride = 13;
+        loadFont(FontId{ "HintFont" }, "MysticCards");
+        mSizeOverride = 0;
+#endif
     }
 
     void FontLoader::loadFont(FontId fontId, std::string_view fileName)
@@ -452,7 +459,12 @@ namespace Gui
 
         MyGUI::xml::ElementPtr sizeNode = resourceNode->createChild("Property");
         sizeNode->addAttribute("key", "Size");
-        sizeNode->addAttribute("value", std::to_string(Settings::gui().mFontSize));
+#ifdef OPENMW_PLATFORM_3DS
+        const int fontSize = mSizeOverride > 0 ? mSizeOverride : Settings::gui().mFontSize;
+#else
+        const int fontSize = Settings::gui().mFontSize;
+#endif
+        sizeNode->addAttribute("value", std::to_string(fontSize));
 
         const std::string bookFontName = std::format("Journalbook {}", fontId.mValue);
         const int bookResolution = static_cast<int>(resolution * bookScale * mScalingFactor);
@@ -460,11 +472,11 @@ namespace Gui
         // The CPU interface draws from MyGUI's own font pages (rendered on the device by its FreeType: test #60
         // showed the PC's FreeType hinting the glyphs differently); the atlas glyphs serve the deprecated GPU path.
         MyGUI::IFont* font = Render3DS::interfaceByCpu() ? nullptr : cookedTrueTypeFont(
-            std::string(fontId.mValue), path, Settings::gui().mFontSize,
+            std::string(fontId.mValue), path, fontSize,
             static_cast<int>(resolution * std::ceil(mScalingFactor)));
         MyGUI::IFont* bookFont = Render3DS::interfaceByCpu()
             ? nullptr
-            : cookedTrueTypeFont(bookFontName, path, Settings::gui().mFontSize, bookResolution);
+            : cookedTrueTypeFont(bookFontName, path, fontSize, bookResolution);
         if (font == nullptr)
 #else
         MyGUI::IFont* font = nullptr;

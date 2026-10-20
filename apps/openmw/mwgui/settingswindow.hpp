@@ -128,6 +128,17 @@ namespace MWGui
         MyGUI::TextBox* getSliderLabel(MyGUI::ScrollBar* scroller) const;
 
         void layoutControlsBox();
+
+#ifdef OPENMW_PLATFORM_3DS
+        // M17: the D-pad moves a highlight over the open tab's options (sliders, on/off buttons); left/right change
+        // a slider or switch a button, A presses it.
+        std::vector<MyGUI::Widget*> mFocusables3DS;
+        size_t mFocus3DS = 0;
+        MyGUI::Widget* mFocusFrame3DS = nullptr;
+        void collectFocusables3DS(bool keepFocus);
+        void showFocus3DS();
+        void useFocus3DS(int step);
+#endif
         void renderScriptSettings();
 
         void computeMinimumWindowSize();

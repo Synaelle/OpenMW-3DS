@@ -6,6 +6,8 @@
      40,240) without a frame; each screen gets its own dialog panel. The widget names are race.cpp's. -->
 <MyGUI type="Layout">
     <Widget type="Window" skin="" layer="Modal" position="0 0 400 480" name="_Main">
+        <!-- M17: the bottom panel has no room for the button hints: they go under the top screen's panel. -->
+        <UserString key="Hints3DS" value="top"/>
 
         <!-- Top screen -->
         <Widget type="Widget" skin="MW_Dialog" position="0 0 400 240">
@@ -49,6 +51,9 @@
             <Widget type="Widget" skin="MW_Box" position="133 164 15 14">
                 <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextGenderButton"/>
             </Widget>
+            <!-- Bigger touch areas for the arrows (the tester, 20/10: the 10x10 arrows are hard to hit), invisible -->
+            <Widget type="Button" skin="" position="2 160 26 22" name="PrevGenderHit3DS"/>
+            <Widget type="Button" skin="" position="128 160 26 22" name="NextGenderHit3DS"/>
 
             <!-- Face choice -->
             <Widget type="Widget" skin="MW_Box" position="8 186 15 14">
@@ -58,6 +63,9 @@
             <Widget type="Widget" skin="MW_Box" position="133 186 15 14">
                 <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextFaceButton"/>
             </Widget>
+            <!-- Bigger touch areas for the arrows (the tester, 20/10: the 10x10 arrows are hard to hit), invisible -->
+            <Widget type="Button" skin="" position="2 182 26 22" name="PrevFaceHit3DS"/>
+            <Widget type="Button" skin="" position="128 182 26 22" name="NextFaceHit3DS"/>
 
             <!-- Hair choice -->
             <Widget type="Widget" skin="MW_Box" position="8 208 15 14">
@@ -67,6 +75,9 @@
             <Widget type="Widget" skin="MW_Box" position="133 208 15 14">
                 <Widget type="Button" skin="MW_ArrowRight" position="2 2 10 10" align="Right VStretch" name="NextHairButton"/>
             </Widget>
+            <!-- Bigger touch areas for the arrows (the tester, 20/10: the 10x10 arrows are hard to hit), invisible -->
+            <Widget type="Button" skin="" position="2 204 26 22" name="PrevHairHit3DS"/>
+            <Widget type="Button" skin="" position="128 204 26 22" name="NextHairHit3DS"/>
 
             <!-- Dialog buttons -->
             <Widget type="HBox" position="160 204 152 28">

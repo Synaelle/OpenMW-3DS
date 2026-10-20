@@ -1,5 +1,7 @@
 #include "windowbase.hpp"
 
+#include <algorithm>
+
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_RenderManager.h>
@@ -102,17 +104,23 @@ void WindowBase::center()
     coord.left = (layerSize.width - coord.width) / 2;
     coord.top = (layerSize.height - coord.height) / 2;
 #ifdef OPENMW_PLATFORM_3DS
-    // The canvas is both screens: a dialog is centred on the bottom one (its 320x240 at 40,240); a window laid
-    // out over both screens by the port (the character creation ones) stays where its layout put it.
-    if (coord.height > layerSize.height / 2 || coord.width > 320)
+    // The canvas is both screens: a dialog is centred on the bottom one (its 320x240 at 40,240), above the button
+    // hint strip's 18 rows (M17); a window laid out over both screens by the port (the character creation ones)
+    // stays where its layout put it. The not-yet-ported windows' scaled layer is one screen: plain centring there
+    // (M17: the spell shop went to its corner after a purchase).
+    const bool unported = mMainWidget->getLayer() && mMainWidget->getLayer()->getName() == "Unported3DS";
+    if (unported)
+        ;
+    else if (coord.height > layerSize.height / 2 || coord.width > 320)
     {
         coord.left = 0;
         coord.top = 0;
     }
     else
     {
+        constexpr int kBottomUsable = 240 - 18;
         coord.left = 40 + (320 - coord.width) / 2;
-        coord.top = layerSize.height / 2 + (layerSize.height / 2 - coord.height) / 2;
+        coord.top = layerSize.height / 2 + std::max(0, (kBottomUsable - coord.height) / 2);
     }
 #endif
     mMainWidget->setCoord(coord);

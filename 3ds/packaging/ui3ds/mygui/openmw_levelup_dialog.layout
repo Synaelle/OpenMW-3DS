@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The level-up window on the two screens (M17: OpenMW's, a 440-pixel column centred on the canvas, sat across
+     them): the class picture and the text on the top screen, the attributes to raise on the bottom one, which ends
+     above the button hint strip. The root's coordinates are the canvas's. -->
+<MyGUI type="Layout">
+    <Widget type="Widget" skin="" layer="Windows" position="0 0 400 480" name="_Main">
+        <Widget type="Widget" skin="MW_Dialog" position="0 0 400 240">
+            <Widget type="Widget" skin="MW_Box" position="72 8 256 132">
+                <Widget type="ImageBox" skin="ImageBox" name="ClassImage" position="4 4 248 124"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="8 144 384 20" name="LevelText">
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+            <Widget type="EditBox" skin="SandText" position="12 166 376 66" name="LevelDescription">
+                <Property key="MultiLine" value="true"/>
+                <Property key="WordWrap" value="true"/>
+                <Property key="Static" value="true"/>
+                <Property key="TextAlign" value="HCenter Top"/>
+            </Widget>
+        </Widget>
+
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+            <Widget type="Widget" skin="" position="8 26 304 16" name="Coins"/>
+            <Widget type="ScrollView" skin="MW_ScrollView" position="8 56 304 84" name="AssignWidget">
+                <Property key="CanvasAlign" value="Left"/>
+            </Widget>
+            <Widget type="AutoSizedButton" skin="MW_Button" position="244 170 66 24" name="OkButton">
+                <Property key="Caption" value="#{Interface:OK}"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

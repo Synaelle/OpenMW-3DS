@@ -1,11 +1,15 @@
 #include "controllermanager.hpp"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
 
 #include <SDL.h>
 
 #include <components/debug/debuglog.hpp>
+#include <typeinfo>
 #include <components/esm/refid.hpp>
 #include <components/files/conversion.hpp>
 #include <components/sdlutil/sdlmappings.hpp>
@@ -16,6 +20,9 @@
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/statemanager.hpp"
 #include "../mwbase/windowmanager.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include "../mwgui/windowmanagerimp.hpp"
+#endif
 #include "../mwgui/windowbase.hpp"
 
 #include "actions.hpp"
@@ -133,6 +140,16 @@ namespace MWInput
         MWBase::Environment::get().getLuaManager()->inputEvent(
             { MWBase::LuaManager::InputEvent::ControllerPressed, arg.button });
 
+#ifdef OPENMW_PLATFORM_3DS
+        // Select opens the console with the system keyboard (the tester, 20/10), instead of OpenMW's quick save,
+        // whatever the saved bindings say.
+        if (arg.button == SDL_CONTROLLER_BUTTON_BACK)
+        {
+            static_cast<MWGui::WindowManager&>(*MWBase::Environment::get().getWindowManager()).selectConsole3DS();
+            return;
+        }
+#endif
+
         mJoystickLastUsed = true;
         if (MWBase::Environment::get().getWindowManager()->isGuiMode())
         {
@@ -229,7 +246,20 @@ namespace MWInput
         mJoystickLastUsed = true;
         if (MWBase::Environment::get().getWindowManager()->isGuiMode())
         {
-            if (gamepadToGuiControl(arg))
+            const bool consumed = gamepadToGuiControl(arg);
+#ifdef OPENMW3DS_DEBUG
+            // The left stick in menus (zeste-issues #1: no cursor in the barter window): every 8th event.
+            static unsigned events = 0;
+            if ((arg.axis == SDL_CONTROLLER_AXIS_LEFTX || arg.axis == SDL_CONTROLLER_AXIS_LEFTY) && events++ % 8 == 0)
+            {
+                MWGui::WindowBase* topWin = MWBase::Environment::get().getWindowManager()->getActiveControllerWindow();
+                Log(Debug::Info) << "3ds gui stick: axis " << int(arg.axis) << " value " << arg.value << " consumed "
+                                 << consumed << " gamepad cursor " << mGamepadGuiCursorEnabled << " gui cursor "
+                                 << mGuiCursorEnabled << " window "
+                                 << (topWin != nullptr ? typeid(*topWin).name() : "none");
+            }
+#endif
+            if (consumed)
                 return;
         }
         else if (mBindingsManager->actionIsActive(A_TogglePOV)
@@ -259,7 +289,16 @@ namespace MWInput
         if (Settings::gui().mControllerMenus)
         {
             // Update cursor state.
+#ifdef OPENMW_PLATFORM_3DS
+            // In the loot windows A is the window's own action (Take, Transfer on the highlighted item): as a mouse
+            // click it hit wherever the last touch had left the cursor (hardware test #71). Elsewhere (dialogue,
+            // barter: the tester moves the cursor with the circle pad onto Offer, test #75) it clicks under the cursor.
+            const MWGui::GuiMode mode = winMgr->getMode();
+            bool treatAsMouse = winMgr->getCursorVisible() && mode != MWGui::GM_Container
+                && mode != MWGui::GM_Companion && mode != MWGui::GM_Inventory;
+#else
             bool treatAsMouse = winMgr->getCursorVisible();
+#endif
             winMgr->setCursorActive(false);
 
             MWGui::WindowBase* topWin = winMgr->getActiveControllerWindow();
@@ -504,6 +543,35 @@ namespace MWInput
 
     std::string ControllerManager::getControllerButtonIcon(int button)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // M17: the 3DS's own buttons (tools/make_button_icons.py, packaging/ui3ds/textures).
+        switch (button)
+        {
+            case SDL_CONTROLLER_BUTTON_A:
+                return "textures/omw_3ds_button_a.png";
+            case SDL_CONTROLLER_BUTTON_B:
+                return "textures/omw_3ds_button_b.png";
+            case SDL_CONTROLLER_BUTTON_X:
+                return "textures/omw_3ds_button_x.png";
+            case SDL_CONTROLLER_BUTTON_Y:
+                return "textures/omw_3ds_button_y.png";
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                return "textures/omw_3ds_button_l.png";
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                return "textures/omw_3ds_button_r.png";
+            case SDL_CONTROLLER_BUTTON_START:
+                return "textures/omw_3ds_button_start.png";
+            case SDL_CONTROLLER_BUTTON_BACK:
+                return "textures/omw_3ds_button_select.png";
+            case SDL_CONTROLLER_BUTTON_DPAD_UP:
+            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+                return "textures/omw_3ds_button_dpad.png";
+            default:
+                return {}; // no stick clicks, no Guide
+        }
+#endif
         int controllerType = ControllerManager::getControllerType();
 
         bool isXbox = controllerType == SDL_CONTROLLER_TYPE_XBOX360 || controllerType == SDL_CONTROLLER_TYPE_XBOXONE;
@@ -570,6 +638,23 @@ namespace MWInput
 
     std::string ControllerManager::getControllerAxisIcon(int axis)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        switch (axis)
+        {
+            case SDL_CONTROLLER_AXIS_LEFTX:
+            case SDL_CONTROLLER_AXIS_LEFTY:
+                return "textures/omw_3ds_button_circlepad.png";
+            case SDL_CONTROLLER_AXIS_RIGHTX:
+            case SDL_CONTROLLER_AXIS_RIGHTY:
+                return "textures/omw_3ds_button_cstick.png";
+            case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
+                return "textures/omw_3ds_button_zl.png";
+            case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
+                return "textures/omw_3ds_button_zr.png";
+            default:
+                return {};
+        }
+#endif
         int controllerType = ControllerManager::getControllerType();
 
         bool isXbox = controllerType == SDL_CONTROLLER_TYPE_XBOX360 || controllerType == SDL_CONTROLLER_TYPE_XBOXONE;

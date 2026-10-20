@@ -378,12 +378,13 @@ namespace MWInput
         defaultButtonBindings[A_QuickSave] = SDL_CONTROLLER_BUTTON_GUIDE;
 #ifdef OPENMW_PLATFORM_3DS
         // New 3DS: no stick clicks and no Guide button. "Shoulder layout" (PORTING_NOTES, M4): L sneak (hold),
-        // R first/third person, D-pad up/down journal/rest, Select quick save. ZL jump, ZR use as upstream.
+        // R first/third person, D-pad up/down journal/rest. ZL jump, ZR use as upstream. SELECT is the console's
+        // (ControllerManager; quick save was on it until M17, below): quick save keeps upstream's Guide, which the
+        // 3DS doesn't have, so it shows as "None" on the Controls page.
         defaultButtonBindings[A_Sneak] = SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
         defaultButtonBindings[A_TogglePOV] = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
         defaultButtonBindings[A_Journal] = SDL_CONTROLLER_BUTTON_DPAD_UP;
         defaultButtonBindings[A_Rest] = SDL_CONTROLLER_BUTTON_DPAD_DOWN;
-        defaultButtonBindings[A_QuickSave] = SDL_CONTROLLER_BUTTON_BACK;
 #endif
 
         std::map<int, int> defaultAxisBindings;
@@ -439,6 +440,12 @@ namespace MWInput
                 }
             }
         }
+#ifdef OPENMW_PLATFORM_3DS
+        // SELECT is the console's whatever the saved bindings say: an action on it (quick save, before M17) would
+        // show on the Controls page but never happen.
+        if (mInputBinder->isJoystickButtonBound(sFakeDeviceId, SDL_CONTROLLER_BUTTON_BACK))
+            mInputBinder->removeJoystickButtonBinding(sFakeDeviceId, SDL_CONTROLLER_BUTTON_BACK);
+#endif
     }
 
     std::string_view BindingsManager::getActionDescription(int action)

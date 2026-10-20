@@ -49,6 +49,9 @@ namespace MWGui
 
     private:
         void fitToText(MyGUI::TextBox* widget);
+#ifdef OPENMW_PLATFORM_3DS
+        void layout3DS();
+#endif
         void layoutVertically(MyGUI::Widget* widget, int margin);
         void moveControllerFocus(int delta);
         MyGUI::Widget* mTextBox;

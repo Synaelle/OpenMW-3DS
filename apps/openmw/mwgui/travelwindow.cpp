@@ -2,6 +2,7 @@
 
 #include <MyGUI_Button.h>
 #include <MyGUI_Gui.h>
+#include <MyGUI_LanguageManager.h>
 #include <MyGUI_ScrollView.h>
 
 #include <components/debug/debuglog.hpp>
@@ -97,6 +98,28 @@ namespace MWGui
         toAdd->setUserString("price", std::to_string(price));
         toAdd->setCaptionWithReplacing("#{sCell=" + nameString + "}  - " + MyGUI::utility::toString(price) + "#{sgp}");
         toAdd->setSize(mDestinationsView->getWidth(), lineHeight);
+#ifdef OPENMW_PLATFORM_3DS
+        // The bottom screen's list is narrow: a long name ("Sadrith Mora, Wolverine Hall: Mage's Guild") is
+        // shortened, so the price stays in view (M17).
+        {
+            MyGUI::LanguageManager& tags = MyGUI::LanguageManager::getInstance();
+            std::string cell = tags.replaceTags("#{sCell=" + nameString + "}").asUTF8();
+            const std::string priceText = tags.replaceTags("  - " + MyGUI::utility::toString(price) + "#{sgp}").asUTF8();
+            const int room = mDestinationsView->getWidth() - 20; // the scroll bar
+            while (toAdd->getTextSize().width > room && cell.size() > 8)
+            {
+                cell.resize(cell.size() - 1);
+                // Whole UTF-8 characters only, and no space or comma before the dots.
+                while (!cell.empty() && (static_cast<unsigned char>(cell.back()) & 0xC0) == 0x80)
+                    cell.pop_back();
+                if (!cell.empty() && static_cast<unsigned char>(cell.back()) >= 0xC0)
+                    cell.pop_back();
+                while (!cell.empty() && (cell.back() == ' ' || cell.back() == ','))
+                    cell.pop_back();
+                toAdd->setCaption(cell + "..." + priceText);
+            }
+        }
+#endif
         toAdd->eventMouseWheel += MyGUI::newDelegate(this, &TravelWindow::onMouseWheel);
         toAdd->setUserString("Destination", nameString);
         toAdd->setUserData(pos);
