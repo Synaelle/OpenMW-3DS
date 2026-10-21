@@ -75,6 +75,14 @@ namespace SceneUtil
         bool mNeedToUpdateBoneMatrices;
 
         ActiveType mActive;
+#ifdef OPENMW_PLATFORM_3DS
+    public:
+        // Whether this frame updates the pose (perf batch 1: Render3DS::poseEvery by the last cull's distance).
+        bool poseDue3DS(unsigned int frame) const;
+
+    protected:
+        float mCullDistance3DS = 0.f;
+#endif
 
         unsigned int mLastFrameNumber;
         unsigned int mLastCullFrameNumber;

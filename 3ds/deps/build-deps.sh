@@ -330,7 +330,19 @@ build_mpg123() {
     )
 }
 
-ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu mpg123)
+# citro3d (the GPU library, zlib licence), rebuilt from the release devkitPro ships (citro3d 1.7.1-2) with our
+# patches (perf batch 5: its per-draw costs, deps/patches/citro3d). Only the library: its headers are unchanged,
+# the devkitPro ones are used. Linked from $PREFIX/lib instead of devkitPro's (components/CMakeLists.txt).
+build_citro3d() {
+    local v=1.7.1
+    fetch "https://github.com/devkitPro/citro3d/archive/refs/tags/v$v.tar.gz" "citro3d-$v.tar.gz"
+    unpack "citro3d-$v.tar.gz" citro3d
+    make -C "$SRC/citro3d" -j"$JOBS" lib/libcitro3d.a
+    mkdir -p "$PREFIX/lib"
+    cp "$SRC/citro3d/lib/libcitro3d.a" "$PREFIX/lib/libcitro3d.a"
+}
+
+ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu mpg123 citro3d)
 
 # ---------------------------------------------------------------- driver
 components=("$@")

@@ -53,6 +53,9 @@ namespace p3ds::perf
     void add(const char* label, uint64_t ticks);
     // Logs "perf/more: label ms ..." averaged over `frames`, and resets.
     void logAndReset(unsigned frames);
+    // Once per frame: the phases' time in the frame just ended, appended to `out` as " label ms" (those of at least
+    // 2 ms, largest first) when `report` (a spike: frame3ds.cpp), then cleared either way.
+    void endFrame(bool report, char* out, unsigned size);
 
     class Phase
     {
@@ -113,6 +116,11 @@ namespace p3ds::perf
 {
     inline void add(const char*, uint64_t) {}
     inline void logAndReset(unsigned) {}
+    inline void endFrame(bool, char* out, unsigned size)
+    {
+        if (size > 0)
+            out[0] = '\0';
+    }
 
     class Phase
     {

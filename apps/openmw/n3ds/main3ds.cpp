@@ -8,6 +8,9 @@
 // (--new-game is deliberately absent: it would start character generation and the intro movie.)
 
 #include "frame3ds.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <openmw3ds_version.h>
+#endif
 #include "sound3ds.hpp"
 
 #include <platform3ds/crash.hpp>
@@ -57,6 +60,7 @@ namespace
     bool gBenchmark = false; // the start menu's third choice (benchmark3ds.hpp)
 #ifdef OPENMW3DS_DEBUG
     omw3ds::benchmark::Set gBenchmarkSet = omw3ds::benchmark::Set::Morrowind;
+    int gBenchmarkFirst = 0; // an automated run's "benchmark@N": the stage to start at
 #endif
 
     std::vector<std::string> loadArguments()
@@ -119,7 +123,7 @@ namespace
     //
     // Shown before the platform is up (p3ds::init: the chosen start decides the debug mode and where the logs go),
     // drawn on the bottom screen by the CPU. "Start" is the game; "Debug" holds the test set-ups (skip the intro, the
-    // benchmark, the hardware test's runs); "Options", "Check for updates", "Quit".
+    // benchmark, the hardware test's runs); "Check for updates", "Quit" (no "Options" until there is a choice).
     //
     // Hardware tests: sdmc:/openmw/test-menu.txt lists the test's runs (the switch files each one needs), shown in
     // Debug as "Test run: <label>" (A goes to the next run); Debug's starts create the chosen run's switch files and
@@ -189,7 +193,10 @@ namespace
     {
         std::set<std::string> all{ "gpu-ui", "soft-gui", "lumiere", "lumiere-demo", "no-fills", "fills", "fills-top",
             "fills-bottom", "fills-opaque", "gui-on-scene", "gui-no-reupload", "ui3ds-demo", "no-m8ui", "cpu-skinning",
-            "draw-census", "memwalk" };
+            "draw-census", "memwalk",
+            // The performance batches' off switches (test #99 run B's stayed on the card through #100-#102:
+            // later menus didn't name them).
+            "no-thinweather", "no-posecadence", "no-smallcull", "no-flameloops", "no-samestate" };
         for (const TestRun& r : runs.mRuns)
             all.insert(r.mSwitches.begin(), r.mSwitches.end());
         for (const std::string& name : all)
@@ -278,8 +285,16 @@ namespace
                     if (!message.empty())
                         art::text(kItemX, kMessageY, message.c_str(), art::Font::Text, art::colour::title);
                     art::separator(kFooterLineY);
-                    art::text(art::kMargin, kFooterY, canGoBack ? "A choose     B back" : "A choose", art::Font::Small,
-                        art::colour::dim);
+                    // The buttons as the in-game hints show them (the tester, test #99).
+                    int x = art::kMargin;
+                    x += art::button(x, kFooterY - 1, 'A', art::colour::dim) + 4;
+                    art::text(x, kFooterY, "Choose", art::Font::Small, art::colour::dim);
+                    if (canGoBack)
+                    {
+                        x += art::textWidth("Choose", art::Font::Small) + 14;
+                        x += art::button(x, kFooterY - 1, 'B', art::colour::dim) + 4;
+                        art::text(x, kFooterY, "Back", art::Font::Small, art::colour::dim);
+                    }
                     art::rightAligned(kFooterY, OPENMW3DS_VERSION, art::Font::Small, art::colour::dim);
                     tf::present();
                     redraw = false;
@@ -335,7 +350,7 @@ namespace
         while (true)
         {
             const int choice = menu::page("",
-                { { "Start" }, { "Debug" }, { "Options" }, { "Check for updates" }, { "Quit" } }, message, mainSelected,
+                { { "Start" }, { "Debug" }, { "Check for updates" }, { "Quit" } }, message, mainSelected,
                 false);
             message.clear();
             if (choice == 0)
@@ -343,31 +358,15 @@ namespace
                 chosenLine = "start: the game (debug tools off)";
                 return Start::Game;
             }
-            if (choice == 3)
+            if (choice == 2)
             {
                 message = "No update information yet.";
                 continue;
             }
-            if (choice == 4 || choice < 0)
+            if (choice == 3 || choice < 0)
                 return Start::Quit;
-            if (choice == 2)
-            {
-                // Options: one choice each for now (the start menu's later choices, LIMITATIONS.md M15).
-                size_t selected = 0;
-                std::string note;
-                while (true)
-                {
-                    const int option = menu::page("Options",
-                        { { "Renderer: Citro3D" }, { "Layout: 3DS" }, { "Interface: MyGUI (CPU)" }, { "Back" } }, note,
-                        selected, true);
-                    if (option < 0 || option == 3)
-                        break;
-                    note = option == 0 ? "The only renderer for now."
-                        : option == 1  ? "\"Like on PC\" is coming."
-                                       : "Lumiere-new is coming.";
-                }
-                continue;
-            }
+            // No "Options" page until there is something to choose (the tester, 2026-10-21: one renderer, one
+            // layout, one interface so far; it comes back with the first alternative, docs/PLANNED_FEATURES.md).
             // Debug.
             size_t selected = 0;
             std::string note;
@@ -442,7 +441,10 @@ int main(int, char**)
         gBenchmark = text.find("benchmark") != std::string::npos;
         gBenchmarkSet = text.find("benchmark:tribunal") != std::string::npos ? omw3ds::benchmark::Set::Tribunal
             : text.find("benchmark:bloodmoon") != std::string::npos      ? omw3ds::benchmark::Set::Bloodmoon
+            : text.find("benchmark:tour") != std::string::npos           ? omw3ds::benchmark::Set::Tour
                                                                           : omw3ds::benchmark::Set::Morrowind;
+        if (const size_t at = text.find("benchmark@"); at != std::string::npos)
+            gBenchmarkFirst = std::max(0, std::atoi(text.c_str() + at + 10) - 1);
         startLine = gBenchmark ? "start: automated run, benchmark" : "start: automated run";
     }
     else
@@ -471,7 +473,7 @@ int main(int, char**)
             runLogs = debugLogFolder(runs);
     }
     if (gBenchmark)
-        omw3ds::benchmark::enable(gBenchmarkSet);
+        omw3ds::benchmark::enable(gBenchmarkSet, gBenchmarkFirst);
     if (!runLogs.empty())
     {
         opts.logSubdir = runLogs.c_str();

@@ -67,6 +67,7 @@ namespace p3ds::perf
         {
             const char* label;
             uint64_t ticks;
+            uint64_t frameTicks = 0; // in the current frame (endFrame)
         };
         constexpr int kMaxPhases = 32;
         PhaseSum gPhases[kMaxPhases];
@@ -80,15 +81,75 @@ namespace p3ds::perf
 
     void add(const char* label, uint64_t ticks)
     {
+        // Perf batch 5: the lock only to add a label (the per-object phases, "lights" and "skinning", call this
+        // thousands of times a frame: ~2% of the main thread in Zeste). Entries are only appended, a new one
+        // published by the count; the sums are added atomically.
+        // Each label's slot, remembered by its address (labels are string literals): no search for a known one.
+        static int sSlotOf[64];
+        const unsigned hash = (reinterpret_cast<uintptr_t>(label) >> 2) % 64;
+        const int count = __atomic_load_n(&gPhaseCount, __ATOMIC_ACQUIRE);
+        int found = sSlotOf[hash];
+        if (found >= count || gPhases[found].label != label)
+        {
+            found = -1;
+            for (int i = 0; i < count && found < 0; ++i)
+                if (gPhases[i].label == label)
+                    found = i;
+            if (found >= 0)
+                sSlotOf[hash] = found;
+        }
+        if (found >= 0)
+        {
+            __atomic_fetch_add(&gPhases[found].ticks, ticks, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&gPhases[found].frameTicks, ticks, __ATOMIC_RELAXED);
+            return;
+        }
         LightLock_Lock(&gPhaseLock);
         int i = 0;
         while (i < gPhaseCount && gPhases[i].label != label)
             ++i;
         if (i < gPhaseCount)
-            gPhases[i].ticks += ticks;
+        {
+            __atomic_fetch_add(&gPhases[i].ticks, ticks, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&gPhases[i].frameTicks, ticks, __ATOMIC_RELAXED);
+        }
         else if (gPhaseCount < kMaxPhases)
-            gPhases[gPhaseCount++] = PhaseSum{ label, ticks };
+        {
+            gPhases[gPhaseCount] = PhaseSum{ label, ticks, ticks };
+            __atomic_store_n(&gPhaseCount, gPhaseCount + 1, __ATOMIC_RELEASE);
+        }
         LightLock_Unlock(&gPhaseLock);
+    }
+
+    void endFrame(bool report, char* out, unsigned size)
+    {
+        if (size == 0)
+            return;
+        out[0] = '\0';
+        PhaseSum frame[kMaxPhases];
+        int count = 0;
+        LightLock_Lock(&gPhaseLock);
+        for (int i = 0; i < gPhaseCount; ++i)
+        {
+            const uint64_t ticks = __atomic_exchange_n(&gPhases[i].frameTicks, 0, __ATOMIC_RELAXED);
+            if (report)
+            {
+                frame[count] = gPhases[i];
+                frame[count++].frameTicks = ticks;
+            }
+        }
+        LightLock_Unlock(&gPhaseLock);
+        if (!report)
+            return;
+        std::sort(frame, frame + count, [](const PhaseSum& a, const PhaseSum& b) { return a.frameTicks > b.frameTicks; });
+        unsigned len = 0;
+        for (int i = 0; i < count && len + 32 < size; ++i)
+        {
+            const double ms = double(frame[i].frameTicks) * 1000.0 / SYSCLOCK_ARM11;
+            if (ms < 2.0)
+                break;
+            len += unsigned(std::snprintf(out + len, size - len, " %s %.0f", frame[i].label, ms));
+        }
     }
 
     void logAndReset(unsigned frames)
@@ -100,10 +161,10 @@ namespace p3ds::perf
         LightLock_Lock(&gPhaseLock);
         for (int i = 0; i < gPhaseCount; ++i)
         {
+            const uint64_t ticks = __atomic_exchange_n(&gPhases[i].ticks, 0, __ATOMIC_RELAXED);
             if (len < int(sizeof(line)) - 32)
                 len += snprintf(line + len, sizeof(line) - len, " %s %.1f", gPhases[i].label,
-                    double(gPhases[i].ticks) * 1000.0 / SYSCLOCK_ARM11 / frames);
-            gPhases[i].ticks = 0;
+                    double(ticks) * 1000.0 / SYSCLOCK_ARM11 / frames);
         }
         LightLock_Unlock(&gPhaseLock);
         // writef stops at 511 characters

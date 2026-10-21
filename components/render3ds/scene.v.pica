@@ -15,7 +15,7 @@
 ; Outputs texcoord0 through texMat (the diffuse map's UV animation / terrain layer tiling) and texcoord1 through
 ; texMat1 (the terrain blend map, texture unit 1), both from the one texcoord input.
 ;
-; Straight-line code only: the point lights are unrolled (8 of them), no LOOP/IF (a LOOP version hung
+; Straight-line code only: the point lights are unrolled (4 of them), no LOOP/IF (a LOOP version hung
 ; real hardware, test #12). Every output component is written exactly once; attenuation is capped so no
 ; inf/NaN reaches the color.
 
@@ -28,7 +28,7 @@
 .fvec colorSel      ; x/y/z: diffuse/ambient/emission come from the vertex color (0 or 1); w: alpha multiplier
 .fvec lighting      ; x: 1 = lit, 0 = unlit (only E); y: 1 = E fades to matAmbient as the vertex alpha drops (clouds)
 .fvec lights[32]    ; 8 point lights x 4: (view position, 4/radius), diffuse, ambient, (constant, linear, quadratic, 0)
-                    ; this variant evaluates the first 8
+                    ; this variant evaluates the first 4
 .fvec bones[42]     ; skinned variant: 14 bones x 3 rows (bone matrix x model-view), the batch's palette
 
 .constf consts(0.0, 1.0, 0.00392156863, 3.0)
@@ -208,114 +208,6 @@
 	mul r10.x, r10.x, r11.x
 	mad r6.xyz, r10.xxxx, lights[13], r6
 	mad r7.xyz, r11.xxxx, lights[14], r7
-
-	; point light 4: r8 = direction, r9 = (d^2, 1/d, d), r10.x = lambert, r11.x = attenuation
-	add r8.xyz, lights[16], -r0
-	dp3 r9.x, r8, r8
-	rsq r9.y, r9.x
-	mul r8.xyz, r8, r9.yyyy
-	mul r9.z, r9.x, r9.y
-	dp3 r10.x, r8, r2
-	max r10.x, zeros, r10.x
-	mov r11.x, ones
-	mov r11.y, r9.z
-	mov r11.z, r9.x
-	dp3 r11.x, lights[19], r11
-	rcp r11.x, r11.x
-	min r11.x, limits.xxxx, r11.x
-	; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
-	mul r12.x, lights[16].wwww, r9.z
-	add r12.x, -consts.wwww, r12.x
-	max r12.x, zeros, r12.x
-	min r12.x, ones, r12.x
-	mul r12.x, r12.x, r12.x
-	add r12.x, ones, -r12.x
-	mul r12.x, r12.x, r12.x
-	mul r11.x, r11.x, r12.x
-	mul r10.x, r10.x, r11.x
-	mad r6.xyz, r10.xxxx, lights[17], r6
-	mad r7.xyz, r11.xxxx, lights[18], r7
-
-	; point light 5: r8 = direction, r9 = (d^2, 1/d, d), r10.x = lambert, r11.x = attenuation
-	add r8.xyz, lights[20], -r0
-	dp3 r9.x, r8, r8
-	rsq r9.y, r9.x
-	mul r8.xyz, r8, r9.yyyy
-	mul r9.z, r9.x, r9.y
-	dp3 r10.x, r8, r2
-	max r10.x, zeros, r10.x
-	mov r11.x, ones
-	mov r11.y, r9.z
-	mov r11.z, r9.x
-	dp3 r11.x, lights[23], r11
-	rcp r11.x, r11.x
-	min r11.x, limits.xxxx, r11.x
-	; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
-	mul r12.x, lights[20].wwww, r9.z
-	add r12.x, -consts.wwww, r12.x
-	max r12.x, zeros, r12.x
-	min r12.x, ones, r12.x
-	mul r12.x, r12.x, r12.x
-	add r12.x, ones, -r12.x
-	mul r12.x, r12.x, r12.x
-	mul r11.x, r11.x, r12.x
-	mul r10.x, r10.x, r11.x
-	mad r6.xyz, r10.xxxx, lights[21], r6
-	mad r7.xyz, r11.xxxx, lights[22], r7
-
-	; point light 6: r8 = direction, r9 = (d^2, 1/d, d), r10.x = lambert, r11.x = attenuation
-	add r8.xyz, lights[24], -r0
-	dp3 r9.x, r8, r8
-	rsq r9.y, r9.x
-	mul r8.xyz, r8, r9.yyyy
-	mul r9.z, r9.x, r9.y
-	dp3 r10.x, r8, r2
-	max r10.x, zeros, r10.x
-	mov r11.x, ones
-	mov r11.y, r9.z
-	mov r11.z, r9.x
-	dp3 r11.x, lights[27], r11
-	rcp r11.x, r11.x
-	min r11.x, limits.xxxx, r11.x
-	; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
-	mul r12.x, lights[24].wwww, r9.z
-	add r12.x, -consts.wwww, r12.x
-	max r12.x, zeros, r12.x
-	min r12.x, ones, r12.x
-	mul r12.x, r12.x, r12.x
-	add r12.x, ones, -r12.x
-	mul r12.x, r12.x, r12.x
-	mul r11.x, r11.x, r12.x
-	mul r10.x, r10.x, r11.x
-	mad r6.xyz, r10.xxxx, lights[25], r6
-	mad r7.xyz, r11.xxxx, lights[26], r7
-
-	; point light 7: r8 = direction, r9 = (d^2, 1/d, d), r10.x = lambert, r11.x = attenuation
-	add r8.xyz, lights[28], -r0
-	dp3 r9.x, r8, r8
-	rsq r9.y, r9.x
-	mul r8.xyz, r8, r9.yyyy
-	mul r9.z, r9.x, r9.y
-	dp3 r10.x, r8, r2
-	max r10.x, zeros, r10.x
-	mov r11.x, ones
-	mov r11.y, r9.z
-	mov r11.z, r9.x
-	dp3 r11.x, lights[31], r11
-	rcp r11.x, r11.x
-	min r11.x, limits.xxxx, r11.x
-	; radius fade: x = clamp(4 * d / radius - 3, 0, 1); att *= (1 - x^2)^2
-	mul r12.x, lights[28].wwww, r9.z
-	add r12.x, -consts.wwww, r12.x
-	max r12.x, zeros, r12.x
-	min r12.x, ones, r12.x
-	mul r12.x, r12.x, r12.x
-	add r12.x, ones, -r12.x
-	mul r12.x, r12.x, r12.x
-	mul r11.x, r11.x, r12.x
-	mul r10.x, r10.x, r11.x
-	mad r6.xyz, r10.xxxx, lights[29], r6
-	mad r7.xyz, r11.xxxx, lights[30], r7
 
 	; E: material emission, or the vertex color
 	add r8, -matEmission, r5

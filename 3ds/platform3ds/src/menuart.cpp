@@ -21,6 +21,7 @@ namespace p3ds::menuart
         };
 #include "menufont.inc"
 #include "menuemblem.inc"
+#include "menubuttons.inc"
 
         constexpr int kWidth = textfb::kWidth;
         constexpr int kHeight = textfb::kHeight;
@@ -149,6 +150,26 @@ namespace p3ds::menuart
     void rightAligned(int y, const char* str, Font font, uint16_t colour)
     {
         text(kWidth - kMargin - textWidth(str, font), y, str, font, colour);
+    }
+
+    int button(int x, int y, char which, uint16_t colour)
+    {
+        const uint8_t* alpha = which == 'B' ? kButtonB : kButtonA;
+        const int size = which == 'B' ? kButtonBSize : kButtonASize;
+        if (textfb::gpuOwned())
+            return size;
+        uint16_t* fb = textfb::framebuffer();
+        for (int gy = 0; gy < size; ++gy)
+            for (int gx = 0; gx < size; ++gx)
+            {
+                const unsigned a = alpha[gy * size + gx];
+                const int px = x + gx, py = y + gy;
+                if (a == 0 || px < 0 || px >= kWidth || py < 0 || py >= kHeight)
+                    continue;
+                uint16_t* p = pixel(fb, px, py);
+                *p = blend(*p, colour, a);
+            }
+        return size;
     }
 
     void separator(int y)

@@ -1,6 +1,11 @@
 #include "skeleton.hpp"
 
 #include <osg/MatrixTransform>
+#include <osgUtil/CullVisitor>
+
+#ifdef OPENMW_PLATFORM_3DS
+#include <components/render3ds/render3ds.hpp>
+#endif
 
 #include <components/debug/debuglog.hpp>
 #include <components/misc/strings/lower.hpp>
@@ -136,13 +141,36 @@ namespace SceneUtil
                 return;
             if (mActive == SemiActive && mLastFrameNumber != 0 && mLastCullFrameNumber + 3 <= nv.getTraversalNumber())
                 return;
+#ifdef OPENMW_PLATFORM_3DS
+            // Perf batch 1 (after MW3DS): a distant actor's bones (their keyframe controllers) are evaluated every
+            // 2nd/3rd/4th frame. The animation's own clock, root movement and text keys (sounds, hits) are
+            // Animation::runAnimation's, not this traversal's: they keep every frame.
+            if (mLastFrameNumber != 0 && !poseDue3DS(nv.getTraversalNumber()))
+                return;
+#endif
         }
         else if (nv.getVisitorType() == osg::NodeVisitor::CULL_VISITOR)
+        {
             mLastCullFrameNumber = nv.getTraversalNumber();
+#ifdef OPENMW_PLATFORM_3DS
+            mCullDistance3DS = static_cast<osgUtil::CullVisitor&>(nv).getDistanceToEyePoint(getBound().center(), false);
+#endif
+        }
 
         osg::Group::traverse(nv);
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    bool Skeleton::poseDue3DS(unsigned int frame) const
+    {
+        if (!Render3DS::poseCadence())
+            return true;
+        const int every = Render3DS::poseEvery(mCullDistance3DS);
+        // Staggered by the skeleton's address, so a crowd isn't all due on the same frame.
+        return every == 1 || (frame + (reinterpret_cast<uintptr_t>(this) >> 4)) % every == 0;
+    }
+
+#endif
     void Skeleton::childInserted(unsigned int)
     {
         markDirty();

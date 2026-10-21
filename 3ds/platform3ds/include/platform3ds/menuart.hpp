@@ -52,6 +52,10 @@ namespace p3ds::menuart
     int textWidth(const char* str, Font font);
     int lineHeight(Font font);
 
+    // A button's glyph ('A' or 'B': the in-game hints' icons, tools/make_button_icons.py), 16x16 from (x, y), in
+    // `colour`. Returns its width.
+    int button(int x, int y, char which, uint16_t colour);
+
     // A separator line between the margins.
     void separator(int y);
     // The short gold mark beside the current line, `height` pixels tall, at the left margin.

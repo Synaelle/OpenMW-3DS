@@ -48,6 +48,10 @@
 #include <set>
 #include <string>
 #include <map>
+#include <tuple>
+#include <osg/observer_ptr>
+#include <osg/MatrixTransform>
+#include <osg/UserDataContainer>
 #include <unordered_map>
 #include <vector>
 
@@ -96,6 +100,9 @@ namespace Render3DS
         // don't match.
         shaderProgram_s gProgram1;
         shaderProgram_s gProgram0;
+        shaderProgram_s gProgram2; // 2 point lights (perf batch 2; gProgram evaluates 4)
+        bool gVariant2 = false;
+        constexpr int kDrawLights = 4; // lights a draw is lit by at most: gProgram's (perf batch 2)
         bool gVariants = false;
         DVLB_s* gProbeDvlb = nullptr; // the probe shader's own DVLB (M10: its room in gDvlb went to gProgramSkin)
         shaderProgram_s gProgramSkin; // skinned on the GPU, sun + 1 light (skin1.v.pica)
@@ -1535,6 +1542,10 @@ namespace Render3DS
             int mTexEnv = -1; // TexEnvMode
             FixedState mFixed;
             bool mFixedValid = false;
+            // Perf batch 4: the previous draw's state graph and projection, and its sky pass (drawLeaf).
+            const osgUtil::StateGraph* mStateGraph = nullptr;
+            const osg::RefMatrix* mStateProjection = nullptr;
+            int mSky = 0;
         } gBound;
 
         enum TexEnvMode
@@ -1821,7 +1832,9 @@ namespace Render3DS
             int count = 0;
             if (pointLights && rs.mPointLightCount.mValue)
                 rs.mPointLightCount.mValue->get(count);
-            count = std::clamp(count, 0, kMaxLights);
+            // Perf batch 2: at most 4 lights a draw (OpenMW's light list is nearest first), and a variant that
+            // evaluates just the ones there are: every draw with 2+ lights ran all 8 light blocks (test #100).
+            count = std::clamp(count, 0, kDrawLights);
             if (buffer == nullptr || buffer->getFloatArray() == nullptr)
                 count = 0;
             if (count > 0)
@@ -1829,7 +1842,8 @@ namespace Render3DS
             gDrawLights = count;
 
             const shaderProgram_s* program = skinned ? &gProgramSkin
-                : !gVariants || count >= 2               ? &gProgram
+                : !gVariants || count >= 3               ? &gProgram
+                : count == 2                             ? (gVariant2 ? &gProgram2 : &gProgram)
                 : count == 1                             ? &gProgram1
                                                          : &gProgram0;
             useProgram(program);
@@ -2448,9 +2462,9 @@ namespace Render3DS
                 if (!selfTestStep("L8 + 1 point light"))
                     return false;
 
-                setTestLights(kMaxLights);
+                setTestLights(kDrawLights);
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
-                if (!selfTestStep("L9 + 8 point lights"))
+                if (!selfTestStep("L9 + 4 point lights"))
                     return false;
 
                 C3D_AlphaTest(true, GPU_GREATER, 128);
@@ -2489,6 +2503,13 @@ namespace Render3DS
                 C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
                 if (!selfTestStep("L16 + sun-only shader variant"))
                     return false;
+                if (gVariant2)
+                {
+                    C3D_BindProgram(&gProgram2);
+                    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, ibo16);
+                    if (!selfTestStep("L16b + 2-light shader variant"))
+                        return false;
+                }
                 if (gSkinVariant && skinVbo != nullptr)
                 {
                     // L17: GPU skinning: 6 attributes, bones through the address register. Bone 0 = identity
@@ -2590,6 +2611,113 @@ namespace Render3DS
                 C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(count), C3D_UNSIGNED_SHORT, gIdentityIbo + first);
         }
 
+        // Perf batch 2 (after MW3DS's flipbooks): the flames and smoke of still objects (candles, lanterns,
+        // braziers: Objects::insertModel marks their particle systems "still3ds") are simulated once per kind and
+        // replayed. The first one drawn records 16 frames at 12 a second (after 3 s, once steady), in the frame of
+        // its object; then every system of that kind (same material, life time and size) stops simulating (frozen)
+        // and draws the loop at its own place, each at its own point of the loop. Systems in world space (NIF
+        // particles without the local-space flag) sit under a transform holding the inverse of their object's world
+        // matrix (NifOsg::InverseWorldMatrix): that matrix takes them to the object's frame and back.
+        struct FlameParticle
+        {
+            osg::Vec3 mPosition; // in the object's frame
+            float mSize;
+            osg::Vec4 mColor; // alpha included
+            osg::Vec3 mAngle;
+            float mS0, mT0, mS1, mT1;
+        };
+        struct FlameLoop
+        {
+            osg::observer_ptr<const osgParticle::ParticleSystem> mRecorder;
+            double mNextFrame = 0;
+            std::vector<std::vector<FlameParticle>> mFrames;
+            bool mReady = false;
+        };
+        constexpr int kFlameFrames = 16;
+        constexpr double kFlameRate = 12.0; // frames a second
+        constexpr double kFlameWarmup = 3.0; // seconds before recording
+        std::map<std::tuple<const osg::StateSet*, float, float>, FlameLoop> gFlameLoops;
+
+        double nowSeconds()
+        {
+            return static_cast<double>(svcGetSystemTick()) / SYSCLOCK_ARM11;
+        }
+
+        // ps's coordinates to its object's frame (identity unless the system is in world space).
+        osg::Matrix particlesToObject(const osgParticle::ParticleSystem& ps)
+        {
+            const osg::UserDataContainer* udc = ps.getUserDataContainer();
+            if (udc == nullptr || ps.getNumParents() == 0)
+                return osg::Matrix::identity();
+            const osg::UserDataContainer::DescriptionList& descriptions = udc->getDescriptions();
+            if (std::find(descriptions.begin(), descriptions.end(), "worldspace") == descriptions.end())
+                return osg::Matrix::identity();
+            const osg::MatrixTransform* transform = dynamic_cast<const osg::MatrixTransform*>(ps.getParent(0));
+            return transform != nullptr ? transform->getMatrix() : osg::Matrix::identity();
+        }
+
+        // The loop frame to draw instead of ps's own particles (and objectToParticles set), or nullptr: ps draws
+        // its live particles (not a still system, or its kind's loop isn't recorded yet).
+        const std::vector<FlameParticle>* flameLoop(const osgParticle::ParticleSystem& ps, osg::Matrix& objectToParticles)
+        {
+            bool still = false;
+            if (!flameLoops() || !ps.getUserValue("still3ds", still) || !still)
+                return nullptr;
+            const osgParticle::Particle& model = ps.getDefaultParticleTemplate();
+            FlameLoop& loop = gFlameLoops[{ ps.getStateSet(), model.getLifeTime(), model.getSizeRange().maximum }];
+            const double now = nowSeconds();
+            if (loop.mReady)
+            {
+                if (!ps.isFrozen())
+                    const_cast<osgParticle::ParticleSystem&>(ps).setFrozen(true);
+                const osg::Matrix toObject = particlesToObject(ps);
+                objectToParticles = osg::Matrix::inverse(toObject);
+                const unsigned phase = static_cast<unsigned>(reinterpret_cast<uintptr_t>(&ps) >> 5);
+                const unsigned frame = (static_cast<unsigned>(now * kFlameRate) + phase) % kFlameFrames;
+                ++gStats.mFlameReplays;
+                return &loop.mFrames[frame];
+            }
+            if (!loop.mRecorder.valid())
+            {
+                loop.mRecorder = &ps;
+                loop.mFrames.clear();
+                loop.mNextFrame = now + kFlameWarmup;
+            }
+            if (loop.mRecorder.get() != &ps || now < loop.mNextFrame)
+                return nullptr;
+            if (now - loop.mNextFrame > 0.5) // not drawn for a while: frames too far apart, start again
+            {
+                loop.mFrames.clear();
+                loop.mNextFrame = now + 1.0 / kFlameRate;
+                return nullptr;
+            }
+            const osg::Matrix toObject = particlesToObject(ps);
+            std::vector<FlameParticle>& frame = loop.mFrames.emplace_back();
+            for (int i = 0; i < ps.numParticles(); ++i)
+            {
+                const osgParticle::Particle* particle = ps.getParticle(i);
+                if (!particle->isAlive())
+                    continue;
+                FlameParticle& p = frame.emplace_back();
+                p.mPosition = particle->getPosition() * toObject;
+                p.mSize = particle->getCurrentSize();
+                p.mColor = particle->getCurrentColor();
+                p.mColor.a() *= particle->getCurrentAlpha();
+                p.mAngle = particle->getAngle();
+                p.mS0 = particle->getSTexCoord();
+                p.mT0 = particle->getTTexCoord();
+                p.mS1 = p.mS0 + particle->getSTexTile();
+                p.mT1 = p.mT0 + particle->getTTexTile();
+            }
+            loop.mNextFrame += 1.0 / kFlameRate;
+            if (loop.mFrames.size() == kFlameFrames)
+            {
+                loop.mReady = true;
+                loop.mRecorder = nullptr;
+            }
+            return nullptr;
+        }
+
         // osgParticle::ParticleSystem::drawImplementation's quads (OSG ParticleSystem.cpp), on the CPU: OpenMW's
         // fires, flames, smoke and spell effects (they draw through immediate GL that never reaches us). Normal
         // (0, 0, 1) like NifOsg::ParticleSystem's normal array.
@@ -2598,7 +2726,9 @@ namespace Render3DS
         {
             first = gTransientUsed;
             count = 0;
-            if (gTransient == nullptr || ps.numParticles() <= 0)
+            osg::Matrix objectToParticles;
+            const std::vector<FlameParticle>* replay = flameLoop(ps, objectToParticles);
+            if (gTransient == nullptr || (replay == nullptr && ps.numParticles() <= 0))
                 return false;
             const int detail = std::max(1, ps.getLevelOfDetail());
             const float scale = std::sqrt(static_cast<float>(detail));
@@ -2636,22 +2766,58 @@ namespace Render3DS
                 xAxis *= xScale;
                 yAxis *= yScale;
             }
+            // Weather (perf batch 1, after MW3DS's precipitation): rain drops about a pixel wide whatever their
+            // distance (never wider than OpenMW's), and the drops and storm clouds nearest the eye faded out, as
+            // those few cover most of the blended pixels (sky.cpp names the systems).
+            enum class Weather
+            {
+                None,
+                Rain,
+                Storm,
+            };
+            const std::string& psName = ps.getName();
+            const Weather weather = !thinWeather() ? Weather::None
+                : psName == "Rain3DS"             ? Weather::Rain
+                : psName == "Storm3DS"            ? Weather::Storm
+                                                  : Weather::None;
+            const float fadeStart = weather == Weather::Rain ? 40.f : 150.f; // nothing nearer
+            const float fadeEnd = weather == Weather::Rain ? 100.f : 400.f; // full alpha from here
             const uint32_t room = kTransientVertices - gTransientUsed;
             Vertex* out = gTransient + first;
-            for (int i = 0; i < ps.numParticles(); i += detail)
+            const int total = replay != nullptr ? static_cast<int>(replay->size()) : ps.numParticles();
+            const int step = replay != nullptr ? 1 : detail;
+            for (int i = 0; i < total; i += step)
             {
-                const osgParticle::Particle* particle = ps.getParticle(i);
-                if (!particle->isAlive())
-                    continue;
-                switch (particle->getShape())
+                FlameParticle source;
+                if (replay != nullptr)
                 {
-                    case osgParticle::Particle::QUAD:
-                    case osgParticle::Particle::QUAD_TRIANGLESTRIP:
-                    case osgParticle::Particle::HEXAGON:
-                    case osgParticle::Particle::USER:
-                        break;
-                    default:
-                        continue; // points and lines
+                    source = (*replay)[i];
+                    source.mPosition = source.mPosition * objectToParticles;
+                }
+                else
+                {
+                    const osgParticle::Particle* particle = ps.getParticle(i);
+                    if (!particle->isAlive())
+                        continue;
+                    switch (particle->getShape())
+                    {
+                        case osgParticle::Particle::QUAD:
+                        case osgParticle::Particle::QUAD_TRIANGLESTRIP:
+                        case osgParticle::Particle::HEXAGON:
+                        case osgParticle::Particle::USER:
+                            break;
+                        default:
+                            continue; // points and lines
+                    }
+                    source.mPosition = particle->getPosition();
+                    source.mSize = particle->getCurrentSize();
+                    source.mColor = particle->getCurrentColor();
+                    source.mColor.a() *= particle->getCurrentAlpha();
+                    source.mAngle = particle->getAngle();
+                    source.mS0 = particle->getSTexCoord();
+                    source.mT0 = particle->getTTexCoord();
+                    source.mS1 = source.mS0 + particle->getSTexTile();
+                    source.mT1 = source.mT0 + particle->getTTexTile();
                 }
                 const uint32_t perParticle = gQuadIbo != nullptr ? 4 : 6;
                 if (count + perParticle > room)
@@ -2662,7 +2828,7 @@ namespace Render3DS
                     break;
                 }
                 osg::Vec3 x = xAxis, y = yAxis;
-                const osg::Vec3& angle = particle->getAngle();
+                const osg::Vec3& angle = source.mAngle;
                 if (angle.x() != 0.f || angle.y() != 0.f || angle.z() != 0.f)
                 {
                     osg::Matrix rotation;
@@ -2676,13 +2842,31 @@ namespace Render3DS
                         y = osg::Matrix::transform3x3(modelview, y);
                     }
                 }
-                osg::Vec4 color = particle->getCurrentColor();
-                color.a() *= particle->getCurrentAlpha();
-                const float size = particle->getCurrentSize() * scale;
-                const osg::Vec3 p1 = x * size, p2 = y * size;
-                const osg::Vec3& pos = particle->getPosition();
-                const float s0 = particle->getSTexCoord(), t0 = particle->getTTexCoord();
-                const float s1 = s0 + particle->getSTexTile(), t1 = t0 + particle->getTTexTile();
+                osg::Vec4 color = source.mColor;
+                const float size = source.mSize * (replay != nullptr ? 1.f : scale);
+                osg::Vec3 p1 = x * size;
+                const osg::Vec3 p2 = y * size;
+                const osg::Vec3& pos = source.mPosition;
+                if (weather != Weather::None)
+                {
+                    const float distance = -(pos * modelview).z();
+                    if (distance < fadeStart)
+                    {
+                        ++gStats.mWeatherSkipped;
+                        continue;
+                    }
+                    if (distance < fadeEnd)
+                        color.a() *= (distance - fadeStart) / (fadeEnd - fadeStart);
+                    if (weather == Weather::Rain)
+                    {
+                        // Half a pixel either side: the 240-row screen spans ~1.15 x distance at OpenMW's 60 degrees.
+                        const float halfWidth = std::max(0.02f, 0.0024f * distance);
+                        const float length = p1.length();
+                        if (length > halfWidth)
+                            p1 *= halfWidth / length;
+                    }
+                }
+                const float s0 = source.mS0, t0 = source.mT0, s1 = source.mS1, t1 = source.mT1;
                 const osg::Vec3 corners[4] = { pos - p1 - p2, pos + p1 - p2, pos + p1 + p2, pos - p1 + p2 };
                 const auto finite = [](const osg::Vec3& v) {
                     return std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
@@ -2749,7 +2933,7 @@ namespace Render3DS
         // Hardware test #29: a fireball exploding at the player's feet breaks the GPU (Azahar draws it fine). What
         // reaches the GPU then, logged once per drawable: draws at (near) zero scale (an effect's first frames:
         // normals of length 0, NaN once normalized in the shader) and draws whose bounds enclose the camera.
-        // sdmc:/openmw/draw-census: the small draws (under 64 triangles) of one busy frame are logged once, with
+        // sdmc:/openmw/draw-census: the draws (sky and terrain left out) of one busy frame are logged once, with
         // their node path, size and distance (M10: what the 3DS's many small draws are).
         bool gCensusFrame = false;
         void censusDraw(const osgUtil::RenderLeaf& leaf, uint32_t triangles, const ResolvedState& rs)
@@ -2779,16 +2963,20 @@ namespace Render3DS
                 return;
             const osg::Drawable* drawable = leaf._drawable.get();
             const osg::Matrix& mv = *leaf._modelview;
-            const float sx = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length();
-            const float sy = osg::Vec3(mv(1, 0), mv(1, 1), mv(1, 2)).length();
-            const float sz = osg::Vec3(mv(2, 0), mv(2, 1), mv(2, 2)).length();
-            const float scale = std::max(sx, std::max(sy, sz));
+            // Squared lengths: this runs for every draw of a debug build (perf batch 4: 4 square roots a draw).
+            const float sx2 = osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2();
+            const float sy2 = osg::Vec3(mv(1, 0), mv(1, 1), mv(1, 2)).length2();
+            const float sz2 = osg::Vec3(mv(2, 0), mv(2, 1), mv(2, 2)).length2();
+            const float scale2 = std::max(sx2, std::max(sy2, sz2));
             const osg::BoundingSphere& bound = drawable->getBound();
-            const float distance = (bound.center() * mv).length();
-            const bool zeroScale = std::min(sx, std::min(sy, sz)) < 1e-4f;
-            const bool enclosing = bound.valid() && distance < bound.radius() * scale;
+            const float distance2 = (bound.center() * mv).length2();
+            const bool zeroScale = std::min(sx2, std::min(sy2, sz2)) < 1e-8f;
+            const bool enclosing = bound.valid() && distance2 < bound.radius2() * scale2;
             if (!zeroScale && !enclosing)
                 return;
+            const float sx = std::sqrt(sx2), sy = std::sqrt(sy2), sz = std::sqrt(sz2);
+            const float scale = std::sqrt(scale2);
+            const float distance = std::sqrt(distance2);
             if (!noted.insert(drawable).second)
                 return;
             const osg::Node* parent = drawable->getNumParents() > 0 ? drawable->getParent(0) : nullptr;
@@ -2854,7 +3042,12 @@ namespace Render3DS
             zesteTag(*leaf, particles != nullptr);
 #endif
             const ResolvedState& rs = resolve(leaf->_parent);
-            const int sky = skyPass(rs);
+            // Perf batch 4: a draw under the same state graph as the previous one (OSG sorts the opaque bin by
+            // state: the copies of a model come one after the other) has the same sky pass, fixed state, textures,
+            // material, texture matrices and fog, all set already. Only its model-view and lights change.
+            const bool sameState = leaf->_parent == gBound.mStateGraph
+                && leaf->_projection.get() == gBound.mStateProjection && gFog.mValid && sameStateSkip();
+            const int sky = sameState ? gBound.mSky : skyPass(rs);
             if (sky == Sky_SunflashQuery)
                 return; // an occlusion query for the sun glare: draws nothing visible
             // M10: small feature culling for each part of a model. OSG culls whole objects smaller than [Camera]
@@ -2873,10 +3066,13 @@ namespace Render3DS
                 if (projection(3, 3) == 0.f && bound.valid())
                 {
                     const osg::Matrix& mv = *leaf->_modelview;
-                    const float radius = bound.radius() * osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length();
-                    const float distance = (bound.center() * mv).length();
+                    // Squared, no square roots (perf batch 4): radius * p11 * height < pixels * distance.
+                    const float radius2 = bound.radius2() * osg::Vec3(mv(0, 0), mv(0, 1), mv(0, 2)).length2();
+                    const float distance2 = (bound.center() * mv).length2();
                     const float height = gRotatedTarget ? 240.f : 256.f; // pixels across the vertical field of view
-                    if (distance > radius && radius * float(projection(1, 1)) * height < gSmallFeaturePixels * distance)
+                    const float onScreen = float(projection(1, 1)) * height;
+                    if (distance2 > radius2
+                        && radius2 * onScreen * onScreen < gSmallFeaturePixels * gSmallFeaturePixels * distance2)
                     {
                         ++gStats.mSmallCulled;
                         return;
@@ -2884,35 +3080,43 @@ namespace Render3DS
                 }
             }
 
-            const FixedState fixed = computeFixedState(rs);
-            if (fixed.mCull == 3)
-                return;
-            if (!gBound.mFixedValid || !(fixed == gBound.mFixed))
+            if (!sameState)
             {
-                applyFixedState(fixed);
-                gBound.mFixed = fixed;
-                gBound.mFixedValid = true;
+                const FixedState fixed = computeFixedState(rs);
+                if (fixed.mCull == 3)
+                    return;
+                if (!gBound.mFixedValid || !(fixed == gBound.mFixed))
+                {
+                    applyFixedState(fixed);
+                    gBound.mFixed = fixed;
+                    gBound.mFixedValid = true;
+                }
             }
 
             lap(gEmitProfile.mState);
-            // The sky's atmosphere and sun glare passes don't sample their texture.
-            const bool skyUntextured = sky == Sky_Atmosphere || sky == Sky_Sunglare;
-            C3D_Tex* texture = rs.mTexture.mValue && !skyUntextured ? textureFor(*rs.mTexture.mValue) : nullptr;
-            if (texture != gBound.mTexture)
+            // The terrain's blend map, as the previous draw bound it; recomputed on a new state.
+            C3D_Tex* blendMap = gBound.mTexture1 != &gUnusedTex1 ? gBound.mTexture1 : nullptr;
+            if (!sameState)
             {
-                gBound.mTexture = texture;
-                if (texture)
-                    C3D_TexBind(0, texture);
+                // The sky's atmosphere and sun glare passes don't sample their texture.
+                const bool skyUntextured = sky == Sky_Atmosphere || sky == Sky_Sunglare;
+                C3D_Tex* texture = rs.mTexture.mValue && !skyUntextured ? textureFor(*rs.mTexture.mValue) : nullptr;
+                if (texture != gBound.mTexture)
+                {
+                    gBound.mTexture = texture;
+                    if (texture)
+                        C3D_TexBind(0, texture);
+                }
+                const osg::Texture* blendMapTexture = blendMapOf(rs);
+                blendMap = texture && blendMapTexture ? textureFor(*blendMapTexture) : nullptr;
+                C3D_Tex* unit1 = blendMap ? blendMap : &gUnusedTex1;
+                if (unit1 != gBound.mTexture1)
+                {
+                    gBound.mTexture1 = unit1;
+                    C3D_TexBind(1, unit1);
+                }
+                setTexEnv(blendMap ? TexEnv_BlendMapped : texture ? TexEnv_Textured : TexEnv_VertexColor);
             }
-            const osg::Texture* blendMapTexture = blendMapOf(rs);
-            C3D_Tex* blendMap = texture && blendMapTexture ? textureFor(*blendMapTexture) : nullptr;
-            C3D_Tex* unit1 = blendMap ? blendMap : &gUnusedTex1;
-            if (unit1 != gBound.mTexture1)
-            {
-                gBound.mTexture1 = unit1;
-                C3D_TexBind(1, unit1);
-            }
-            setTexEnv(blendMap ? TexEnv_BlendMapped : texture ? TexEnv_Textured : TexEnv_VertexColor);
             lap(gEmitProfile.mTexture);
 
             if (leaf->_projection.get() != gBound.mProjection)
@@ -2930,9 +3134,17 @@ namespace Render3DS
             if (particles)
                 particles->getUserValue("simpleLighting", simpleLighting);
             uploadLighting(rs, sky == Sky_None && !simpleLighting, skin != nullptr);
-            uploadMaterial(rs, sky);
-            uploadTexMat(rs, sky);
-            uploadFog(rs, sky);
+            if (!sameState)
+            {
+                uploadMaterial(rs, sky);
+                uploadTexMat(rs, sky);
+                uploadFog(rs, sky);
+                gBound.mStateGraph = leaf->_parent;
+                gBound.mStateProjection = leaf->_projection.get();
+                gBound.mSky = sky;
+            }
+            else
+                ++gStats.mSameState;
             lap(gEmitProfile.mUniforms);
 
             if (skin)
@@ -3006,7 +3218,8 @@ namespace Render3DS
                         static_cast<uint8_t*>(gpu->mIbo) + prim.mFirst);
                 ++gStats.mDraws;
 #ifdef OPENMW3DS_DEBUG
-                if (gCensusFrame && prim.mTriangles < 64 && sky == Sky_None && !blendMap)
+                // Every draw of the census frame but the sky and terrain (batch 3: which draws share a texture).
+                if (gCensusFrame && sky == Sky_None && !blendMap)
                     censusDraw(*leaf, prim.mTriangles, rs);
 #endif
                 ++(sky != Sky_None ? gStats.mSkyDraws
@@ -3104,8 +3317,12 @@ namespace Render3DS
                 return false;
             }
             gInFrame = true;
+            // Perf batch 1: scenery parts go at 10 pixels unless "Small details far away" is on (MW3DS drops theirs
+            // at ~25 pixels across); actors' parts are never culled this way.
+            const float smallPixels = Settings::camera().smallFeaturePixels3DS();
             gSmallFeaturePixels = Settings::camera().mSmallFeatureCulling
-                ? std::max(0.f, Settings::camera().smallFeaturePixels3DS())
+                ? std::max(0.f, smallCullBoost() && !Settings::camera().mFarSmallDetails3DS ? std::max(smallPixels, 10.f)
+                                                                                           : smallPixels)
                 : 0.f;
 #ifdef OPENMW3DS_DEBUG
             {
@@ -5825,6 +6042,12 @@ namespace Render3DS
             shaderProgramSetVsh(&gProgramSkin, &gDvlb->DVLE[4]);
             gSkinVariant = true;
         }
+        shaderProgramInit(&gProgram2);
+        if (gVariants && gDvlb->numDVLE >= 6)
+        {
+            shaderProgramSetVsh(&gProgram2, &gDvlb->DVLE[5]);
+            gVariant2 = true;
+        }
         C3D_BindProgram(&gProgram);
         auto loc = [](const char* name) {
             const int location = shaderInstanceGetUniformLocation(gProgram.vertexShader, name);
@@ -5850,10 +6073,10 @@ namespace Render3DS
         gFlatModelView = shaderInstanceGetUniformLocation(gFlatProgram.vertexShader, "modelView");
         if (gFlatProjection < 0 || gFlatModelView < 0)
             P3DS_LOGE("render3ds: flat shader uniforms not found: no GUI");
-        for (shaderProgram_s* variant : { &gProgram1, &gProgram0, &gProgramSkin })
+        for (shaderProgram_s* variant : { &gProgram1, &gProgram0, &gProgramSkin, &gProgram2 })
         {
-            if (!gVariants || (variant == &gProgramSkin && !gSkinVariant))
-                break;
+            if (!gVariants || (variant == &gProgramSkin && !gSkinVariant) || (variant == &gProgram2 && !gVariant2))
+                continue;
             for (const char* name : { "projection", "modelView", "texMat", "texMat1", "lighting", "sunDir",
                      "sunDiffuse", "sunAmbient", "matDiffuse", "matAmbient", "matEmission", "colorSel", "lights",
                      "bones" })
@@ -5875,7 +6098,7 @@ namespace Render3DS
                 gSkinVariant = false;
             }
         P3DS_LOGI("render3ds: shaders: %lu instructions in %d programs (max 512), light variants %s, skinning %s",
-            (unsigned long)gDvlb->DVLP.codeSize, int(gDvlb->numDVLE), gVariants ? "0/1/8" : "off",
+            (unsigned long)gDvlb->DVLP.codeSize, int(gDvlb->numDVLE), gVariants ? (gVariant2 ? "0/1/2/4" : "0/1/4") : "off",
             gSkinVariant ? "GPU" : "CPU");
 
         gLinearBasePa = osConvertVirtToPhys(reinterpret_cast<void*>(__ctru_linear_heap)) & ~7u;
@@ -5934,6 +6157,7 @@ namespace Render3DS
         shaderProgramFree(&gProgramSkin);
         shaderProgramFree(&gProgram1);
         shaderProgramFree(&gProgram0);
+        shaderProgramFree(&gProgram2);
         DVLB_Free(gDvlb);
         DVLB_Free(gProbeDvlb);
         C3D_RenderTargetDelete(gTarget);
@@ -5945,6 +6169,47 @@ namespace Render3DS
     bool gpuSkinning()
     {
         return gActive && gSkinVariant && gFailure == nullptr;
+    }
+
+    namespace
+    {
+        bool switchOn(const char* offFile)
+        {
+            struct stat st;
+            const bool on = stat(offFile, &st) != 0;
+            Log(Debug::Info) << "render3ds: " << (offFile + std::strlen("sdmc:/openmw/no-")) << (on ? " on" : " off");
+            return on;
+        }
+    }
+
+    bool thinWeather()
+    {
+        static const bool on = switchOn("sdmc:/openmw/no-thinweather");
+        return on;
+    }
+
+    bool poseCadence()
+    {
+        static const bool on = switchOn("sdmc:/openmw/no-posecadence");
+        return on;
+    }
+
+    bool smallCullBoost()
+    {
+        static const bool on = switchOn("sdmc:/openmw/no-smallcull");
+        return on;
+    }
+
+    bool flameLoops()
+    {
+        static const bool on = switchOn("sdmc:/openmw/no-flameloops");
+        return on;
+    }
+
+    bool sameStateSkip()
+    {
+        static const bool on = switchOn("sdmc:/openmw/no-samestate");
+        return on;
     }
 
     bool isActive()

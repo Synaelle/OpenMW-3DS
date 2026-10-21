@@ -209,11 +209,15 @@ FOOTER = """
 """
 
 
+# Perf batch 2 (test #100): a draw is lit by at most 4 lights, and the main variant evaluates 4 instead of 8 (any
+# draw with 2+ lights ran all 8 blocks); scene2 for draws with 2. With flat.v.pica the DVLB's code is 512 words,
+# the PICA's whole program memory (blocks of 24 instructions: 15 + 58 + 82 + 106 + 154 + 97).
 VARIANTS = [  # (lights evaluated, file, entry point, skinned); scene.v.pica's entry stays "main"
-    (LIGHTS, "scene.v.pica", "main", False),
+    (4, "scene.v.pica", "main", False),
     (1, "scene1.v.pica", "scene1_main", False),
     (0, "scene0.v.pica", "scene0_main", False),
     (1, "skin1.v.pica", "skin1_main", True),
+    (2, "scene2.v.pica", "scene2_main", False),
 ]
 
 

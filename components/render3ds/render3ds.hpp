@@ -146,6 +146,9 @@ namespace Render3DS
         uint32_t mSmallCulled = 0; // parts of models left out, smaller than the small feature culling size
         uint32_t mParticleVertices = 0; // particle quads built on the CPU this frame (6 vertices each)
         uint32_t mBadParticles = 0; // particles left out: non-finite corners (a zero-scale effect, see buildParticles)
+        uint32_t mWeatherSkipped = 0; // rain drops and storm particles left out near the eye (perf batch 1)
+        uint32_t mFlameReplays = 0; // particle systems drawn from a recorded loop (perf batch 2)
+        uint32_t mSameState = 0; // draws that kept the previous draw's state (perf batch 4)
         uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
         uint32_t mGuiTextureBinds = 0; // distinct textures of the GUI passes, summed (one per screen: the UI atlas)
         uint32_t mGuiTopFrames = 0; // frames that redrew the top screen's interface texture
@@ -199,6 +202,25 @@ namespace Render3DS
     };
     // Whether skinned meshes are drawn by the skinned shader; otherwise RigGeometry skins them on the CPU.
     bool gpuSkinning();
+
+    // Performance batch 1 (docs/MW3DS_STUDY.md), each on unless its file is on the SD card (read once, at the first
+    // call), so a hardware run can compare with and without:
+    //   thin rain and faded storm clouds near the eye (sdmc:/openmw/no-thinweather);
+    //   distant actors' bones updated every 2nd/3rd/4th frame by distance (sdmc:/openmw/no-posecadence);
+    //   scenery parts culled at 10 pixels instead of the setting's 6 (sdmc:/openmw/no-smallcull).
+    bool thinWeather();
+    bool poseCadence();
+    bool smallCullBoost();
+    // Perf batch 2: still objects' flames simulated once per kind and replayed (sdmc:/openmw/no-flameloops).
+    bool flameLoops();
+    // Perf batch 4: a draw under the previous draw's state skips its state, textures and material
+    // (sdmc:/openmw/no-samestate).
+    bool sameStateSkip();
+    // Every how many frames a skeleton this far from the camera gets its pose updated (1: every frame).
+    inline int poseEvery(float distance)
+    {
+        return distance < 800.f ? 1 : distance < 1600.f ? 2 : distance < 3000.f ? 3 : 4;
+    }
 }
 
 #endif

@@ -98,7 +98,8 @@ namespace omw3ds
             double mShaderRuns[9] = {};
             double mProgramSwitches = 0;
             double mParticleVertices = 0;
-            double mSky = 0, mTerrain = 0, mParticles = 0, mSkinned = 0, mSmall = 0, mOther = 0, mSmallCulled = 0;
+            double mSky = 0, mTerrain = 0, mParticles = 0, mSkinned = 0, mSmall = 0, mOther = 0, mSmallCulled = 0,
+                   mWeatherSkipped = 0, mFlameReplays = 0, mSameState = 0;
         } gRender;
 
         // Per-subsystem frame timings from osg::Stats (previous frame), summed between perf lines.
@@ -108,6 +109,7 @@ namespace omw3ds
             std::string mAttribute;
             bool mCamera; // camera stats (cull/draw) instead of viewer stats
             double mSum = 0;
+            double mLast = 0; // the frame just ended (a spike's report)
         };
         osgViewer::Viewer* gViewer = nullptr;
         std::vector<Timing> gTimings;
@@ -129,8 +131,12 @@ namespace omw3ds
             {
                 osg::Stats* stats = t.mCamera ? cameraStats : viewerStats;
                 double value = 0;
+                t.mLast = 0;
                 if (stats != nullptr && stats->getAttribute(frame - 1, t.mAttribute, value))
+                {
                     t.mSum += value;
+                    t.mLast = value;
+                }
             }
             ++gTimingFrames;
         }
@@ -493,6 +499,25 @@ namespace omw3ds
         ++gStats.frameIndex;
 #ifdef OPENMW3DS_DEBUG
         accumulateTimings();
+        {
+            // A spike (the 0.6-2.4 s freezes of tests #99-#101's first stage): that frame's subsystems and phases.
+            const bool spike = ms >= 300.f && p3ds::debugMode();
+            char phases[400];
+            p3ds::perf::endFrame(spike, phases, sizeof(phases));
+            if (spike)
+            {
+                std::string systems;
+                char item[48];
+                for (const Timing& t : gTimings)
+                    if (t.mLast * 1000.0 >= 2.0)
+                    {
+                        std::snprintf(item, sizeof(item), " %s %.0f", t.mLabel.c_str(), t.mLast * 1000.0);
+                        systems += item;
+                    }
+                P3DS_LOGW("spike: %.0f ms frame [%s]; systems:%s; phases:%s", double(ms), gCellName.c_str(),
+                    systems.c_str(), phases);
+            }
+        }
         if (gStats.frameIndex == 100)
             debug::lazyStringSelfCheck();
         debug::runAutorun(gStats.frameIndex);
@@ -597,6 +622,9 @@ namespace omw3ds
         gRender.mSmall += render.mSmallDraws;
         gRender.mOther += render.mOtherDraws;
         gRender.mSmallCulled += render.mSmallCulled;
+        gRender.mWeatherSkipped += render.mWeatherSkipped;
+        gRender.mFlameReplays += render.mFlameReplays;
+        gRender.mSameState += render.mSameState;
 #endif
 
         gLogAccum += frameSeconds;
@@ -634,9 +662,12 @@ namespace omw3ds
                     runs[0] / n, runs[1] / n, runs[2] / n, runs[3] / n, runs[4] / n, runs[5] / n, runs[6] / n,
                     runs[7] / n, runs[8] / n, gRender.mParticleVertices / n, gRender.mProgramSwitches / n);
                 P3DS_LOGI("gpu/draws: per frame sky %.0f, terrain %.0f, particles %.0f, skinned %.0f, small (<64 "
-                          "triangles) %.0f, other %.0f; %.0f parts under the small feature size left out",
+                          "triangles) %.0f, other %.0f; %.0f parts under the small feature size left out, %.0f "
+                          "weather particles faded near the eye, %.0f flames replayed from a loop, %.0f draws kept the previous "
+                          "draw's state",
                     gRender.mSky / n, gRender.mTerrain / n, gRender.mParticles / n, gRender.mSkinned / n,
-                    gRender.mSmall / n, gRender.mOther / n, gRender.mSmallCulled / n);
+                    gRender.mSmall / n, gRender.mOther / n, gRender.mSmallCulled / n, gRender.mWeatherSkipped / n,
+                    gRender.mFlameReplays / n, gRender.mSameState / n);
             }
             gRender = RenderSums{};
 #endif

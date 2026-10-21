@@ -107,6 +107,44 @@ namespace omw3ds::benchmark
             { "Raven Rock", nullptr, {}, 0.f, Snow, 22.f, "Raven Rock" },
         };
 
+        // The long tour: towns (found by name, as MWScript's COC: a door marker or the cell's centre, never the
+        // void) alternating with interiors, so each town's region weather is forced on arrival; every name checked
+        // against Morrowind.esm.
+        constexpr Stage sTourStages[] = {
+            { "Seyda Neen", nullptr, {}, 0.f, Clear, 9.f, "Seyda Neen" },
+            { "Census and Excise Office", "Seyda Neen, Census and Excise Office", {}, 0.f, -1, 9.f },
+            { "Balmora", nullptr, {}, 0.f, Clear, 12.f, "Balmora" },
+            { "Balmora, Eight Plates", "Balmora, Eight Plates", {}, 0.f, -1, 12.f },
+            { "Pelagiad", nullptr, {}, 0.f, Rain, 18.f, "Pelagiad" },
+            { "Pelagiad, Halfway Tavern", "Pelagiad, Halfway Tavern", {}, 0.f, -1, 18.f },
+            { "Caldera", nullptr, {}, 0.f, Clear, 15.f, "Caldera" },
+            { "Caldera Mine", "Caldera Mine", {}, 0.f, -1, 15.f },
+            { "Ald-ruhn", nullptr, {}, 0.f, Ash, 12.f, "Ald-ruhn" },
+            { "Ald-ruhn, Manor District", "Ald-ruhn, Manor District", {}, 0.f, -1, 12.f },
+            { "Maar Gan", nullptr, {}, 0.f, Ash, 10.f, "Maar Gan" },
+            { "Ghostgate", nullptr, {}, 0.f, Thunder, 21.f, "Ghostgate" },
+            { "Ghostgate, Tower of Dusk", "Ghostgate, Tower of Dusk", {}, 0.f, -1, 21.f },
+            { "Gnisis", nullptr, {}, 0.f, Clear, 8.f, "Gnisis" },
+            { "Gnisis, Arvs-Drelen", "Gnisis, Arvs-Drelen", {}, 0.f, -1, 8.f },
+            { "Khuul", nullptr, {}, 0.f, Rain, 16.f, "Khuul" },
+            { "Ald Velothi", nullptr, {}, 0.f, Clear, 19.f, "Ald Velothi" },
+            { "Ald Daedroth, Outer Shrine", "Ald Daedroth, Outer Shrine", {}, 0.f, -1, 19.f },
+            { "Dagon Fel", nullptr, {}, 0.f, Clear, 7.f, "Dagon Fel" },
+            { "Tel Mora", nullptr, {}, 0.f, Rain, 13.f, "Tel Mora" },
+            { "Sadrith Mora", nullptr, {}, 0.f, Clear, 14.f, "Sadrith Mora" },
+            { "Sadrith Mora, Gateway Inn", "Sadrith Mora, Gateway Inn", {}, 0.f, -1, 14.f },
+            { "Molag Mar", nullptr, {}, 0.f, Ash, 17.f, "Molag Mar" },
+            { "Arkngthand, Hall of Centrifuge", "Arkngthand, Hall of Centrifuge", {}, 0.f, -1, 17.f },
+            { "Suran", nullptr, {}, 0.f, Clear, 20.f, "Suran" },
+            { "Suran, Desele's House", "Suran, Desele's House of Earthly Delights", {}, 0.f, -1, 20.f },
+            { "Vivec", nullptr, {}, 0.f, Clear, 11.f, "Vivec" },
+            { "Vivec, High Fane", "Vivec, High Fane", {}, 0.f, -1, 11.f },
+            { "Vivec, Arena Pit", "Vivec, Arena Pit", {}, 0.f, -1, 11.f },
+            { "Ebonheart", nullptr, {}, 0.f, Thunder, 23.f, "Ebonheart" },
+            { "Andrano Ancestral Tomb", "Andrano Ancestral Tomb", {}, 0.f, -1, 23.f },
+            { "Hla Oad", nullptr, {}, 0.f, Clear, 6.f, "Hla Oad" },
+        };
+
         struct StageSet
         {
             const char* mName;
@@ -117,6 +155,7 @@ namespace omw3ds::benchmark
             { "Morrowind", sStages, int(std::size(sStages)) },
             { "Tribunal", sTribunalStages, int(std::size(sTribunalStages)) },
             { "Bloodmoon", sBloodmoonStages, int(std::size(sBloodmoonStages)) },
+            { "Tour", sTourStages, int(std::size(sTourStages)) },
         };
         const StageSet* gSet = &sSets[0];
 
@@ -135,6 +174,7 @@ namespace omw3ds::benchmark
         bool gEnabled = false;
         bool gDone = false;
         int gStage = -1; // -1: waiting for the game
+        int gFirstStage = 0;
         double gStageTime = 0; // seconds since the current phase began
         bool gMeasuring = false;
         bool gJustTeleported = false;
@@ -248,10 +288,11 @@ namespace omw3ds::benchmark
         }
     }
 
-    void enable(Set set)
+    void enable(Set set, int firstStage)
     {
         gEnabled = true;
         gSet = &sSets[static_cast<int>(set)];
+        gFirstStage = std::clamp(firstStage, 0, gSet->mCount - 1);
     }
 
     bool enabled()
@@ -279,8 +320,8 @@ namespace omw3ds::benchmark
                 return;
             if (!world().getGodModeState())
                 world().toggleGodMode(); // nothing interrupts the run
-            gStage = 0;
-            startStage(0);
+            gStage = gFirstStage;
+            startStage(gStage);
             return;
         }
 
@@ -303,6 +344,18 @@ namespace omw3ds::benchmark
             }
             return;
         }
+        // The tour (Zeste only): the top screen at a quarter, a half and three quarters of the turn.
+        if (gSet->mStages == sTourStages)
+            for (int shot = 0; shot < 3; ++shot)
+            {
+                const double at = kMeasure * (0.25 + 0.25 * shot);
+                if (gStageTime >= at && gStageTime - dt < at)
+                {
+                    char path[160];
+                    std::snprintf(path, sizeof(path), "%s/tour-%02d-%d.bmp", p3ds::logDir(), gStage + 1, shot + 1);
+                    Render3DS::requestCapture(path);
+                }
+            }
         result.mFrameMs.push_back(float(dt * 1000.0));
         const Render3DS::FrameStats& stats = Render3DS::getLastFrameStats();
         result.mDraws += stats.mDraws;

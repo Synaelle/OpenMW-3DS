@@ -387,6 +387,11 @@ namespace MWRender
         mRainNode = new osg::Group;
 
         mRainParticleSystem = new NifOsg::ParticleSystem;
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS backend draws these drops about a pixel wide and fades those near the eye (render3ds backend.cpp
+        // buildParticles: rain was the GPU's worst case, 27.5 ms in test #95's benchmark).
+        mRainParticleSystem->setName("Rain3DS");
+#endif
         osg::Vec3 rainRange = osg::Vec3(mRainDiameter, mRainDiameter, (mRainMinHeight + mRainMaxHeight) / 2.f);
 
         mRainParticleSystem->setParticleAlignment(osgParticle::ParticleSystem::FIXED);
@@ -753,6 +758,12 @@ namespace MWRender
                     }
 
                     ps->setUserValue("simpleLighting", true);
+#ifdef OPENMW_PLATFORM_3DS
+                    // Ash and blight clouds fade near the eye on the 3DS (a cloud next to the camera blends over
+                    // most of the screen: render3ds backend.cpp buildParticles); snowflakes stay.
+                    if (mCurrentParticleEffect != Settings::models().mWeathersnow.get())
+                        ps->setName("Storm3DS");
+#endif
 
                     if (occlusionEnabledForEffect)
                         ps->setUserValue("particleOcclusion", true);

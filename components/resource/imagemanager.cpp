@@ -96,6 +96,7 @@ namespace Resource
         {
 #ifdef OPENMW_PLATFORM_3DS
             OMW3DS_DETAIL("image");
+            OMW3DS_LOG_MISS("image", path.value());
             // Textures converted on the PC to PICA formats (tools/cook_textures.py), read straight into GPU
             // memory. The GPU can't sample DDS/S3TC.
             if (osg::ref_ptr<osg::Image> cooked = Render3DS::loadCookedImage(path.value()))

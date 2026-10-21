@@ -1,4 +1,7 @@
 #include "credits3ds.hpp"
+#ifdef OPENMW_PLATFORM_3DS
+#include <openmw3ds_version.h>
+#endif
 
 #include <algorithm>
 #include <cmath>

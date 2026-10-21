@@ -11,6 +11,7 @@
 #include <components/sceneutil/positionattitudetransform.hpp>
 #include <components/sceneutil/unrefqueue.hpp>
 #include <components/sceneutil/userdata.hpp>
+#include <components/sceneutil/visitor.hpp>
 
 #include "../mwworld/class.hpp"
 #include "../mwworld/ptr.hpp"
@@ -136,6 +137,17 @@ namespace MWRender
 
         osg::ref_ptr<ObjectAnimation> anim(
             new ObjectAnimation(ptr, animationMesh, mResourceSystem, animated, allowLight));
+#ifdef OPENMW_PLATFORM_3DS
+        // Perf batch 2: a still object's particle systems (a candle's flame, a brazier's smoke) can share one
+        // recorded loop per kind (render3ds backend.cpp flameLoop); actors' and spells' stay live.
+        if (!animated)
+        {
+            SceneUtil::FindByClassVisitor finder("ParticleSystem");
+            ptr.getRefData().getBaseNode()->accept(finder);
+            for (osg::Node* node : finder.mFoundNodes)
+                node->setUserValue("still3ds", true);
+        }
+#endif
 
         mObjects.emplace(ptr.mRef, std::move(anim));
     }

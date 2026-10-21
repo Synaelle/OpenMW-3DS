@@ -169,13 +169,16 @@ namespace SceneUtil
         // frames, half on odd ones); the frame between draws the last skinned pose. CPU skinning was ~3.5% of the
         // main thread with two NPCs in view (the Zeste profile of 20/10); near ones (talking, fighting) keep
         // every frame.
+        // Perf batch 1: with the pose cadence on, the frames the skeleton's pose is updated (Skeleton::poseDue3DS:
+        // every 2nd/3rd/4th frame by distance).
         bool skipThisFrame = false;
-        if (mLastFrameNumber != 0 && nv->getVisitorType() == osg::NodeVisitor::CULL_VISITOR
-            && ((traversalNumber + (reinterpret_cast<uintptr_t>(mSkeleton) >> 4)) & 1) != 0)
+        if (mLastFrameNumber != 0 && nv->getVisitorType() == osg::NodeVisitor::CULL_VISITOR)
         {
-            const float distance
-                = static_cast<osgUtil::CullVisitor*>(nv)->getDistanceToEyePoint(getBound().center(), false);
-            skipThisFrame = distance > 800.f;
+            if (Render3DS::poseCadence())
+                skipThisFrame = !mSkeleton->poseDue3DS(traversalNumber);
+            else if (((traversalNumber + (reinterpret_cast<uintptr_t>(mSkeleton) >> 4)) & 1) != 0)
+                skipThisFrame = static_cast<osgUtil::CullVisitor*>(nv)->getDistanceToEyePoint(getBound().center(), false)
+                    > 800.f;
         }
         if (mLastFrameNumber == traversalNumber || skipThisFrame
             || (mLastFrameNumber != 0 && !mSkeleton->getActive()))

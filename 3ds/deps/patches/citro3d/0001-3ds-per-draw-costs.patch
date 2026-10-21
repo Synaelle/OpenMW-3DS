@@ -1,0 +1,205 @@
+diff --git a/source/internal.h b/source/internal.h
+index 3ccab72..14a03f9 100644
+--- a/source/internal.h
++++ b/source/internal.h
+@@ -1,4 +1,5 @@
+ #pragma once
++#include <string.h>
+ #include <c3d/attribs.h>
+ #include <c3d/buffers.h>
+ #include <c3d/proctex.h>
+@@ -158,3 +159,19 @@ void C3Di_RenderQueueExit(void);
+ void C3Di_RenderQueueWaitDone(void);
+ void C3Di_RenderQueueEnableVBlank(void);
+ void C3Di_RenderQueueDisableVBlank(void);
++
++// OpenMW 3DS port: single-parameter register writes as (param, header) pairs, the layout GPUCMD_Add writes for one
++// parameter, added with one copy when they fit (else one by one through GPUCMD_Add, which breaks when full).
++#define C3Di_CMD(reg, mask, val) (u32)(val), GPUCMD_HEADER(0, (mask), (reg))
++static inline void C3Di_AddSingleWrites(const u32* cmds, u32 words)
++{
++	if (gpuCmdBuf && gpuCmdBufOffset + words <= gpuCmdBufSize)
++	{
++		memcpy(&gpuCmdBuf[gpuCmdBufOffset], cmds, words * sizeof(u32));
++		gpuCmdBufOffset += words;
++		return;
++	}
++	u32 k;
++	for (k = 0; k < words; k += 2)
++		GPUCMD_Add(cmds[k + 1], &cmds[k], 1);
++}
+diff --git a/source/drawElements.c b/source/drawElements.c
+index 091b6f4..4d637d6 100644
+--- a/source/drawElements.c
++++ b/source/drawElements.c
+@@ -9,38 +9,47 @@ void C3D_DrawElements(GPU_Primitive_t primitive, int count, int type, const void
+ 
+ 	C3Di_UpdateContext();
+ 
+-	// Set primitive type
+-	GPUCMD_AddMaskedWrite(GPUREG_PRIMITIVE_CONFIG, 2, primitive != GPU_TRIANGLES ? primitive : GPU_GEOMETRY_PRIM);
+-	// Start a new primitive (breaks off a triangle strip/fan)
+-	GPUCMD_AddWrite(GPUREG_RESTART_PRIMITIVE, 1);
+-	// Configure the index buffer
+-	GPUCMD_AddWrite(GPUREG_INDEXBUFFER_CONFIG, (pa - base) | (type << 31));
+-	// Number of vertices
+-	GPUCMD_AddWrite(GPUREG_NUMVERTICES, count);
+-	// First vertex
+-	GPUCMD_AddWrite(GPUREG_VERTEX_OFFSET, 0);
+-	// Enable triangle element drawing mode if necessary
++	// The same writes as upstream, in the same order, added in one copy (OpenMW 3DS port).
+ 	if (primitive == GPU_TRIANGLES)
+ 	{
+-		GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG, 2, 0x100);
+-		GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 2, 0x100);
++		const u32 cmds[] =
++		{
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 2, GPU_GEOMETRY_PRIM), // primitive type
++			C3Di_CMD(GPUREG_RESTART_PRIMITIVE, 0xF, 1), // a new primitive
++			C3Di_CMD(GPUREG_INDEXBUFFER_CONFIG, 0xF, (pa - base) | (type << 31)),
++			C3Di_CMD(GPUREG_NUMVERTICES, 0xF, count),
++			C3Di_CMD(GPUREG_VERTEX_OFFSET, 0xF, 0),
++			C3Di_CMD(GPUREG_GEOSTAGE_CONFIG, 2, 0x100), // triangle element drawing mode
++			C3Di_CMD(GPUREG_GEOSTAGE_CONFIG2, 2, 0x100),
++			C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 0), // drawing mode
++			C3Di_CMD(GPUREG_DRAWELEMENTS, 0xF, 1), // draw
++			C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 1), // configuration mode
++			C3Di_CMD(GPUREG_GEOSTAGE_CONFIG, 2, 0),
++			C3Di_CMD(GPUREG_GEOSTAGE_CONFIG2, 2, 0),
++			C3Di_CMD(GPUREG_VTX_FUNC, 0xF, 1), // clear the post-vertex cache
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 0x8, 0),
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 0x8, 0),
++		};
++		C3Di_AddSingleWrites(cmds, sizeof(cmds) / sizeof(u32));
+ 	}
+-	// Enable drawing mode
+-	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 0);
+-	// Trigger element drawing
+-	GPUCMD_AddWrite(GPUREG_DRAWELEMENTS, 1);
+-	// Go back to configuration mode
+-	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 1);
+-	// Disable triangle element drawing mode if necessary
+-	if (primitive == GPU_TRIANGLES)
++	else
+ 	{
+-		GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG, 2, 0);
+-		GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 2, 0);
++		const u32 cmds[] =
++		{
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 2, primitive),
++			C3Di_CMD(GPUREG_RESTART_PRIMITIVE, 0xF, 1),
++			C3Di_CMD(GPUREG_INDEXBUFFER_CONFIG, 0xF, (pa - base) | (type << 31)),
++			C3Di_CMD(GPUREG_NUMVERTICES, 0xF, count),
++			C3Di_CMD(GPUREG_VERTEX_OFFSET, 0xF, 0),
++			C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 0),
++			C3Di_CMD(GPUREG_DRAWELEMENTS, 0xF, 1),
++			C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 1),
++			C3Di_CMD(GPUREG_VTX_FUNC, 0xF, 1),
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 0x8, 0),
++			C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 0x8, 0),
++		};
++		C3Di_AddSingleWrites(cmds, sizeof(cmds) / sizeof(u32));
+ 	}
+-	// Clear the post-vertex cache
+-	GPUCMD_AddWrite(GPUREG_VTX_FUNC, 1);
+-	GPUCMD_AddMaskedWrite(GPUREG_PRIMITIVE_CONFIG, 0x8, 0);
+-	GPUCMD_AddMaskedWrite(GPUREG_PRIMITIVE_CONFIG, 0x8, 0);
+ 
+ 	C3Di_GetContext()->flags |= C3DiF_DrawUsed;
+ }
+diff --git a/source/drawArrays.c b/source/drawArrays.c
+index 8305ca1..80213a8 100644
+--- a/source/drawArrays.c
++++ b/source/drawArrays.c
+@@ -4,28 +4,22 @@ void C3D_DrawArrays(GPU_Primitive_t primitive, int first, int size)
+ {
+ 	C3Di_UpdateContext();
+ 
+-	// Set primitive type
+-	GPUCMD_AddMaskedWrite(GPUREG_PRIMITIVE_CONFIG, 2, primitive);
+-	// Start a new primitive (breaks off a triangle strip/fan)
+-	GPUCMD_AddWrite(GPUREG_RESTART_PRIMITIVE, 1);
+-	// The index buffer is not used, but this command is still required
+-	GPUCMD_AddWrite(GPUREG_INDEXBUFFER_CONFIG, 0x80000000);
+-	// Number of vertices
+-	GPUCMD_AddWrite(GPUREG_NUMVERTICES, size);
+-	// First vertex
+-	GPUCMD_AddWrite(GPUREG_VERTEX_OFFSET, first);
+-	// Enable array drawing mode
+-	GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 1, 1);
+-	// Enable drawing mode
+-	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 0);
+-	// Trigger array drawing
+-	GPUCMD_AddWrite(GPUREG_DRAWARRAYS, 1);
+-	// Go back to configuration mode
+-	GPUCMD_AddMaskedWrite(GPUREG_START_DRAW_FUNC0, 1, 1);
+-	// Disable array drawing mode
+-	GPUCMD_AddMaskedWrite(GPUREG_GEOSTAGE_CONFIG2, 1, 0);
+-	// Clear the post-vertex cache
+-	GPUCMD_AddWrite(GPUREG_VTX_FUNC, 1);
++	// The same writes as upstream, in the same order, added in one copy (OpenMW 3DS port).
++	const u32 cmds[] =
++	{
++		C3Di_CMD(GPUREG_PRIMITIVE_CONFIG, 2, primitive), // primitive type
++		C3Di_CMD(GPUREG_RESTART_PRIMITIVE, 0xF, 1), // a new primitive
++		C3Di_CMD(GPUREG_INDEXBUFFER_CONFIG, 0xF, 0x80000000), // unused, but required
++		C3Di_CMD(GPUREG_NUMVERTICES, 0xF, size),
++		C3Di_CMD(GPUREG_VERTEX_OFFSET, 0xF, first),
++		C3Di_CMD(GPUREG_GEOSTAGE_CONFIG2, 1, 1), // array drawing mode
++		C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 0), // drawing mode
++		C3Di_CMD(GPUREG_DRAWARRAYS, 0xF, 1), // draw
++		C3Di_CMD(GPUREG_START_DRAW_FUNC0, 1, 1), // configuration mode
++		C3Di_CMD(GPUREG_GEOSTAGE_CONFIG2, 1, 0),
++		C3Di_CMD(GPUREG_VTX_FUNC, 0xF, 1), // clear the post-vertex cache
++	};
++	C3Di_AddSingleWrites(cmds, sizeof(cmds) / sizeof(u32));
+ 
+ 	C3Di_GetContext()->flags |= C3DiF_DrawUsed;
+ }
+diff --git a/source/uniforms.c b/source/uniforms.c
+index ac4b36e..5784427 100644
+--- a/source/uniforms.c
++++ b/source/uniforms.c
+@@ -5,7 +5,7 @@ C3D_FVec C3D_FVUnif[2][C3D_FVUNIF_COUNT];
+ C3D_IVec C3D_IVUnif[2][C3D_IVUNIF_COUNT];
+ u16      C3D_BoolUnifs[2];
+ 
+-bool C3D_FVUnifDirty[2][C3D_FVUNIF_COUNT];
++bool C3D_FVUnifDirty[2][C3D_FVUNIF_COUNT] __attribute__((aligned(4))); // read 4 at a time (C3D_UpdateUniforms)
+ bool C3D_IVUnifDirty[2][C3D_IVUNIF_COUNT];
+ bool C3D_BoolUnifsDirty[2];
+ 
+@@ -40,6 +40,18 @@ void C3D_UpdateUniforms(GPU_SHADER_TYPE type)
+ 	// Update FVec uniforms
+ 	while (i < C3D_FVUNIF_COUNT)
+ 	{
++		// OpenMW 3DS port: clean flags skipped four at a time (a draw changes a few of the 96, and this runs for
++		// both shader types before every draw).
++		if ((i & 3) == 0)
++		{
++			u32 four;
++			memcpy(&four, &C3D_FVUnifDirty[type][i], sizeof(four));
++			if (!four)
++			{
++				i += 4;
++				continue;
++			}
++		}
+ 		if (!C3D_FVUnifDirty[type][i])
+ 		{
+ 			i ++;
+diff --git a/source/base.c b/source/base.c
+index 65ca89e..79d8951 100644
+--- a/source/base.c
++++ b/source/base.c
+@@ -303,7 +303,9 @@ void C3Di_UpdateContext(void)
+ 	}
+ 
+ 	C3D_UpdateUniforms(GPU_VERTEX_SHADER);
+-	C3D_UpdateUniforms(GPU_GEOMETRY_SHADER);
++	// OpenMW 3DS port: the geometry shader's uniforms only with one (their flags stay set until then).
++	if (ctx->program && ctx->program->geometryShader)
++		C3D_UpdateUniforms(GPU_GEOMETRY_SHADER);
+ }
+ 
+ bool C3Di_SplitFrame(u32** pBuf, u32* pSize)

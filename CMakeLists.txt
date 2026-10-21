@@ -30,7 +30,13 @@ if (OPENMW_PLATFORM_3DS)
         endif()
     endif()
     message(STATUS "OpenMW 3DS version ${OPENMW3DS_VERSION}")
-    add_compile_definitions(OPENMW3DS_VERSION="${OPENMW3DS_VERSION}")
+    # In a generated header (rewritten only when the version changes), not a compile definition: a new test number
+    # then rebuilds the few files that show it, not all ~860.
+    file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/openmw3ds_version.h"
+        CONTENT "#pragma once
+#define OPENMW3DS_VERSION \"${OPENMW3DS_VERSION}\"
+" @ONLY)
+    include_directories(${CMAKE_BINARY_DIR})
     include_directories(SYSTEM ${OPENMW3DS_DEPS_PREFIX}/include)
 endif()
 

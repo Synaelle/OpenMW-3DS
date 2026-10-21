@@ -17,9 +17,14 @@ namespace omw3ds::benchmark
         Morrowind,
         Tribunal,
         Bloodmoon,
+        // The long tour (the tester, 21/10): ~20 minutes through 32 places of Vvardenfell, towns and interiors,
+        // with 3 top-screen screenshots at each. Zeste only (an automated run's "benchmark:tour"): never on the
+        // console's menu.
+        Tour,
     };
-    // Before OpenMW starts (main3ds.cpp). Results go to benchmark-<set>.txt in the run's log folder.
-    void enable(Set set);
+    // Before OpenMW starts (main3ds.cpp). Results go to benchmark-<set>.txt in the run's log folder. firstStage:
+    // where to start (an automated run's "benchmark@N", N from 1: profiling one place in Zeste).
+    void enable(Set set, int firstStage = 0);
     bool enabled();
 
     // Once per engine frame (frame3ds.cpp).

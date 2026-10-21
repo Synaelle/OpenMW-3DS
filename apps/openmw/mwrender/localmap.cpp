@@ -1,6 +1,7 @@
 #include "localmap.hpp"
 
 #include <cstdint>
+#include <limits>
 
 #include <osg/ComputeBoundsVisitor>
 #include <osg/Fog>
@@ -499,6 +500,34 @@ namespace MWRender
             v = 1.0f - std::abs((pos.y() - (mMapWorldSize * y)) / mMapWorldSize);
         }
 
+#ifdef OPENMW_PLATFORM_3DS
+        // Perf batch 5: the fog of war only clears around the player, so standing still (in the same place, with
+        // no new map segment) changes nothing: the loop below walks every texel of up to 9 segments a frame (~1% of
+        // the main thread in Zeste, Pelagiad).
+        // The segments around the player that have a fog image count too (one made while standing still).
+        {
+            static osg::Vec2f lastPos(std::numeric_limits<float>::max(), 0.f);
+            static bool lastInterior = false;
+            static size_t lastSegments = 0;
+            static int lastFogImages = -1;
+            const auto& all = mInterior ? mInteriorSegments : mExteriorSegments;
+            int fogImages = 0;
+            for (int mx = -mCellDistance; mx <= mCellDistance; ++mx)
+                for (int my = -mCellDistance; my <= mCellDistance; ++my)
+                {
+                    const auto found = all.find(std::make_pair(x + mx, y - my));
+                    if (found != all.end() && found->second.mFogOfWarImage && found->second.mMapTexture)
+                        ++fogImages;
+                }
+            if (pos == lastPos && mInterior == lastInterior && all.size() == lastSegments
+                && fogImages == lastFogImages)
+                return;
+            lastPos = pos;
+            lastInterior = mInterior;
+            lastSegments = all.size();
+            lastFogImages = fogImages;
+        }
+#endif
         // explore radius (squared)
         const float exploreRadius = 0.17f * (sFogOfWarResolution - 1); // explore radius from 0 to sFogOfWarResolution-1
         const float sqrExploreRadius = square(exploreRadius);

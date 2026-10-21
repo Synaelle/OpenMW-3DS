@@ -664,9 +664,33 @@ namespace MyGUIPlatform
             collected = true;
         }
 #endif
+#if defined(OPENMW_PLATFORM_3DS) && defined(OPENMW3DS_DEBUG)
+        // The Seyda Neen freeze (tests #99-#102: 0.8-2.4 s once in the first stage; #102's spike report put 1285 of
+        // its 1317 ms in this pass): a slow pass logs what it spent its time on (SD reads, images, models: the
+        // detail scopes) and names the resources it loaded (cache misses). Not inside another capture (a load).
+        const bool capture = !p3ds::perf::detail::active();
+        const uint64_t captureStart = p3ds::memprobe::ticks();
+        if (capture)
+        {
+            p3ds::perf::detail::begin();
+            p3ds::perf::detail::setLogMisses(true);
+        }
+#endif
         begin();
         onRenderToTarget(this, mUpdate);
         end();
+#if defined(OPENMW_PLATFORM_3DS) && defined(OPENMW3DS_DEBUG)
+        if (capture)
+        {
+            p3ds::perf::detail::setLogMisses(false);
+            char detail[256];
+            p3ds::perf::detail::end(detail, sizeof(detail));
+            const double ms = double(p3ds::memprobe::ticks() - captureStart) * 1000.0 / 268111856.0; // ARM11 ticks
+            if (ms >= 200.0)
+                Log(Debug::Warning) << "3ds slow gui pass: " << static_cast<int>(ms) << " ms;"
+                                    << (detail[0] != '\0' ? detail : " nothing timed (layout or text)");
+        }
+#endif
 #ifdef OPENMW_PLATFORM_3DS
         Render3DS::noteGuiCollected();
 #endif
