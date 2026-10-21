@@ -17,8 +17,20 @@ if (OPENMW_PLATFORM_3DS)
     # POSIX declarations (strnlen, fileno, ...) that newlib hides in strict C++20 mode.
     add_compile_options("SHELL:-include ${OPENMW3DS_ROOT}/deps/compat/include/openmw3ds_int32.h")
     add_compile_definitions(_GNU_SOURCE OPENMW_PLATFORM_3DS=1)
-    # The port's own version (main menu, credits): 0.1.0 is the first release (LIMITATIONS.md M21).
-    add_compile_definitions(OPENMW3DS_VERSION="0.1.0-dev")
+    # The port's own version (start menu, main menu, credits, loading screen): 0.1.0 is the first release
+    # (LIMITATIONS.md M21). Until then 0.1.0-dev<N>, N the hardware test being packaged: the "Test #N" title of
+    # packaging/test-menu.txt (the tester, 21/10), read again whenever that file changes.
+    set(OPENMW3DS_TEST_MENU "${OPENMW3DS_ROOT}/packaging/test-menu.txt")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${OPENMW3DS_TEST_MENU}")
+    set(OPENMW3DS_VERSION "0.1.0-dev")
+    if (EXISTS "${OPENMW3DS_TEST_MENU}")
+        file(STRINGS "${OPENMW3DS_TEST_MENU}" _omw3ds_title REGEX "^title Test #[0-9]+")
+        if (_omw3ds_title MATCHES "#([0-9]+)")
+            set(OPENMW3DS_VERSION "0.1.0-dev${CMAKE_MATCH_1}")
+        endif()
+    endif()
+    message(STATUS "OpenMW 3DS version ${OPENMW3DS_VERSION}")
+    add_compile_definitions(OPENMW3DS_VERSION="${OPENMW3DS_VERSION}")
     include_directories(SYSTEM ${OPENMW3DS_DEPS_PREFIX}/include)
 endif()
 
