@@ -82,9 +82,10 @@
                     </Widget>
                 </Widget>
             </Widget>
-            <!-- The frame rate, under the minimap (test #67, the tester), in the small font, once a second -->
-            <Widget type="TextBox" skin="SandText" position="240 73 68 12" align="Left Top" name="Fps3DS">
-                <Property key="FontName" value="Journalbook DefaultFont"/>
+            <!-- The frame rate (debug builds, test #67, the tester), once a second, in the hint strip's small font: in
+                 the minimap's empty box, under the camera button (the book font, full size since M19, was cut) -->
+            <Widget type="TextBox" skin="SandText" position="240 38 68 16" align="Left Top" name="Fps3DS">
+                <Property key="FontName" value="HintFont"/>
                 <Property key="TextAlign" value="Right Top"/>
                 <Property key="NeedMouse" value="false"/>
             </Widget>
@@ -107,11 +108,9 @@
                 </Widget>
             </Widget>
 
-            <!-- The screenshot button (test #107): the start menu's experimental option shows it; a small camera in the
-                 corner the minimap left (n3ds/hud3ds.cpp, frame3ds.cpp requestPlayerScreenshot3DS) -->
+            <!-- The screenshot button (test #107, always shown since #108): a small camera in the corner the minimap left (n3ds/hud3ds.cpp, frame3ds.cpp requestPlayerScreenshot3DS) -->
             <!-- 36x30: easier to hit with a finger than the tabs' 24x21 (the tester, test #107) -->
             <Widget type="Button" skin="MW_Button" position="272 4 36 30" align="Left Top" name="Screenshot3DS">
-                <Property key="Visible" value="false"/>
                 <Property key="NeedKey" value="false"/>
                 <Widget type="ImageBox" skin="ImageBox" position="10 7 16 16" name="ScreenshotIcon3DS">
                     <Property key="ImageTexture" value="textures\omw_3ds_camera.png"/>

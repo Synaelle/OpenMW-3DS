@@ -230,12 +230,6 @@ namespace omw3ds
         }
     }
 
-    bool screenshotButtonEnabled3DS()
-    {
-        static const bool enabled = access("sdmc:/openmw/config/screenshot-button", F_OK) == 0;
-        return enabled;
-    }
-
     void requestPlayerScreenshot3DS()
     {
         // At most one every 500 ms (the tester, test #107: no spamming the button).

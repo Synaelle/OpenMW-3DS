@@ -2,9 +2,12 @@
 #include <platform3ds/menuart.hpp>
 #include <platform3ds/textfb.hpp>
 
+#include <3ds.h>
+
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 namespace p3ds::loadscreen
 {
@@ -32,6 +35,24 @@ namespace p3ds::loadscreen
             "Almost ready",
         };
         constexpr int kStageCount = int(sizeof(kStages) / sizeof(kStages[0]));
+
+        // The top screen's spinning emblem (menuart::topLoading): its thread, and the lock that keeps stopTop from
+        // returning while a frame is being written.
+        std::atomic<bool> gTopActive{ false };
+        std::mutex gTopMutex;
+        Thread gTopThread = nullptr;
+
+        void topThread(void*)
+        {
+            for (int frame = 1;; ++frame)
+            {
+                svcSleepThread(150 * 1000 * 1000LL);
+                std::lock_guard<std::mutex> lock(gTopMutex);
+                if (!gTopActive)
+                    return;
+                art::topSpin(frame);
+            }
+        }
 
         std::atomic<int> gStage{ 0 };
         int gDrawnStage = -1;
@@ -67,7 +88,15 @@ namespace p3ds::loadscreen
     {
         if (tf::gpuOwned())
             return;
-        art::topScreen();
+        art::topLoading();
+        gTopActive = true;
+        // Above the main thread's priority on the system core when there is one (it sleeps nearly always): the
+        // emblem keeps turning while the main thread is busy loading.
+        s32 mainPrio = 0x30;
+        svcGetThreadPriority(&mainPrio, CUR_THREAD_HANDLE);
+        gTopThread = threadCreate(topThread, nullptr, 8 * 1024, mainPrio - 1, 1, false);
+        if (gTopThread == nullptr)
+            gTopThread = threadCreate(topThread, nullptr, 8 * 1024, mainPrio - 1, 0, false);
         art::background();
         art::text(art::kMargin, kTitleY, "OpenMW 3DS", art::Font::Title, art::colour::title);
         art::separator(kHeaderLineY);
@@ -102,6 +131,28 @@ namespace p3ds::loadscreen
         // Only forwards: a later label can belong to an earlier stage's work.
         if (stage > gStage.load())
             gStage = stage;
+    }
+
+    bool topActive()
+    {
+        return gTopActive;
+    }
+
+    void stopTop()
+    {
+        if (!gTopActive)
+            return;
+        {
+            std::lock_guard<std::mutex> lock(gTopMutex);
+            gTopActive = false;
+        }
+        if (gTopThread != nullptr)
+        {
+            threadJoin(gTopThread, U64_MAX);
+            threadFree(gTopThread);
+            gTopThread = nullptr;
+        }
+        art::topLoadingEnd();
     }
 
     void tick()

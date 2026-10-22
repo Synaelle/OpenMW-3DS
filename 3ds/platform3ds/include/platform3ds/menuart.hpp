@@ -46,6 +46,13 @@ namespace p3ds::menuart
     // The top screen: the emblem of the HOME Menu icon, centred on the same background. Once. The engine's first
     // frame replaces it.
     void topScreen();
+    // The loading screen's top screen (test #108, the tester: "[logo] Loading" at the bottom right, as console games
+    // do): the background, the word and the spinning emblem's first frame (tools/make_menu_spin.py). The top screen
+    // is single buffered from here on, so the frames go straight to it: topLoadingEnd gives it back to the engine,
+    // double buffered (main thread, before the engine's first frame there).
+    void topLoading();
+    void topSpin(int frame); // the emblem's frame (any int, wrapped), in place. Any one thread at a time.
+    void topLoadingEnd();
     // The background again in a rectangle (under text about to be redrawn).
     void restore(int x, int y, int w, int h);
 

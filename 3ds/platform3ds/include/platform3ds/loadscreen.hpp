@@ -16,4 +16,10 @@ namespace p3ds::loadscreen
 
     // The watchdog's thread, every half second: the blocks and the words, redrawn.
     void tick();
+
+    // The top screen meanwhile (test #108): "[emblem] Loading" at the bottom right, the emblem turning by 45 degrees
+    // every 150 ms on a thread of its own. stopTop: before the engine's first frame on the top screen (the renderer,
+    // main thread), the thread stops and the top screen goes back to double buffering. Idempotent, cheap.
+    void stopTop();
+    bool topActive();
 }

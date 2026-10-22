@@ -26,6 +26,7 @@
 #include <osgUtil/StateGraph>
 
 #include <platform3ds/crash.hpp>
+#include <platform3ds/loadscreen.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/memprobe.hpp>
 #include <platform3ds/platform.hpp>
@@ -4779,6 +4780,15 @@ namespace Render3DS
             const uint64_t start = p3ds::memprobe::ticks();
             if (!beginFrame())
                 return;
+            // The start-up loading screen's spinning emblem owns the top screen (platform3ds/loadscreen.cpp): while a
+            // loading screen holds the top screen, nothing is drawn on its target (citro3d would show the target,
+            // black, over the emblem). The first frame that draws it ends the emblem.
+            if (p3ds::loadscreen::topActive())
+            {
+                if (gHoldTop)
+                    return;
+                p3ds::loadscreen::stopTop();
+            }
 
             const u32 clearBits = (stage->getClearMask() & GL_COLOR_BUFFER_BIT ? C3D_CLEAR_COLOR : 0)
                 | (stage->getClearMask() & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT) ? C3D_CLEAR_DEPTH : 0);

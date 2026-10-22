@@ -1,3 +1,3 @@
-title Test #107: lights fixed, no minimap, experimental screenshot button, darker start menu - play from the intro
-logs test107
+title Test #108: M20 clean-up (old code removed), lights in the shader slots, cursor, start menu - play from the intro
+logs test108
 run A: normal |

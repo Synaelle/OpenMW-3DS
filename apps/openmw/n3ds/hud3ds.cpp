@@ -901,9 +901,7 @@ namespace omw3ds
                 if (handler != nullptr)
                     widget->eventMouseButtonClick += MyGUI::newDelegate(handler);
             }
-            // The screenshot button: with the start menu's experimental option only. Its camera in the captions'
-            // colour, as the Home tab's house.
-            hud.getWidget("Screenshot3DS")->setVisible(screenshotButtonEnabled3DS());
+            // The screenshot button's camera in the captions' colour, as the Home tab's house.
             hud.getWidget("ScreenshotIcon3DS")->setColour(fontColour("#{fontcolour=normal}"));
             sPanel.mBoundTo = &hud;
         }

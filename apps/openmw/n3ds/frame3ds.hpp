@@ -44,11 +44,10 @@ namespace omw3ds
     // ~16 s of freeing the world on hardware after the HOME Menu's Close (test #25). The system reclaims the memory.
     [[noreturn]] void exitProcess(int code);
 
-    // The player's screenshot (test #107: the Home tab's camera, shown with the start menu's experimental option,
-    // screenshotButtonEnabled3DS): both screens in one BMP, sdmc:/openmw/screenshots/<date>_<time>.bmp, written in
-    // the background. A message says when it is saved.
+    // The player's screenshot (the Home tab's camera, test #107, always there since #108, the tester): both screens
+    // in one BMP, sdmc:/openmw/screenshots/<date>_<time>.bmp, written in the background. A message says when it is
+    // saved.
     void requestPlayerScreenshot3DS();
-    bool screenshotButtonEnabled3DS(); // sdmc:/openmw/config/screenshot-button exists (read once)
 }
 
 #endif

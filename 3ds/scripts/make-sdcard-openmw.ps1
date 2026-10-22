@@ -83,8 +83,8 @@ $testTitle
      START        game menu                             SELECT    console (system keyboard)
    The bottom screen: the HUD, and the Inventory, Magic and Stats tabs (touch a tab, touch it again or the
    house to go back). They don't pause the game.
-   Screenshots: the start menu's Options -> "Screenshot: On (experimental)" adds a camera to the HUD; each
-   touch saves both screens to sdmc:/openmw/screenshots/. Rosalina's screenshots work too.
+   Screenshots: the camera at the top right of the HUD saves both screens to sdmc:/openmw/screenshots/.
+   Rosalina's screenshots work too.
    Panic: L + R + START + SELECT held for a second quits the game.
 5. Send back the logs folder (sdmc:/openmw/logs/, the run's own folder for a Debug start) and your
    screenshots. If you have to force the power off, still send logs/openmw3ds.log.

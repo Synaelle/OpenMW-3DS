@@ -126,8 +126,8 @@ namespace
     // ------------------------------------------------------------------ the start menu (M15)
     //
     // Shown before the platform is up (p3ds::init: the chosen start decides the debug mode and where the logs go),
-    // drawn on the bottom screen by the CPU, in every build. "Start" is the game. "Options" (the experimental
-    // screenshot button), "Check for updates", "Quit". Debug builds also have "Debug", with the test set-ups (skip
+    // drawn on the bottom screen by the CPU, in every build. "Start" is the game, "Check for updates", "Quit" (no
+    // Options page since the screenshot button is always there, test #108). Debug builds also have "Debug", with the test set-ups (skip
     // the intro, the benchmark, the hardware test's runs): not in a release (M20, the tester).
     //
     // Hardware tests: sdmc:/openmw/test-menu.txt lists the test's runs (the switch files each one needs), shown in
@@ -351,28 +351,6 @@ namespace
         Quit,
     };
 
-    // Options (test #107, the tester): the old renderer, layout and interface choices are gone (one of each for
-    // a long while). The screenshot button on the Home tab, off by default: experimental. Kept as a switch file the
-    // game reads at its start (frame3ds.cpp screenshotButtonEnabled3DS).
-    void optionsPage()
-    {
-        constexpr const char* kScreenshotSwitch = "sdmc:/openmw/config/screenshot-button";
-        size_t selected = 0;
-        std::string note; // the item says it's experimental (the tester, test #107: a note line ran off the screen)
-        while (true)
-        {
-            const bool on = access(kScreenshotSwitch, F_OK) == 0;
-            const int option = menu::page("Options",
-                { { on ? "Screenshot: On (experimental)" : "Screenshot: Off" }, { "Back" } }, note, selected, true);
-            if (option != 0)
-                return;
-            if (on)
-                remove(kScreenshotSwitch);
-            else if (FILE* f = std::fopen(kScreenshotSwitch, "w"))
-                std::fclose(f);
-        }
-    }
-
 #ifdef OPENMW3DS_DEBUG
     Start startMenu(TestRuns& runs, std::string& chosenLine)
 #else
@@ -383,7 +361,6 @@ namespace
 #ifdef OPENMW3DS_DEBUG
         items.push_back({ "Debug" });
 #endif
-        items.push_back({ "Options" });
         items.push_back({ "Check for updates" });
         items.push_back({ "Quit" });
         std::string message;
@@ -397,11 +374,6 @@ namespace
             {
                 chosenLine = "start: the game (debug tools off)";
                 return Start::Game;
-            }
-            if (chosen == "Options")
-            {
-                optionsPage();
-                continue;
             }
             if (chosen == "Check for updates")
             {

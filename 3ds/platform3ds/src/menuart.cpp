@@ -21,6 +21,7 @@ namespace p3ds::menuart
         };
 #include "menufont.inc"
 #include "menuemblem.inc"
+#include "menuspin.inc"
 #include "menubuttons.inc"
 
         constexpr int kWidth = textfb::kWidth;
@@ -114,6 +115,82 @@ namespace p3ds::menuart
             gfxScreenSwapBuffers(GFX_TOP, false);
             gspWaitForVBlank();
         }
+    }
+
+    namespace
+    {
+        constexpr int kTopWidth = 400;
+        constexpr int kTopMargin = 16;
+        int gSpinX = 0, gSpinY = 0; // the emblem's top-left on the top screen (topLoading)
+
+        inline uint8_t* topPixel(uint8_t* fb, int x, int y)
+        {
+            return fb + (x * kHeight + (kHeight - 1 - y)) * 3; // BGR8, rotated as the bottom screen
+        }
+
+        void topGlyphs(uint8_t* fb, int x, int y, const char* str, Font font, const uint8_t rgb[3])
+        {
+            const MenuGlyph* table = glyphs(font);
+            const uint8_t* alpha = coverage(font);
+            for (const char* c = str; *c != '\0'; ++c)
+            {
+                const unsigned code = static_cast<unsigned char>(*c);
+                if (code < 32 || code > 126)
+                    continue;
+                const MenuGlyph& g = table[code - 32];
+                for (int gy = 0; gy < g.mHeight; ++gy)
+                    for (int gx = 0; gx < g.mWidth; ++gx)
+                    {
+                        const unsigned a = alpha[g.mOffset + gy * g.mWidth + gx];
+                        const int px = x + g.mLeft + gx, py = y + g.mTop + gy;
+                        if (a == 0 || px < 0 || px >= kTopWidth || py < 0 || py >= kHeight)
+                            continue;
+                        uint8_t* p = topPixel(fb, px, py);
+                        for (int k = 0; k < 3; ++k) // BGR
+                            p[k] = uint8_t((p[k] * (255 - a) + rgb[2 - k] * a) / 255);
+                    }
+                x += g.mAdvance;
+            }
+        }
+    }
+
+    void topLoading()
+    {
+        if (textfb::gpuOwned())
+            return;
+        gfxSetDoubleBuffering(GFX_TOP, false);
+        uint8_t* fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, nullptr, nullptr);
+        std::memset(fb, 0, kTopWidth * kHeight * 3); // black: the renderer's start-up clears it to black anyway
+        GSPGPU_FlushDataCache(fb, kTopWidth * kHeight * 3);
+        topSpin(0);
+    }
+
+    void topSpin(int frame)
+    {
+        // "[emblem] Loading" at the bottom right, the word centred on the emblem's height. Drawn whole each time
+        // (area cleared, frame, word): the renderer's start-up, between two frames, clears the screen.
+        static constexpr const char* kWord = "Loading";
+        static constexpr uint8_t kWordRgb[3] = { 214, 208, 196 }; // colour::title
+        const int textW = textWidth(kWord, Font::Text);
+        const int textX = kTopWidth - kTopMargin - textW;
+        gSpinX = textX - 10 - kSpinSize;
+        gSpinY = kHeight - kTopMargin - kSpinSize;
+        uint8_t* fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, nullptr, nullptr);
+        const int areaW = kTopWidth - gSpinX;
+        for (int x = gSpinX; x < kTopWidth; ++x)
+            std::memset(topPixel(fb, x, kHeight - 1), 0, kSpinSize * 3 + kTopMargin * 3); // rows gSpinY..239
+        const uint8_t* src = kSpin + ((frame % kSpinFrames + kSpinFrames) % kSpinFrames) * kSpinSize * kSpinSize * 3;
+        // Screen row y is column index 239 - y: the frame's rows gSpinY .. gSpinY + size - 1 start at 240 - gSpinY - size.
+        for (int x = 0; x < kSpinSize; ++x)
+            std::memcpy(fb + ((gSpinX + x) * kHeight + (kHeight - gSpinY - kSpinSize)) * 3, src + x * kSpinSize * 3,
+                kSpinSize * 3);
+        topGlyphs(fb, textX, gSpinY + (kSpinSize - lineHeight(Font::Text)) / 2, kWord, Font::Text, kWordRgb);
+        GSPGPU_FlushDataCache(topPixel(fb, gSpinX, kHeight - 1), areaW * kHeight * 3);
+    }
+
+    void topLoadingEnd()
+    {
+        gfxSetDoubleBuffering(GFX_TOP, true);
     }
 
     void restore(int x, int y, int w, int h)
