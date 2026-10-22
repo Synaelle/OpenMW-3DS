@@ -131,7 +131,7 @@ namespace MWPhysics
 
         mTaskScheduler = std::make_unique<PhysicsTaskScheduler>(mPhysicsDt, mCollisionWorld.get());
 #ifdef OPENMW_PLATFORM_3DS
-        // Which build ran (OPENMW3DS_BULLET_DOUBLE, cmake/openmw-3ds-cache.cmake).
+        // Single precision on the 3DS (cmake/openmw-3ds-cache.cmake).
         Log(Debug::Info) << "Bullet: " << (sizeof(btScalar) == sizeof(double) ? "double" : "single") << " precision";
 #endif
     }

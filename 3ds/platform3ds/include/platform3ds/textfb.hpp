@@ -37,16 +37,8 @@ namespace p3ds::textfb
     uint16_t* framebuffer();
 
     void clear(uint16_t color);
-    void fillRows(int row, int rowCount, uint16_t color);
     // Draws up to maxChars characters (or until NUL) at character cell (col,row).
     void drawText(int col, int row, const char* text, uint16_t fg, uint16_t bg, int maxChars = kCols);
-
-    // Pixel placement (the start menu, the loading screen): a filled rectangle, and text whose 8x8 glyphs are drawn
-    // `scale` times bigger with only their set pixels written (transparent background). textWidth: its width in
-    // pixels.
-    void fillRect(int x, int y, int w, int h, uint16_t color);
-    void drawTextAt(int x, int y, const char* text, uint16_t fg, int scale = 1);
-    int textWidth(const char* text, int scale = 1);
 
     // Flushes the CPU cache for the framebuffer and presents it.
     void present();

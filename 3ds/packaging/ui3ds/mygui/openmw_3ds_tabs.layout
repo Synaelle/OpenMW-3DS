@@ -16,21 +16,16 @@
                 <Property key="NeedMouse" value="false"/>
             </Widget>
         </Widget>
-        <!-- Debug builds; the others share its width when it's hidden (n3ds/hud3ds.cpp) -->
-        <Widget type="Button" skin="MW_Button" position="28 1 80 21" name="TabItems3DS">
+        <Widget type="Button" skin="MW_Button" position="28 1 95 21" name="TabItems3DS">
             <Property key="Caption" value="#{sInventory}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="110 1 68 21" name="TabMagic3DS">
+        <Widget type="Button" skin="MW_Button" position="125 1 95 21" name="TabMagic3DS">
             <Property key="Caption" value="#{sMagicTab}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
-        <Widget type="Button" skin="MW_Button" position="180 1 68 21" name="TabStats3DS">
+        <Widget type="Button" skin="MW_Button" position="222 1 95 21" name="TabStats3DS">
             <Property key="Caption" value="#{sStats}"/>
-            <Property key="NeedKey" value="false"/>
-        </Widget>
-        <Widget type="Button" skin="MW_Button" position="250 1 68 21" name="TabDebug3DS">
-            <Property key="Caption" value="#{OMW3DS:Debug}"/>
             <Property key="NeedKey" value="false"/>
         </Widget>
     </Widget>

@@ -15,9 +15,6 @@ namespace p3ds::mem
         uint32_t heapTotal = 0; // app heap newlib can use + the large pool's regions (pools.hpp)
         uint32_t heapUsed = 0; // bytes in use by malloc and the pools, as of the last heap walk (queryExact)
         uint32_t heapArena = 0; // newlib's arena (obtained by sbrk) + the large pool's used bytes (live)
-        uint32_t largeTotal = 0; // the large pool's regions (linear memory)
-        uint32_t largeUsed = 0;
-        uint32_t heapUsedAgeMs = 0; // how old heapUsed is
         uint32_t linearTotal = 0; // GPU-visible linear heap
         uint32_t linearFree = 0;
         uint32_t vramFree = 0; // of 6 MB
@@ -28,15 +25,10 @@ namespace p3ds::mem
     // Also walks the malloc heap (mallinfo), holding the malloc lock: ~200 ms on hardware with OpenMW's heap
     // from the watchdog's core (hardware test #15), a visible freeze. Loading, crash reports, startup only.
     Stats queryExact();
-    // Heap arena when queryExact() last ran.
-    uint32_t arenaAtLastWalk();
 
     // Heap budget the hardware would give us. Emulators can over-provision the region; in that case
     // the budget is reduced by the excess so emulator runs fail like the console would.
     uint32_t heapBudget(const Stats& s);
-
-    // Returns false (and logs once per transition) when heap use exceeds the hardware budget.
-    bool checkBudget(const Stats& s);
 
     // Region size real hardware gives this build (detects .3dsx vs .cia and Old vs New 3DS).
     uint32_t expectedRegion();

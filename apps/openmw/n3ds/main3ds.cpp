@@ -196,9 +196,8 @@ namespace
     // deprecated GPU interface on).
     void applySwitches(const TestRuns& runs, const TestRun* run)
     {
-        std::set<std::string> all{ "gpu-ui", "soft-gui", "no-fills", "fills", "fills-top",
-            "fills-bottom", "fills-opaque", "gui-on-scene", "gui-no-reupload", "ui3ds-demo", "no-m8ui", "cpu-skinning",
-            "draw-census", "memwalk",
+        std::set<std::string> all{ "gpu-ui", "no-fills", "fills", "fills-top", "fills-opaque", "gui-on-scene",
+            "no-m8ui", "cpu-skinning", "draw-census", "memwalk",
             // The performance batches' off switches (test #99 run B's stayed on the card through #100-#102:
             // later menus didn't name them).
             "no-thinweather", "no-posecadence", "no-smallcull", "no-flameloops", "no-samestate" };

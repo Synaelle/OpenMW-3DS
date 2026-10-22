@@ -105,8 +105,6 @@ def main():
     pill("start", "START")
     pill("select", "SELECT")
     dpad("dpad", "udlr")
-    dpad("dpad_ud", "ud")
-    dpad("dpad_lr", "lr")
     circle_pad()
     c_stick()
     print("wrote", OUT)

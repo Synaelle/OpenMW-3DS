@@ -42,14 +42,6 @@ namespace p3ds
         // Redraws immediately, ignoring the rate limit (progress display during long blocking steps).
         void forceRedraw();
 
-        // What row r shows, and the colour of its text: from the shadow of the screen, which stays current while
-        // something else draws the bottom screen (M8's Debug tab mirrors the rows).
-        static std::string textRow(int r);
-        static uint16_t textRowColour(int r);
-
-        // Cost of the last redraw, for self-profiling.
-        float lastRedrawMs() const { return mLastRedrawMs; }
-
     private:
         void redraw();
         void drawStatic();
@@ -71,6 +63,5 @@ namespace p3ds
         bool mVisible = true;
         bool mNeedsClear = true;
         uint64_t mLastRedrawTick = 0;
-        float mLastRedrawMs = 0.f;
     };
 }

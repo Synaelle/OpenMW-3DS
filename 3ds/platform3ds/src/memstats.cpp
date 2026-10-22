@@ -19,17 +19,10 @@ namespace p3ds::mem
 {
     namespace
     {
-        bool gOverBudget = false;
         // Last mallinfo() figures (see queryExact): mallinfo walks every free chunk under the malloc lock,
         // ~10+ ms with OpenMW's fragmented heap on hardware, stalling every other thread's malloc.
         uint32_t gHeapUsed = 0;
         uint32_t gHeapArena = 0;
-        uint64_t gWalkTick = 0;
-    }
-
-    uint32_t arenaAtLastWalk()
-    {
-        return __atomic_load_n(&gHeapArena, __ATOMIC_RELAXED);
     }
 
     Stats queryExact()
@@ -40,7 +33,6 @@ namespace p3ds::mem
         // The Lua pool is one newlib block: count what Lua uses of it, not the whole block.
         __atomic_store_n(&gHeapArena, uint32_t(mi.arena) + large.used, __ATOMIC_RELAXED);
         __atomic_store_n(&gHeapUsed, uint32_t(mi.uordblks) - lua.total + lua.used + large.used, __ATOMIC_RELAXED);
-        __atomic_store_n(&gWalkTick, svcGetSystemTick(), __ATOMIC_RELAXED);
         return query();
     }
 
@@ -61,8 +53,6 @@ namespace p3ds::mem
         s.imageSize = uint32_t(__end__ - __start__);
         const pools::PoolStats large = pools::large();
         s.heapTotal = uint32_t(p3ds_heap_window()) + large.total;
-        s.largeTotal = large.total;
-        s.largeUsed = large.used;
         s.linearTotal = envGetLinearHeapSize();
         s.linearFree = linearSpaceFree();
         s.vramFree = vramSpaceFree();
@@ -71,8 +61,6 @@ namespace p3ds::mem
             return queryExact(); // never sampled yet (e.g. no watchdog running)
         s.heapArena = uint32_t(p3ds_heap_arena()) + large.used;
         s.heapUsed = __atomic_load_n(&gHeapUsed, __ATOMIC_RELAXED);
-        s.heapUsedAgeMs = uint32_t((svcGetSystemTick() - __atomic_load_n(&gWalkTick, __ATOMIC_RELAXED))
-            / (SYSCLOCK_ARM11 / 1000));
         return s;
     }
 
@@ -96,20 +84,5 @@ namespace p3ds::mem
     {
         const uint32_t excess = overProvision(s);
         return s.heapTotal > excess ? s.heapTotal - excess : 0;
-    }
-
-    bool checkBudget(const Stats& s)
-    {
-        const bool over = s.heapUsed > heapBudget(s);
-        if (over != gOverBudget)
-        {
-            gOverBudget = over;
-            if (over)
-                P3DS_LOGE("BUDGET: heap use %.1f MB exceeds the hardware budget %.1f MB - this would fail on console",
-                    toMB(s.heapUsed), toMB(heapBudget(s)));
-            else
-                P3DS_LOGI("BUDGET: heap use back under the hardware budget");
-        }
-        return !over;
     }
 }

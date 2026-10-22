@@ -21,11 +21,9 @@ endforeach()
 set(OSG_STATIC ON CACHE BOOL "")
 set(MYGUI_STATIC ON CACHE BOOL "")
 set(BULLET_STATIC ON CACHE BOOL "")
-# Bullet precision. Single by default on the 3DS: a collision sweep cost ~0.8 ms in double precision on the
-# ARM11. Double is upstream's requirement and stays available: both libraries are built (build-deps.ps1:
-# "bullet" in .deps/3ds, "bulletfloat" in .deps/3ds-bullet-float). Switch with build-openmw.ps1 -BulletDouble
-# (passes this option on every configure; everything recompiles). Nothing saved depends on the precision.
-set(OPENMW3DS_BULLET_DOUBLE OFF CACHE BOOL "Link double-precision Bullet (upstream) instead of single precision")
+# Bullet in single precision on the 3DS (upstream requires double): a collision sweep cost ~0.8 ms in double
+# precision on the ARM11, 0.37 ms in single (test #22). Built by build-deps.ps1 "bulletfloat" in its own prefix.
+# The double-precision fallback went in M20. Nothing saved depends on the precision.
 set(OPENMW3DS_DEBUG ON CACHE BOOL "3DS debug tools (debug bottom screen, autorun, detailed profiling); OFF for a release")
 set(OPENMW3DS_BULLET_FLOAT_PREFIX "${_root}/.deps/3ds-bullet-float" CACHE PATH "Single-precision Bullet prefix")
 set(RECASTNAVIGATION_STATIC ON CACHE BOOL "")

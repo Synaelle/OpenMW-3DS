@@ -17,11 +17,6 @@
 
 #include "player.hpp"
 
-#ifdef OPENMW_PLATFORM_3DS
-#include "../mwbase/windowmanager.hpp"
-#include "../n3ds/frame3ds.hpp"
-#endif
-
 namespace MWWorld
 {
     ActionTeleport::ActionTeleport(ESM::RefId cellId, const ESM::Position& position, bool teleportFollowers)
@@ -34,16 +29,6 @@ namespace MWWorld
 
     void ActionTeleport::executeImp(const Ptr& actor)
     {
-#ifdef OPENMW_PLATFORM_3DS
-        // Exteriors switched off (sdmc:/openmw/no-exteriors, see omw3ds::exteriorsEnabled): say so.
-        if (!omw3ds::exteriorsEnabled() && actor == MWBase::Environment::get().getWorld()->getPlayerPtr()
-            && MWBase::Environment::get().getWorldModel()->getCell(mCellId).isExterior())
-        {
-            MWBase::Environment::get().getWindowManager()->messageBox(
-                "Exteriors are switched off (sdmc:/openmw/no-exteriors).");
-            return;
-        }
-#endif
         if (mTeleportFollowers)
         {
             // Find any NPCs that are following the actor and teleport them with him

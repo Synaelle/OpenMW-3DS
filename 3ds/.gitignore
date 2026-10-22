@@ -9,6 +9,11 @@
 /3dslogs/
 __pycache__/
 
+# Local only: the tester's own setup (the ELF archive's upload to their drive), the design site, the agent settings
+/scripts/prune-elf-archive.ps1
+/site/
+/.claude/
+
 # Deprecated (kept on disk, out of the repo): the old Lumiere interface's atlas cooker (M18 Lumiere-new has its own repo)
 /tools/cook_lumiere_atlas.py
 

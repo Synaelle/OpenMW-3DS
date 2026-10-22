@@ -44,20 +44,11 @@ namespace omw3ds
     // ~16 s of freeing the world on hardware after the HOME Menu's Close (test #25). The system reclaims the memory.
     [[noreturn]] void exitProcess(int code);
 
-    // M8's Debug tab (hud3ds.cpp): the debug screen's rows (build, FPS, cell, position, look, state, status) as
-    // MyGUI text with colour tags, and its Screenshot button (the top screen, as the debug screen's button).
-    std::string debugScreenText3DS();
-    void requestScreenshot3DS();
-
     // The player's screenshot (test #107: the Home tab's camera, shown with the start menu's experimental option,
     // screenshotButtonEnabled3DS): both screens in one BMP, sdmc:/openmw/screenshots/<date>_<time>.bmp, written in
     // the background; a message says when it is saved.
     void requestPlayerScreenshot3DS();
     bool screenshotButtonEnabled3DS(); // sdmc:/openmw/config/screenshot-button exists (read once)
-
-    // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
-    // hydration they ran out of memory; the switch stays for memory experiments.
-    bool exteriorsEnabled();
 }
 
 #endif

@@ -28,27 +28,17 @@ namespace p3ds::log
 
     void setLevel(Level fileLevel);
 
-    // Sync mode: every line is written and flushed to the SD card before write() returns.
-    // Slow (several ms per line on hardware) but survives a hard freeze. Use for hardware tests.
-    void setSyncMode(bool sync);
-
     void write(Level level, std::string_view msg);
     void writef(Level level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 
     // Forces pending text to the file (blocking).
     void flush();
 
-    // Incremented on every logged line; lets consumers redraw only when something changed.
-    uint32_t generation();
-
     struct Line
     {
         Level level;
         char text[kLineLen];
     };
-
-    // Copies up to maxLines most recent lines, oldest first. Returns the count copied.
-    size_t copyLastLines(Line* out, size_t maxLines);
 
     // Crash-path access: no locking, no allocation. Calls fn for up to maxLines most recent lines.
     void forEachLineUnsafe(size_t maxLines, void (*fn)(const Line&, void*), void* ctx);
@@ -60,4 +50,3 @@ namespace p3ds::log
 #define P3DS_LOGW(...) ::p3ds::log::writef(::p3ds::log::Level::Warning, __VA_ARGS__)
 #define P3DS_LOGI(...) ::p3ds::log::writef(::p3ds::log::Level::Info, __VA_ARGS__)
 #define P3DS_LOGV(...) ::p3ds::log::writef(::p3ds::log::Level::Verbose, __VA_ARGS__)
-#define P3DS_LOGD(...) ::p3ds::log::writef(::p3ds::log::Level::Debug, __VA_ARGS__)

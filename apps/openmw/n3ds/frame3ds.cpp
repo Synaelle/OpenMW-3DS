@@ -72,7 +72,6 @@ namespace omw3ds
         p3ds::FrameTimer gTimer;
         p3ds::FrameStats gStats;
         bool gBottomReady = false;
-        bool gScreenshotRequested = false; // M8's Debug tab
         int gPlayerShotWait = 0; // frames left for the player's screenshot to start (requestPlayerScreenshot3DS)
 
         // Cell name / position / player state are refreshed a few times a second only (string work).
@@ -231,29 +230,6 @@ namespace omw3ds
         }
     }
 
-    std::string debugScreenText3DS()
-    {
-        std::string text;
-        for (int r = 0; r <= 6; ++r)
-        {
-            const uint16_t colour = p3ds::DebugBottomScreen::textRowColour(r);
-            char tag[8];
-            std::snprintf(tag, sizeof(tag), "#%02X%02X%02X", ((colour >> 11) & 31) * 255 / 31,
-                ((colour >> 5) & 63) * 255 / 63, (colour & 31) * 255 / 31);
-            std::string row = p3ds::DebugBottomScreen::textRow(r);
-            row.erase(0, row.find_first_not_of(' ')); // the title's margin
-            for (size_t at = row.find('#'); at != std::string::npos; at = row.find('#', at + 2))
-                row.insert(at, 1, '#'); // "##" is a '#' in MyGUI text
-            text += tag + row + "\n";
-        }
-        return text;
-    }
-
-    void requestScreenshot3DS()
-    {
-        gScreenshotRequested = true;
-    }
-
     bool screenshotButtonEnabled3DS()
     {
         static const bool enabled = access("sdmc:/openmw/config/screenshot-button", F_OK) == 0;
@@ -281,18 +257,6 @@ namespace omw3ds
         Render3DS::requestPlayerCapture(path);
         gPlayerShotWait = 3; // taken at the next frame's start
         P3DS_LOGI("screenshot (player): %s", path);
-    }
-
-    bool exteriorsEnabled()
-    {
-        static const bool enabled = [] {
-            struct stat st;
-            const bool disabled = stat("sdmc:/openmw/no-exteriors", &st) == 0;
-            if (disabled)
-                P3DS_LOGW("exteriors disabled (sdmc:/openmw/no-exteriors)");
-            return !disabled;
-        }();
-        return enabled;
     }
 
     void initBottomScreen(const char* status)
@@ -550,8 +514,6 @@ namespace omw3ds
                     systems.c_str(), phases);
             }
         }
-        if (gStats.frameIndex == 100)
-            debug::lazyStringSelfCheck();
         debug::runAutorun(gStats.frameIndex);
         benchmark::onFrame();
 #endif
@@ -563,13 +525,6 @@ namespace omw3ds
 #ifdef OPENMW3DS_DEBUG
         debug::applyScriptedInput(gStats.frameIndex);
 #endif
-        // Screenshot combination, L + D-pad Left (D-pad Left does nothing in game; L alone sneaks): the same as the
-        // Debug tab's button, for when the screens can't be read (hardware test #28).
-        {
-            constexpr u32 kScreenshotKeys = KEY_L | KEY_DLEFT;
-            if ((hidKeysHeld() & kScreenshotKeys) == kScreenshotKeys && (hidKeysDown() & kScreenshotKeys) != 0)
-                gScreenshotRequested = true;
-        }
         // M8: MyGUI draws the bottom screen, except while an M6 text menu shows there (until each window has its
         // M8 version); the text display then gets the whole screen back.
         // Without the text display (M15: the loading screen instead, platform3ds/loadscreen.cpp), MyGUI takes the
@@ -594,7 +549,7 @@ namespace omw3ds
             hidTouchRead(&touch);
             gBottom.onTouch(p3ds::TouchEvent{ touch.px, touch.py, true });
         }
-        if (gBottomReady && (gBottom.consumeScreenshotRequest() || std::exchange(gScreenshotRequested, false)))
+        if (gBottomReady && gBottom.consumeScreenshotRequest()) // the M6 debug screen's button (no-m8ui)
         {
             static unsigned count = 0;
             if (count == 0)
@@ -629,12 +584,8 @@ namespace omw3ds
         if (gBottomReady)
             refreshMenus(gBottom);
 
-        const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
-        gStats.drawCalls = render.mDraws;
-        gStats.triangles = render.mTriangles;
-        gStats.cpuMs = render.mEmitMs;
-        gStats.gpuMs = render.mGpuMs;
 #ifdef OPENMW3DS_DEBUG
+        const Render3DS::FrameStats& render = Render3DS::getLastFrameStats();
         gRender.mDraws += render.mDraws;
         gRender.mTriangles += render.mTriangles;
         gRender.mLeaves += render.mLeaves;

@@ -4,8 +4,6 @@
 *.wav binary
 *.dds binary
 *.ttf binary
-*.bik binary
 
-*.cgfx binary
 *.zip binary
 *.ico binary

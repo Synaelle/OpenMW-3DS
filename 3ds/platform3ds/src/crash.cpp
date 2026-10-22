@@ -581,6 +581,9 @@ namespace p3ds::crash
                 // 1 MB rule walked every few seconds and froze the game ~470 ms each time (test #73).
                 // sdmc:/openmw/memwalk: in game too (comparing builds' heap in game, in Zeste: no freeze there).
                 static const bool walkInGame = [] {
+#ifndef OPENMW3DS_DEBUG
+                    return false; // debug builds only
+#endif
                     std::FILE* f = std::fopen("sdmc:/openmw/memwalk", "r");
                     if (f != nullptr)
                         std::fclose(f);
@@ -955,6 +958,9 @@ namespace p3ds::memprobe
     {
         // Opt-in: costs 6 MB of linear memory and a lock per allocation while active.
         static const bool enabled = [] {
+#ifndef OPENMW3DS_DEBUG
+            return false; // debug builds only
+#endif
             FILE* f = fopen("sdmc:/openmw/memprofile", "r");
             if (f != nullptr)
                 fclose(f);

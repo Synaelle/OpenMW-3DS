@@ -17,11 +17,8 @@
 
 namespace omw3ds
 {
-    // OpenMW's default font at book size (components/fontloader): about 10 pixels high instead of 16.
-    inline constexpr std::string_view kSmallFont3DS = "Journalbook DefaultFont";
-
     // The crosshair's tooltip (mwgui/tooltips.cpp) is a one-line label at the very top of the top screen, in
-    // kSmallFont3DS, instead of OpenMW's full tooltip in the middle of the screen: where it goes, and its text from
+    // the book-size font, instead of OpenMW's full tooltip in the middle of the screen: where it goes, and its text from
     // the tooltip's caption and lines ("Wooden Door to Seyda Neen", "Iron Dagger, Weight: 10, Value: 5").
     MyGUI::IntPoint targetLabel3DS(const MyGUI::IntSize& size);
     std::string targetLabelText3DS(const std::string& caption, const std::string& text);

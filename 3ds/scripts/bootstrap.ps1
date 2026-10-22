@@ -71,6 +71,6 @@ if (-not (Test-Path "$ToolsBin\bannertool.exe")) {
     }
 }
 # 5. Python packages for tools/cook_textures.py and packaging/make_assets.py.
-python -m pip install --user --quiet pillow numpy
+python -m pip install --user --quiet pillow numpy freetype-py
 
 Write-Host "Bootstrap complete. Toolchain: $Msys2Root\opt\devkitpro ; extra tools: $ToolsBin"

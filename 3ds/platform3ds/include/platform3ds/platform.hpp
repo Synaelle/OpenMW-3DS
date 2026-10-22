@@ -10,8 +10,6 @@ namespace p3ds
     constexpr const char* kBaseDir = "sdmc:/openmw";
     // Every log in one folder: the port log, crash reports and OpenMW's own openmw.log (main.cpp).
     constexpr const char* kLogDir = "sdmc:/openmw/logs";
-    constexpr const char* kLogPath = "sdmc:/openmw/logs/openmw3ds.log";
-    constexpr const char* kCrashPath = "sdmc:/openmw/logs/openmw3ds-crash.log";
     constexpr const char* kAutorunPath = "sdmc:/openmw/autorun.txt";
     constexpr const char* kAutorunDonePath = "sdmc:/openmw/autorun.done";
 
@@ -59,10 +57,5 @@ namespace p3ds
     bool mainStackIntact(); // cheap: checks only the bottom words
 
     bool fileExists(const char* path);
-    // Reads a small text file into buf (NUL-terminated). Returns false if missing.
-    bool readSmallFile(const char* path, char* buf, unsigned bufSize);
     void writeSmallFile(const char* path, const char* text);
-
-    // Best core for a worker thread: 2 on New 3DS (if the exheader allows it), else 1, else 0.
-    int preferredWorkerCore();
 }

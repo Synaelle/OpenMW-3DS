@@ -16,10 +16,6 @@ namespace p3ds
         float fps = 0.f; // averaged over the last ~0.5 s
         float fpsLow = 0.f; // worst frame in the window, as FPS
         float frameMs = 0.f; // last frame wall time
-        float cpuMs = 0.f; // citro3d CPU-side processing time
-        float gpuMs = 0.f; // citro3d GPU drawing time
-        uint32_t drawCalls = 0;
-        uint32_t triangles = 0;
     };
 
     // What the game exposes to the bottom screen each frame. Pointers must stay valid for the call.

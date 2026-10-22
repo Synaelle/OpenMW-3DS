@@ -1,5 +1,5 @@
 # Builds out\sdcard-openmw\: an OpenMW hardware test package to copy onto the root of the 3DS SD card.
-#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"] [-BulletDouble] [-NoDebug]
+#   scripts\make-sdcard-openmw.ps1 [-NoBuild] [-Start "Seyda Neen, Arrille's Tradehouse"] [-NoDebug]
 # Morrowind's data files are NOT included: the tester copies Morrowind.esm and Morrowind.bsa from
 # their own installation into sdmc:/openmw/data/ (see the README in the package).
 param(
@@ -7,14 +7,12 @@ param(
     # Arrille's: the Census office's first door into it is the jail's PrisonMarker, whose destination is outside
     # the walls, so --start dropped the player into the void (OpenMW behaviour, see PORTING_NOTES).
     [string]$Start = "Seyda Neen, Arrille's Tradehouse",
-    # Double-precision Bullet (upstream) instead of single precision: see build-openmw.ps1.
-    [switch]$BulletDouble,
     # Release build: no debug tools (see build-openmw.ps1).
     [switch]$NoDebug
 )
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" -BulletDouble:$BulletDouble -NoDebug:$NoDebug | Out-Host }
+if (-not $NoBuild) { & "$PSScriptRoot\build-openmw.ps1" -NoDebug:$NoDebug | Out-Host }
 
 $out = Join-Path $RepoRoot 'out'
 $sd = Join-Path $out 'sdcard-openmw'
@@ -218,5 +216,7 @@ if ($testName) {
     Write-Host "Archived: $archive"
 }
 
-# Old ELFs: stripped to their symbols or deleted (scripts\prune-elf-archive.ps1).
-& "$PSScriptRoot\prune-elf-archive.ps1" | Out-Host
+# Old ELFs: stripped to their symbols or deleted (scripts\prune-elf-archive.ps1, the tester's local script, not
+# in the repo).
+$prune = Join-Path $PSScriptRoot 'prune-elf-archive.ps1'
+if (Test-Path $prune) { & $prune | Out-Host }

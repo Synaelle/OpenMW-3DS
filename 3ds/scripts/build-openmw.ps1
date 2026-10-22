@@ -2,7 +2,6 @@
 #   scripts\build-openmw.ps1                         # build\openmw, -Os
 #   scripts\build-openmw.ps1 -Opt O2 -BuildDir build\openmw-o2
 #   scripts\build-openmw.ps1 -Clean
-#   scripts\build-openmw.ps1 -BulletDouble          # link double-precision Bullet (upstream) instead of single
 #   scripts\build-openmw.ps1 -NoDebug               # release: no debug tools (OPENMW3DS_DEBUG off)
 # Needs the cross-built dependencies (scripts\build-deps.ps1). Outputs, in the build dir:
 #   openmw.elf (keep it for symbolize.ps1), apps\openmw\openmw.{3dsx,cia,cxi}
@@ -12,8 +11,6 @@ param(
     [string]$Opt = 'Os',
     [string]$Target = 'all',
     [switch]$Clean,
-    # Bullet precision is chosen on every configure, so building without the switch goes back to single precision.
-    [switch]$BulletDouble,
     # Debug tools (bottom-screen debug display, autorun, detailed profiling) are on unless -NoDebug; chosen on
     # every configure like the Bullet precision (switching rebuilds everything).
     [switch]$NoDebug,
@@ -29,10 +26,9 @@ if (-not (Test-Path "$Msys2Root\opt\devkitpro\cmake\3DS.cmake")) {
 if (-not (Test-Path (Join-Path $RepoRoot '.deps\3ds\lib\libosg.a'))) {
     throw "dependencies not built - run scripts\build-deps.ps1 first"
 }
-if (-not $BulletDouble -and -not (Test-Path (Join-Path $RepoRoot '.deps\3ds-bullet-float\lib\libBulletCollision.a'))) {
-    throw "single-precision Bullet not built - run scripts\build-deps.ps1 bulletfloat (or build with -BulletDouble)"
+if (-not (Test-Path (Join-Path $RepoRoot '.deps\3ds-bullet-float\lib\libBulletCollision.a'))) {
+    throw "single-precision Bullet not built - run scripts\build-deps.ps1 bulletfloat"
 }
-$bulletDoubleFlag = if ($BulletDouble) { 'ON' } else { 'OFF' }
 $debugFlag = if ($NoDebug) { 'OFF' } else { 'ON' }
 if ($Clean -and (Test-Path $Build)) { Remove-Item -Recurse -Force $Build }
 New-Item -ItemType Directory -Force $Build | Out-Null
@@ -55,7 +51,7 @@ gen=''
 [ -f build.ninja ] || gen='-G Ninja'
 cmake `$gen -C '$src/cmake/openmw-3ds-cache.cmake' -DCMAKE_TOOLCHAIN_FILE=`$DEVKITPRO/cmake/3DS.cmake \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags' '-DCMAKE_C_FLAGS_RELWITHDEBINFO=$flags' \
-  -DOPENMW3DS_BULLET_DOUBLE=$bulletDoubleFlag -DOPENMW3DS_DEBUG=$debugFlag \
+  -DOPENMW3DS_DEBUG=$debugFlag \
   '$src/openmw' > /dev/null
 cmake --build . --target $Target
 "@

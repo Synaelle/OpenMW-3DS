@@ -712,7 +712,7 @@ set(COMPONENT_FILES ${COMPONENT_FILES} PARENT_SCOPE)
 target_compile_definitions(components PUBLIC
     MYGUI_DONT_USE_OBSOLETE=ON
 )
-if (NOT OPENMW_PLATFORM_3DS OR OPENMW3DS_BULLET_DOUBLE) # 3DS: single precision by default (openmw-3ds-cache.cmake)
+if (NOT OPENMW_PLATFORM_3DS) # 3DS: single precision (openmw-3ds-cache.cmake)
     target_compile_definitions(components PUBLIC BT_USE_DOUBLE_PRECISION)
 endif()
 

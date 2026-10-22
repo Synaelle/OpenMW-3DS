@@ -29,10 +29,6 @@ namespace omw3ds::debug
 
     // Autorun "tp:F,N": to a town (at a well-known building's door) or an interior.
     void teleport(int index);
-
-    // Once, a few frames in: reads a few texts ESM::LazyString left in the content file (offset and code page
-    // check in a headless run).
-    void lazyStringSelfCheck();
 }
 
 #endif

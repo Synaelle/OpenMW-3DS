@@ -193,8 +193,6 @@ namespace omw3ds::debug
             player.getCell()->forEachType<ESM::Door>([&](const MWWorld::Ptr& door) {
                 if (!door.getCellRef().getTeleport())
                     return true;
-                if (!exteriorsEnabled() && door.getCellRef().getDestCell().is<ESM::ESM3ExteriorCellRefId>())
-                    return true; // refused anyway (ActionTeleport)
                 const float distance = (door.getRefData().getPosition().asVec3() - playerPos).length2();
                 if (nearest.isEmpty() || distance < best)
                 {
@@ -893,33 +891,5 @@ namespace omw3ds::debug
             return;
         }
         P3DS_LOGW("debug: teleport: no cell %s", target.mInterior);
-    }
-
-    // Once: read a few texts that ESM::LazyString left in the content file, to check offsets and the
-    // code page conversion in a headless run (books and dialogue can't be opened yet).
-    void lazyStringSelfCheck()
-    {
-        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
-        int shown = 0;
-        for (const ESM::Book& book : store.get<ESM::Book>())
-        {
-            const std::string& text = book.mText.get();
-            P3DS_LOGI("lazy text: book %s: %zu bytes \"%.70s\"", book.mId.toDebugString().c_str(), text.size(),
-                text.c_str());
-            if (++shown == 2)
-                break;
-        }
-        shown = 0;
-        for (const ESM::Dialogue& dialogue : store.get<ESM::Dialogue>())
-        {
-            for (const ESM::DialInfo& info : dialogue.mInfo)
-            {
-                if (info.mResponse.empty())
-                    continue;
-                P3DS_LOGI("lazy text: %s: \"%.70s\"", dialogue.mStringId.c_str(), info.mResponse.get().c_str());
-                if (++shown == 2)
-                    return;
-            }
-        }
     }
 }

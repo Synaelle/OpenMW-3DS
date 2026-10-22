@@ -29,19 +29,4 @@ namespace p3ds
     {
         return double(ticks() - startTick()) / double(SYSCLOCK_ARM11);
     }
-
-    class ScopedTimer
-    {
-    public:
-        explicit ScopedTimer(double& outMs)
-            : mOut(outMs)
-            , mStart(ticks())
-        {
-        }
-        ~ScopedTimer() { mOut = ticksToMs(ticks() - mStart); }
-
-    private:
-        double& mOut;
-        uint64_t mStart;
-    };
 }

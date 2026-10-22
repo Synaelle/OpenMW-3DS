@@ -20,7 +20,6 @@ namespace p3ds::log
         // Ring of recent lines (static: usable from the crash handler with no allocation).
         Line gRing[kRingLines];
         uint32_t gRingNext = 0; // total lines ever written; index = gRingNext % kRingLines
-        volatile uint32_t gGeneration = 0;
 
         // Double-buffered pending file output.
         char gPending[2][kPendingSize];
@@ -30,7 +29,6 @@ namespace p3ds::log
 
         FILE* gFile = nullptr;
         Level gFileLevel = Level::Debug;
-        volatile bool gSync = false;
 
         Thread gThread = nullptr;
         LightEvent gWake;
@@ -149,13 +147,6 @@ namespace p3ds::log
         gFileLevel = fileLevel;
     }
 
-    void setSyncMode(bool sync)
-    {
-        gSync = sync;
-        if (sync)
-            drainToFile();
-    }
-
     void write(Level level, std::string_view msg)
     {
         ensureLock();
@@ -194,12 +185,9 @@ namespace p3ds::log
                 gDropped += need;
             wantFlush = level == Level::Error || gPendingLen > kPendingSize * 3 / 4;
         }
-        gGeneration = gGeneration + 1;
         LightLock_Unlock(&gLock);
 
-        if (gSync)
-            drainToFile();
-        else if (wantFlush && gThread != nullptr)
+        if (wantFlush && gThread != nullptr)
             LightEvent_Signal(&gWake);
     }
 
@@ -220,25 +208,6 @@ namespace p3ds::log
     void flush()
     {
         drainToFile();
-    }
-
-    uint32_t generation()
-    {
-        return gGeneration;
-    }
-
-    size_t copyLastLines(Line* out, size_t maxLines)
-    {
-        ensureLock();
-        LightLock_Lock(&gLock);
-        const uint32_t total = gRingNext;
-        size_t count = total < kRingLines ? total : kRingLines;
-        if (count > maxLines)
-            count = maxLines;
-        for (size_t i = 0; i < count; ++i)
-            out[i] = gRing[(total - count + i) % kRingLines];
-        LightLock_Unlock(&gLock);
-        return count;
     }
 
     void forEachLineUnsafe(size_t maxLines, void (*fn)(const Line&, void*), void* ctx)

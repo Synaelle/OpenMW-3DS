@@ -175,42 +175,19 @@ extern "C"
 
 namespace
 {
-    // Startup check of the hooks above: a pthread key can be made, and (debug builds) two threads throwing and
-    // catching at the same time each get their own exception back.
+    // Startup check of the hooks above: a pthread key can be made.
     void checkThreadExceptions()
     {
         pthread_key_t key;
         const int rc = pthread_key_create(&key, nullptr);
         if (rc == 0)
             pthread_key_delete(key);
-#ifdef OPENMW3DS_DEBUG
-        std::atomic<int> mismatches{ 0 };
-        auto worker = [&mismatches](const char* tag) {
-            for (int i = 0; i < 200; ++i)
-            {
-                try
-                {
-                    throw std::runtime_error(tag);
-                }
-                catch (const std::exception& e)
-                {
-                    // Hold it while the other thread throws and catches: with one shared exception state, the
-                    // other thread's end of catch releases this exception.
-                    svcSleepThread(50 * 1000);
-                    if (std::strcmp(e.what(), tag) != 0)
-                        ++mismatches;
-                }
-            }
-        };
-        std::thread other(worker, "other thread");
-        worker("main thread");
-        other.join();
-        P3DS_LOGI("threads: pthread keys %s, exceptions on two threads at once %s (%d mismatches in 400)",
-            rc == 0 ? "ok" : "FAILED", mismatches == 0 ? "ok" : "BROKEN", mismatches.load());
-#else
-        if (rc != 0)
+        // The stress run of two threads throwing at once (test #25's shared exception state) went in M20: the TLS
+        // hooks above fixed it, and it cost ~10 ms and 400 exceptions per start.
+        if (rc == 0)
+            P3DS_LOGI("threads: pthread keys ok");
+        else
             P3DS_LOGE("threads: pthread keys unavailable (%d): exceptions on two threads at once are unsafe", rc);
-#endif
     }
 }
 
@@ -376,17 +353,6 @@ namespace p3ds
         return stat(path, &st) == 0;
     }
 
-    bool readSmallFile(const char* path, char* buf, unsigned bufSize)
-    {
-        FILE* f = fopen(path, "rb");
-        if (f == nullptr)
-            return false;
-        const size_t n = fread(buf, 1, bufSize - 1, f);
-        buf[n] = '\0';
-        fclose(f);
-        return true;
-    }
-
     void writeSmallFile(const char* path, const char* text)
     {
         FILE* f = fopen(path, "wb");
@@ -450,8 +416,10 @@ namespace p3ds
         }
         remove(kAutorunDonePath);
         rotateLogs();
+#ifdef OPENMW3DS_DEBUG
         if (stat("sdmc:/openmw/memprofile", &logDir) == 0)
             memprobe::enableThreadAccounting(); // diagnostics (see memprobe.hpp)
+#endif
 
         textfb::setupBottomScreen();
 
@@ -538,12 +506,5 @@ namespace p3ds
     const PlatformInfo& info()
     {
         return gInfo;
-    }
-
-    int preferredWorkerCore()
-    {
-        if (gInfo.isNew3DS)
-            return 2;
-        return gInfo.syscoreLimit > 0 ? 1 : 0;
     }
 }

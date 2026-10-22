@@ -66,9 +66,12 @@ namespace omw3ds::memrelief
         if (!gEvictPending)
             return;
         gEvictPending = false;
-        // Cell preloading keeps CellStore pointers of its own: no eviction with it on. sdmc:/openmw/no-evict turns
-        // eviction off (the startup test menu's switch).
+        // Cell preloading keeps CellStore pointers of its own: no eviction with it on. In debug builds,
+        // sdmc:/openmw/no-evict turns eviction off.
         static const bool disabled = [] {
+#ifndef OPENMW3DS_DEBUG
+            return false;
+#endif
             std::FILE* f = std::fopen("sdmc:/openmw/no-evict", "r");
             if (f != nullptr)
                 std::fclose(f);
