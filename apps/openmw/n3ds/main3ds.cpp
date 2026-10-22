@@ -72,7 +72,8 @@ namespace
     {
         std::vector<std::string> args{ "openmw" };
         std::ifstream file(kArgsPath);
-        if (file)
+        const bool haveFile = bool(file); // not !file later: reading to the end sets failbit
+        if (haveFile)
         {
             std::string line;
             while (std::getline(file, line))
@@ -83,36 +84,40 @@ namespace
                     args.push_back(line);
             }
             P3DS_LOGI("arguments from %s", kArgsPath);
-            if (gBenchmark)
-            {
-                // A new game of its own (no test script, no character creation), started in Seyda Neen: the
-                // benchmark takes it round from there. Nothing is saved. A fixed random seed: the same AI and weather
-                // rolls each run (frame times still differ, so NPCs can still drift apart a little).
-                args = { "openmw", "--skip-menu", "--start", "Seyda Neen", "--random-seed", "1" };
-                P3DS_LOGI("benchmark: %s, then the game quits",
-                    gBenchmarkSet == omw3ds::benchmark::Set::Endurance ? "about 30 minutes" : "about 5 minutes");
-            }
-            else if (!gSkipIntro)
-            {
-                // The game's own start: no skipped menu, no start cell, no test script.
-                std::vector<std::string> kept;
-                for (size_t i = 0; i < args.size(); ++i)
-                {
-                    const std::string& a = args[i];
-                    if (a == "--skip-menu" || a == "--new-game")
-                        continue;
-                    if ((a == "--start" || a == "--script-run") && i + 1 < args.size())
-                    {
-                        ++i;
-                        continue;
-                    }
-                    kept.push_back(a);
-                }
-                args = std::move(kept);
-                P3DS_LOGI("start normally: the main menu");
-            }
         }
-        else
+        if (gBenchmark)
+        {
+            // A new game of its own (no test script, no character creation), started in Seyda Neen: the benchmark
+            // takes it round from there. Nothing is saved. A fixed random seed: the same AI and weather rolls each
+            // run (frame times still differ, so NPCs can still drift apart a little).
+            args = { "openmw", "--skip-menu", "--start", "Seyda Neen", "--random-seed", "1" };
+#ifdef OPENMW3DS_DEBUG
+            P3DS_LOGI("benchmark: %s, then the game quits",
+                gBenchmarkSet == omw3ds::benchmark::Set::Endurance ? "about 30 minutes" : "about 5 minutes");
+#endif
+        }
+        else if (!gSkipIntro)
+        {
+            // The game's own start: no skipped menu, no start cell, no test script. A player's card has no args.txt
+            // at all (the setup app writes none): the main menu too, never the debug defaults below (they put the
+            // player in Seyda Neen without the intro or character creation, seen with the setup app's first card).
+            std::vector<std::string> kept;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const std::string& a = args[i];
+                if (a == "--skip-menu" || a == "--new-game")
+                    continue;
+                if ((a == "--start" || a == "--script-run") && i + 1 < args.size())
+                {
+                    ++i;
+                    continue;
+                }
+                kept.push_back(a);
+            }
+            args = std::move(kept);
+            P3DS_LOGI("start normally: the main menu");
+        }
+        else if (!haveFile)
         {
             args.insert(args.end(), { "--skip-menu", "--start", "Seyda Neen" });
             P3DS_LOGI("no %s: using debug defaults", kArgsPath);
