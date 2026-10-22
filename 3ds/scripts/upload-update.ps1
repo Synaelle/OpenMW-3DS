@@ -37,13 +37,13 @@ foreach ($f in $files) {
 }
 
 if ($files.Count -gt 0) {
-    $tops = Get-ChildItem $stage | ForEach-Object FullName
+    $tops = @(Get-ChildItem $stage | ForEach-Object FullName) # an array even for one folder (@ would splat a string's characters)
     & $baguette --json --quiet put @tops sd:/ | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Output "Upload failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
     Write-Output "Uploaded $($files.Count) files."
 }
 if ($deletes.Count -gt 0) {
-    $targets = $deletes | ForEach-Object { "sd:$_" }
+    $targets = @($deletes | ForEach-Object { "sd:$_" })
     & $baguette --json --quiet rm @targets | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Output "Deleting failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
     Write-Output "Deleted $($deletes.Count) files the package no longer has."
