@@ -37,13 +37,21 @@ function(omw3ds_package target)
         COMMAND "${OMW3DS_BANNERTOOL}" makesmdh -s "${P_TITLE}" -l "${P_DESCRIPTION}" -p "${P_AUTHOR}"
                 -i "${icon_png}" -o "${cia_smdh}"
         DEPENDS "${icon_png}" VERBATIM)
-    # HOME Menu banner: a flat image and a swoosh (packaging/make_assets.py). Not a 3D CGFX banner: one that
-    # worked in the emulator crashed the HOME Menu on hardware.
+    # HOME Menu banner and its swoosh (packaging/make_assets.py). The 3D emblem turning (banner3d.cgfx, made by
+    # tools/make_banner_model.py and pycgfx) when it is there, else the flat image: a 3D banner that worked in
+    # the emulator crashed the HOME Menu on hardware once (test #11), deleting banner3d.cgfx brings the flat one back.
     set(banner_png "${OMW3DS_PACKAGING_DIR}/banner.png")
+    set(banner_cgfx "${OMW3DS_PACKAGING_DIR}/banner3d.cgfx")
     set(banner_wav "${OMW3DS_PACKAGING_DIR}/banner.wav")
-    add_custom_command(OUTPUT "${banner}"
-        COMMAND "${OMW3DS_BANNERTOOL}" makebanner -i "${banner_png}" -a "${banner_wav}" -o "${banner}"
-        DEPENDS "${banner_png}" "${banner_wav}" VERBATIM)
+    if(EXISTS "${banner_cgfx}")
+        add_custom_command(OUTPUT "${banner}"
+            COMMAND "${OMW3DS_BANNERTOOL}" makebanner -ci "${banner_cgfx}" -a "${banner_wav}" -o "${banner}"
+            DEPENDS "${banner_cgfx}" "${banner_wav}" VERBATIM)
+    else()
+        add_custom_command(OUTPUT "${banner}"
+            COMMAND "${OMW3DS_BANNERTOOL}" makebanner -i "${banner_png}" -a "${banner_wav}" -o "${banner}"
+            DEPENDS "${banner_png}" "${banner_wav}" VERBATIM)
+    endif()
     add_custom_command(OUTPUT "${cia}"
         COMMAND "${OMW3DS_MAKEROM}" -f cia -o "${cia}" -target t -exefslogo
                 -elf "$<TARGET_FILE:${target}>" -rsf "${OMW3DS_PACKAGING_DIR}/app.rsf"
