@@ -1,4 +1,4 @@
-# Configures and builds OpenMW for the 3DS from openmw/, using cmake/openmw-3ds-cache.cmake.
+# Configures and builds OpenMW for the 3DS from the repository's root (OpenMW's tree), using cmake/openmw-3ds-cache.cmake.
 #   scripts\build-openmw.ps1                         # build\openmw, -Os
 #   scripts\build-openmw.ps1 -Opt O2 -BuildDir build\openmw-o2
 #   scripts\build-openmw.ps1 -Clean
@@ -54,7 +54,7 @@ gen=''
 cmake `$gen -C '$src/cmake/openmw-3ds-cache.cmake' -DCMAKE_TOOLCHAIN_FILE=`$DEVKITPRO/cmake/3DS.cmake \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags' '-DCMAKE_C_FLAGS_RELWITHDEBINFO=$flags' \
   -DOPENMW3DS_DEBUG=$debugFlag '-DOPENMW3DS_RELEASE_VERSION=$Version' \
-  '$src/openmw' > /dev/null
+  '$src/..' > /dev/null
 cmake --build . --target $Target
 "@
 & "$Msys2Root\usr\bin\bash.exe" -lc $script

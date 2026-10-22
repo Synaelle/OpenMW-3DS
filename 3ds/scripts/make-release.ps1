@@ -40,7 +40,8 @@ if (-not $SkipBuild) {
 }
 # 3. The setup app for Linux: the AppImage, in WSL (Docker, Ubuntu 22.04).
 if (-not $SkipLinux -and -not $SkipBuild) {
-    & wsl.exe -d Debian -- bash -lc 'cd /mnt/c/Projects/openmw3ds/setup && sed -i "s/\r$//" linux/build-appimage.sh && bash linux/build-appimage.sh' | Out-Host
+    $wslSetup = $Setup -replace '\\', '/' -replace '^([A-Za-z]):', { "/mnt/$($_.Groups[1].Value.ToLower())" }
+    & wsl.exe -d Debian -- bash -lc ("cd '$wslSetup' && " + 'sed -i "s/\r$//" linux/build-appimage.sh && bash linux/build-appimage.sh') | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'setup app: the AppImage build failed' }
 }
 

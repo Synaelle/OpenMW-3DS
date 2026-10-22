@@ -526,7 +526,7 @@ def main():
     sources = collect_sources(args.data, archives, prefixes, args.resources,
                               after=[os.path.dirname(folder) for folder in layouts])
     referenced = referenced_textures([os.path.join(args.resources, "mygui")] + layouts
-                                     + [os.path.join(repo, "openmw", "apps", "openmw", "mwgui")])
+                                     + [os.path.join(repo, "..", "apps", "openmw", "mwgui")])
     referenced.update(key for key in sources if key.startswith(ATLAS_HALVED_PREFIX))
     keys = sorted(sources)
     if args.limit:

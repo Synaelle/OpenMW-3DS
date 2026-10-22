@@ -20,3 +20,6 @@ __pycache__/
 # Deprecated (kept on disk, out of the repo): the old Lumiere interface's atlas cooker (M18 Lumiere-new has its own repo)
 /tools/cook_lumiere_atlas.py
 
+
+# Private working notes (plans, test reports, screenshots), never published
+/docs/

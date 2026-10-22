@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "packaging", "ui3ds", "textures")
-FONT = os.path.join(ROOT, "openmw", "files", "data", "fonts", "DejaVuLGCSansMono.ttf")
+FONT = os.path.join(ROOT, "..", "files", "data", "fonts", "DejaVuLGCSansMono.ttf")
 SS = 8  # supersampling
 SCALE = 2  # drawn on a 32-pixel grid, saved at half: the interface shows them pixel for pixel, unfiltered
 

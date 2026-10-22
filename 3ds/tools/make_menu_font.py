@@ -15,7 +15,7 @@ import os
 import freetype
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TTF = os.path.join(ROOT, "openmw", "files", "data", "fonts", "MysticCards.ttf")
+TTF = os.path.join(ROOT, "..", "files", "data", "fonts", "MysticCards.ttf")
 OUT = os.path.join(ROOT, "platform3ds", "src", "menufont.inc")
 SIZES = {"Title": 23, "Text": 17, "Small": 13}  # pixels per em
 CODES = range(32, 127)

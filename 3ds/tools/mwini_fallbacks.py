@@ -12,7 +12,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-IMPORTER = os.path.join(HERE, "..", "openmw", "apps", "mwiniimporter", "importer.cpp")
+IMPORTER = os.path.join(HERE, "..", "..", "apps", "mwiniimporter", "importer.cpp")
 
 
 def fallback_keys():
