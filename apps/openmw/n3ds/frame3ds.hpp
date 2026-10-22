@@ -18,7 +18,7 @@ namespace omw3ds
     void initBottomScreen(const char* status);
 
     // Engine::go(), once the viewer exists: enables OpenMW's per-subsystem frame timings (input, Lua,
-    // mechanics, physics, ...) and OSG's update/cull/draw timings; logged every 5 s with the perf line.
+    // mechanics, physics, ...) and OSG's update/cull/draw timings. Logged every 5 s with the perf line.
     void setViewer(osgViewer::Viewer* viewer);
 
     // Once per Engine::frame(), main thread. Measures wall time between calls itself (OpenMW's frame
@@ -46,7 +46,7 @@ namespace omw3ds
 
     // The player's screenshot (test #107: the Home tab's camera, shown with the start menu's experimental option,
     // screenshotButtonEnabled3DS): both screens in one BMP, sdmc:/openmw/screenshots/<date>_<time>.bmp, written in
-    // the background; a message says when it is saved.
+    // the background. A message says when it is saved.
     void requestPlayerScreenshot3DS();
     bool screenshotButtonEnabled3DS(); // sdmc:/openmw/config/screenshot-button exists (read once)
 }

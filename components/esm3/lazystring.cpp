@@ -104,7 +104,7 @@ namespace ESM
 
     void LazyString::load(ESMReader& esm)
     {
-        // The subrecord name has been read; next come its uint32 size and the data.
+        // The subrecord name has been read. Next come its uint32 size and the data.
         const std::size_t sizeField = esm.getFileOffset();
         esm.skipHSub();
         const std::size_t dataStart = sizeField + sizeof(uint32_t);

@@ -17,7 +17,7 @@ namespace p3ds
     {
         bool enableSpeedup = true; // New 3DS: 804 MHz + L2 cache
         int syscoreTimeLimitPercent = 30; // core 1 time slice (0 = leave core 1 unused)
-        uint32_t ciaUniqueId = 0; // UniqueId from the .rsf; used to tell .cia launches from .3dsx
+        uint32_t ciaUniqueId = 0; // UniqueId from the .rsf. Used to tell .cia launches from .3dsx
         // Logs go to kLogDir/<logSubdir>/ instead of kLogDir (a hardware test run's own folder, rotated there).
         const char* logSubdir = nullptr;
         // The start menu's Debug choices (M15): the detailed profiling lines and the in-game debug tools on. Off for

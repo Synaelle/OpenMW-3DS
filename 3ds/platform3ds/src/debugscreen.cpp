@@ -38,7 +38,7 @@ namespace p3ds
 
     namespace
     {
-        // Rows (8 px each, 30 in all; the last one is the watchdog's alive line, crash.cpp).
+        // Rows (8 px each, 30 in all, the last one is the watchdog's alive line, crash.cpp).
         // Game menu: title, body, pager, options (two columns of 2-row buttons: label, detail).
         constexpr int kMenuTitleRow = 2;
         constexpr int kMenuBodyRow = 3;
@@ -96,7 +96,7 @@ namespace p3ds
             cells(r, 0, buf, textfb::kCols, fg, textfb::color::black);
         }
 
-        // Word wrap to `width` columns; paragraphs keep their own line breaks.
+        // Word wrap to `width` columns. Paragraphs keep their own line breaks.
         void wrap(const std::string& text, int width, std::vector<std::string>& out)
         {
             size_t start = 0;

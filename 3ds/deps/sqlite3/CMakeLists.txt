@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(sqlite3 C)
 add_library(sqlite3 STATIC sqlite3.c)
-# No threads needed by OpenMW's usage on 3DS; no dlopen / mmap / WAL shared memory on newlib.
+# No threads needed by OpenMW's usage on 3DS. No dlopen / mmap / WAL shared memory on newlib.
 target_compile_definitions(sqlite3 PRIVATE
     SQLITE_THREADSAFE=1
     SQLITE_OMIT_LOAD_EXTENSION

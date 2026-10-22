@@ -20,13 +20,13 @@ namespace p3ds::mem
         uint32_t vramFree = 0; // of 6 MB
     };
 
-    // Cheap: heapArena is live; heapUsed is from the last queryExact(). Safe to call every frame.
+    // Cheap: heapArena is live. heapUsed is from the last queryExact(). Safe to call every frame.
     Stats query();
     // Also walks the malloc heap (mallinfo), holding the malloc lock: ~200 ms on hardware with OpenMW's heap
     // from the watchdog's core (hardware test #15), a visible freeze. Loading, crash reports, startup only.
     Stats queryExact();
 
-    // Heap budget the hardware would give us. Emulators can over-provision the region; in that case
+    // Heap budget the hardware would give us. Emulators can over-provision the region. In that case
     // the budget is reduced by the excess so emulator runs fail like the console would.
     uint32_t heapBudget(const Stats& s);
 

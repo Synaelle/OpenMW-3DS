@@ -130,7 +130,7 @@ namespace MWGui
         void layoutControlsBox();
 
 #ifdef OPENMW_PLATFORM_3DS
-        // M17: the D-pad moves a highlight over the open tab's options (sliders, on/off buttons); left/right change
+        // M17: the D-pad moves a highlight over the open tab's options (sliders, on/off buttons). Left/right change
         // a slider or switch a button, A presses it.
         std::vector<MyGUI::Widget*> mFocusables3DS;
         size_t mFocus3DS = 0;

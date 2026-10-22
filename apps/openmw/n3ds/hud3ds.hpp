@@ -6,9 +6,8 @@
 // the HUD panel that don't pause the game), and where things sit on MyGUI's two-screen canvas (components/render3ds/render3ds.hpp: the
 // bottom screen is at (40, 240)).
 //
-// Pages: Inventory is the 3DS's own (openmw_3ds_items.layout: touch an item, then Equip/Use, Drop, Quick key);
-// Magic and Stats are OpenMW's windows with 3DS layouts, shown under the tab bar; Debug (debug builds) shows the
-// debug screen's lines.
+// Pages: Inventory is the 3DS's own (openmw_3ds_items.layout: touch an item, then Equip/Use, Drop, Quick key).
+// Magic and Stats are OpenMW's windows with 3DS layouts, shown under the tab bar.
 
 #include <string>
 #include <string_view>
@@ -23,7 +22,7 @@ namespace omw3ds
     MyGUI::IntPoint targetLabel3DS(const MyGUI::IntSize& size);
     std::string targetLabelText3DS(const std::string& caption, const std::string& text);
 
-    // Once per frame while MyGUI is drawn (frame3ds.cpp): the quick-key strip mirrors OpenMW's quick keys 1-9; the
+    // Once per frame while MyGUI is drawn (frame3ds.cpp): the quick-key strip mirrors OpenMW's quick keys 1-9. The
     // tab bar and its pages show in game mode while the GUI draws the bottom screen.
     void updateHud3DS();
 

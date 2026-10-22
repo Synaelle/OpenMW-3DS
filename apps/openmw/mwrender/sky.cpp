@@ -760,7 +760,7 @@ namespace MWRender
                     ps->setUserValue("simpleLighting", true);
 #ifdef OPENMW_PLATFORM_3DS
                     // Ash and blight clouds fade near the eye on the 3DS (a cloud next to the camera blends over
-                    // most of the screen: render3ds backend.cpp buildParticles); snowflakes stay.
+                    // most of the screen: render3ds backend.cpp buildParticles). Snowflakes stay.
                     if (mCurrentParticleEffect != Settings::models().mWeathersnow.get())
                         ps->setName("Storm3DS");
 #endif

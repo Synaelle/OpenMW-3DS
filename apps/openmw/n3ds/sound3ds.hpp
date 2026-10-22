@@ -7,7 +7,7 @@
 // which SoundManager, SoundOutput and SoundBase befriend, so upstream files only swap an #include.
 //
 // Morrowind's audio: sound effects are 16-bit PCM WAV (mostly 22 kHz mono), voices MP3 (44.1 kHz mono), music MP3
-// (44.1 kHz stereo). Sound effects are decoded whole into linear memory (the DSP reads it directly); music and
+// (44.1 kHz stereo). Sound effects are decoded whole into linear memory (the DSP reads it directly). Music and
 // voices stream through a thread on the system core (n3ds/ndspoutput.cpp).
 
 #include <array>
@@ -153,7 +153,7 @@ namespace MWSound
         void openMp3();
         size_t readWav(char* buffer, size_t bytes);
         size_t readMp3(char* buffer, size_t bytes);
-        // Hands mpg123 the next piece of the file; false at its end.
+        // Hands mpg123 the next piece of the file. false at its end.
         bool feedMp3();
 
         Files::IStreamPtr mStream;

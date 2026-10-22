@@ -83,7 +83,7 @@ namespace p3ds::perf
     {
         // Perf batch 5: the lock only to add a label (the per-object phases, "lights" and "skinning", call this
         // thousands of times a frame: ~2% of the main thread in Zeste). Entries are only appended, a new one
-        // published by the count; the sums are added atomically.
+        // published by the count. The sums are added atomically.
         // Each label's slot, remembered by its address (labels are string literals): no search for a known one.
         static int sSlotOf[64];
         const unsigned hash = (reinterpret_cast<uintptr_t>(label) >> 2) % 64;

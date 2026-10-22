@@ -34,7 +34,7 @@ namespace SceneUtil
 
 #ifdef OPENMW_PLATFORM_3DS
         // M10: one buffer. The second exists so a draw thread can still read last frame's copy while this one is
-        // updated; the 3DS updates, culls and draws one after the other on the main thread. Alternating made each
+        // updated. The 3DS updates, culls and draws one after the other on the main thread. Alternating made each
         // animated state set a new one every frame for the cull's StateGraph, which then rebuilt its nodes under it
         // (~300 allocations a frame in a lit interior).
         osg::ref_ptr<osg::StateSet> stateset = mStateSetsUpdate[0];

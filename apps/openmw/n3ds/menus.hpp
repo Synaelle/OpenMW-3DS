@@ -10,9 +10,10 @@ namespace p3ds
 
 namespace omw3ds
 {
-    // Bottom-screen text menus for OpenMW's menus until M8 draws its UI (M6). Each engine frame: applies the option
+    // Bottom-screen text menus for OpenMW's menus (M6), kept as the emergency fallback (sdmc:/openmw/no-m8ui,
+    // M20). Each engine frame: applies the option
     // the player touched, then shows the menu the game has open (an interactive message box first, else the top GUI
-    // mode), or none. OpenMW's own windows keep all the state and logic; the menus read and drive them
+    // mode), or none. OpenMW's own windows keep all the state and logic. The menus read and drive them
     // (n3ds/menufriend.hpp).
     void refreshMenus(p3ds::DebugBottomScreen& screen);
 

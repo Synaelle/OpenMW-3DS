@@ -39,7 +39,7 @@ namespace MWGui
 
     private:
 #ifdef OPENMW_PLATFORM_3DS
-        // M19: the bottom screen's title and text buttons (packaging/ui3ds/mygui/openmw_scroll.layout); the image
+        // M19: the bottom screen's title and text buttons (packaging/ui3ds/mygui/openmw_scroll.layout). The image
         // buttons stay hidden.
         MyGUI::TextBox* mTitle3DS = nullptr;
         MyGUI::Button* mTake3DS = nullptr;

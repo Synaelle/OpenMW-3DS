@@ -102,7 +102,7 @@ namespace omw3ds
             float mScroll = 0.f; // pixels from the top
         };
 
-        // Kept until the program ends (destroying it after MyGUI's shutdown, as a static would, crashes); the
+        // Kept until the program ends (destroying it after MyGUI's shutdown, as a static would, crashes). The
         // layout puts it on the top screen.
         CreditsWindow* sWindow = nullptr;
     }

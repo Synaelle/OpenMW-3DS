@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-// Replaceable bottom-screen module. Today: DebugBottomScreen. Later: the in-game UI
-// (inventory, map, spells, journal). The game loop only talks to IBottomScreen.
+// The bottom screen drawn by the CPU before M8 (DebugBottomScreen): kept as the no-m8ui emergency fallback. The game
+// loop only talks to IBottomScreen.
 namespace p3ds
 {
     struct FrameStats
@@ -32,8 +32,8 @@ namespace p3ds
         bool stateAlert = false; // the state needs the player's attention (a menu we can't draw yet, death)
     };
 
-    // A game menu as text on the bottom screen (until M8's UI): a title, body paragraphs (wrapped by the screen) and
-    // touch options. The game rebuilds it a few times a second; the screen keeps its scroll position and option page
+    // A game menu as text on the bottom screen (the no-m8ui fallback): a title, body paragraphs (wrapped by the screen) and
+    // touch options. The game rebuilds it a few times a second. The screen keeps its scroll position and option page
     // while the content is unchanged.
     struct MenuView
     {
@@ -65,7 +65,7 @@ namespace p3ds
         virtual void init() = 0;
         virtual void shutdown() = 0;
 
-        // Called every frame; must be cheap. Implementations decide when to actually redraw.
+        // Called every frame. Must be cheap. Implementations decide when to actually redraw.
         virtual void update(const GameSnapshot& snapshot) = 0;
         // Called every frame after the top screen frame was submitted.
         virtual void render() = 0;

@@ -373,7 +373,7 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
         ScopedProfile<UserStatsType::Focus> profile(frameStart, frameNumber, *timer, *stats);
 #ifdef OPENMW_PLATFORM_3DS
         // M10: the focus ray walks the scene graph (an intersector cloned at every transform: ~100 allocations a
-        // frame); it only feeds the crosshair's label (activating casts its own ray), so 10 times a second.
+        // frame). It only feeds the crosshair's label (activating casts its own ray), so 10 times a second.
         if (frameNumber % 3 == 0)
 #endif
             mWorld->updateFocusObject();
@@ -563,7 +563,7 @@ void OMW::Engine::createWindow()
     }
 
 #ifdef OPENMW_PLATFORM_3DS
-    // No OpenGL: SDL runs its dummy video driver; rendering goes through citro3d (sdlgraphicswindow_3ds).
+    // No OpenGL: SDL runs its dummy video driver. Rendering goes through citro3d (sdlgraphicswindow_3ds).
     Uint32 flags = SDL_WINDOW_SHOWN;
 #else
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;

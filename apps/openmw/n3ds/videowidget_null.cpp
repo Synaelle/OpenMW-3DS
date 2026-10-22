@@ -9,7 +9,7 @@
 
 namespace Video
 {
-    // Complete type for VideoWidget's unique_ptr member; never instantiated.
+    // Complete type for VideoWidget's unique_ptr member. Never instantiated.
     class VideoPlayer
     {
     };

@@ -63,7 +63,7 @@ namespace Files
         std::size_t position() const { return mBufferPos + (gptr() - eback()); }
         pos_type seekTo(std::size_t newPos);
         std::size_t readAt(std::size_t pos, char* data, std::size_t size);
-        // The read-ahead's data if it covers pos (waits for it; start: where it begins), or 0 (none: anything in
+        // The read-ahead's data if it covers pos (waits for it, start: where it begins), or 0 (none: anything in
         // flight is dropped).
         std::size_t takeAhead(std::size_t pos, std::size_t keep, std::size_t& start);
         void requestAhead(std::size_t pos);

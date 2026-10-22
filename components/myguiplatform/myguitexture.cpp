@@ -122,7 +122,7 @@ namespace MyGUIPlatform
         mWidth = image->s();
         mHeight = image->t();
 #ifdef OPENMW_PLATFORM_3DS
-        // Cooked textures have power-of-two sizes; MyGUI's skins are in the original image's pixels.
+        // Cooked textures have power-of-two sizes. MyGUI's skins are in the original image's pixels.
         int sourceWidth, sourceHeight;
         if (Render3DS::cookedSourceSize(*image, sourceWidth, sourceHeight))
         {

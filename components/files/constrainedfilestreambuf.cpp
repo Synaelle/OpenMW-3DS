@@ -244,7 +244,7 @@ namespace Files
         setg(mBuffer.get(), mBuffer.get() + keep, mBuffer.get() + keep + got);
         if (got == 0)
             return traits_type::eof();
-        // Reading a whole file at full size (a sequential scan; random access reads 32 KB): the next read starts
+        // Reading a whole file at full size (a sequential scan, random access reads 32 KB): the next read starts
         // now.
         if (mShared == nullptr && mChunk == mCapacity && mCapacity == kMaxFileChunk)
             requestAhead(mFilePos);

@@ -25,7 +25,7 @@ namespace p3ds::memprobe
     void stage(const char* label);
 
     // Caller profile: bytes allocated per operator-new call site between start and stop, for the
-    // calling thread or every thread (logs the top call sites; resolve with addr2line). An active
+    // calling thread or every thread (logs the top call sites, resolve with addr2line). An active
     // profile is also dumped automatically on out-of-memory.
     void callerProfileStart(bool allThreads = false);
     bool callerProfileActive();
@@ -34,7 +34,7 @@ namespace p3ds::memprobe
     void callerProfileStopByCount(const char* label);
 
     // Extra memory consumers the platform layer can't see (e.g. the Lua VM, which allocates with
-    // realloc): reporters return bytes in use; the watchdog logs them with the heap stats.
+    // realloc): reporters return bytes in use. The watchdog logs them with the heap stats.
     using Reporter = uint64_t (*)(void* ctx);
     void addReporter(const char* name, Reporter fn, void* ctx);
     void logReporters();
@@ -76,13 +76,13 @@ namespace p3ds::perf
 }
 
 // Detail capture: while a capture is open on a thread (e.g. around one object insertion), Detail scopes on
-// that thread add their time and count to a small table; end() formats it, largest first. Scopes nest (a
+// that thread add their time and count to a small table. end() formats it, largest first. Scopes nest (a
 // parent's time includes its children's). Label: a string literal (keyed by pointer). Cost when no capture is
 // open: one thread-local read.
 namespace p3ds::perf::detail
 {
     void begin();
-    // Closes the capture; writes " label ms/count ..." (entries of at least 1 ms) to out.
+    // Closes the capture. Writes " label ms/count ..." (entries of at least 1 ms) to out.
     void end(char* out, unsigned size);
     bool active();
     void add(const char* label, uint64_t ticks);

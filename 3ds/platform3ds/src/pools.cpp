@@ -28,7 +28,7 @@ namespace p3ds::pools
     namespace
     {
         // ---- TLSF (two-level segregated fit) -----------------------------------------------------------
-        // A block is an 8-byte header {previous physical block, payload size | flags} and its payload; a free
+        // A block is an 8-byte header {previous physical block, payload size | flags} and its payload. A free
         // block keeps its free-list links in the payload. Payloads are 8-aligned, sizes multiples of 8. Each
         // region ends with a zero-size used sentinel, so merging never leaves the region.
         constexpr size_t kAlign = 8;
@@ -176,7 +176,7 @@ namespace p3ds::pools
                 insertFree(b);
             }
 
-            // Grows or shrinks in place when it can; nullptr when it would have to move (the caller moves it).
+            // Grows or shrinks in place when it can. nullptr when it would have to move (the caller moves it).
             void* resizeInPlace(void* p, size_t size)
             {
                 size = roundSize(size);
@@ -338,7 +338,7 @@ namespace p3ds::pools
         };
 
         // Under the lock. The first region: the linear memory beyond the GPU reserve (as the old heap
-        // extension took); later ones: kGrowStep (or the request) while kGpuFloor stays free.
+        // extension took). Later ones: kGrowStep (or the request) while kGpuFloor stays free.
         bool growLarge(size_t request)
         {
             const size_t avail = linearSpaceFree();
@@ -402,8 +402,8 @@ namespace p3ds::pools
         const struct mallinfo mi = mallinfo();
         s.arena = uint32_t(mi.arena);
         s.used = uint32_t(mi.uordblks);
-        // dlmalloc 2.6.4 layout (SIZE_SZ 4): bin i's header sits at &av_[2i+2] - 8, so its bk is av_[2i+3];
-        // a chunk is {prev_size, size, fd, bk}. The top chunk is av_[2] (bin 0's fd).
+        // dlmalloc 2.6.4 layout (SIZE_SZ 4): bin i's header sits at &av_[2i+2] - 8, so its bk is av_[2i+3].
+        // A chunk is {prev_size, size, fd, bk}. The top chunk is av_[2] (bin 0's fd).
         char* top = static_cast<char*>(__malloc_av_[2]);
         if (top != nullptr)
             s.top = uint32_t(*reinterpret_cast<size_t*>(top + 4) & ~size_t(3));

@@ -21,7 +21,7 @@ namespace p3ds::crash
     void setWaitForInput(bool wait);
 
     // Optional context string included in reports (e.g. current cell). Must point to static storage
-    // that stays valid; it is read without locking.
+    // that stays valid. It is read without locking.
     void setContextString(const char* const* ctx);
 
     [[noreturn]] void fatal(const char* reason);
@@ -41,7 +41,7 @@ namespace p3ds::crash
     void kick(const char* step = nullptr);
 
     // Panic combination: L + R + START + SELECT held for a second, read by the watchdog (core 1) whatever the main
-    // thread is doing. The main thread polls this and quits normally; if it doesn't within 3 s (frozen), the
+    // thread is doing. The main thread polls this and quits normally. If it doesn't within 3 s (frozen), the
     // watchdog writes a report and leaves by itself.
     bool panicRequested();
 

@@ -166,8 +166,8 @@ namespace SceneUtil
         unsigned int traversalNumber = nv->getTraversalNumber();
 #ifdef OPENMW_PLATFORM_3DS
         // M10: actors farther than ~11 m from the camera are skinned every other frame (half of them on even
-        // frames, half on odd ones); the frame between draws the last skinned pose. CPU skinning was ~3.5% of the
-        // main thread with two NPCs in view (the Zeste profile of 20/10); near ones (talking, fighting) keep
+        // frames, half on odd ones). The frame between draws the last skinned pose. CPU skinning was ~3.5% of the
+        // main thread with two NPCs in view (the Zeste profile of 20/10). Near ones (talking, fighting) keep
         // every frame.
         // Perf batch 1: with the pose cadence on, the frames the skeleton's pose is updated (Skeleton::poseDue3DS:
         // every 2nd/3rd/4th frame by distance).
@@ -403,8 +403,8 @@ namespace SceneUtil
 #ifdef OPENMW_PLATFORM_3DS
     // The mesh's triangles grouped into batches of at most Render3DS::kSkinBones bones (the skinned shader's
     // palette), in order: a triangle starts a new batch when its bones don't fit in the current one. Each vertex
-    // keeps its 4 strongest bones, weights normalized to 255 (the CPU path sums the weighted matrices; NIF weights
-    // sum to 1). Shared through mData by every copy of the mesh; null when the mesh can't be skinned this way
+    // keeps its 4 strongest bones, weights normalized to 255 (the CPU path sums the weighted matrices, NIF weights
+    // sum to 1). Shared through mData by every copy of the mesh. Null when the mesh can't be skinned this way
     // (primitives other than triangle lists and strips, vertices without bones): it stays on the CPU.
     Render3DS::SkinMesh* RigGeometry::skinMesh3DS()
     {

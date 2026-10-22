@@ -70,11 +70,11 @@ namespace omw3ds::benchmark
             const char* mInterior; // nullptr: an exterior, at mPos facing mYaw (or found by mExterior's name)
             float mPos[3];
             float mYaw; // degrees
-            int mWeather; // exteriors; -1: unchanged
+            int mWeather; // exteriors. -1: unchanged
             float mHour;
             const char* mExterior = nullptr; // an exterior found by its name (MWScript's COC), instead of mPos
         };
-        // The places that weigh most on the frame rate (test #92: towns with people and rain; Vivec's Foreign
+        // The places that weigh most on the frame rate (test #92: towns with people and rain, Vivec's Foreign
         // Quarter Plaza, ~730 draws). Weather only changes at once when the player enters a region, so the stages
         // alternate regions and interiors (WeatherManager forces a region's weather on entering it).
         constexpr Stage sStages[] = {
@@ -108,7 +108,7 @@ namespace omw3ds::benchmark
         };
 
         // The long tour: towns (found by name, as MWScript's COC: a door marker or the cell's centre, never the
-        // void) alternating with interiors, so each town's region weather is forced on arrival; every name checked
+        // void) alternating with interiors, so each town's region weather is forced on arrival. Every name checked
         // against Morrowind.esm.
         constexpr Stage sTourStages[] = {
             { "Seyda Neen", nullptr, {}, 0.f, Clear, 9.f, "Seyda Neen" },

@@ -59,7 +59,7 @@ namespace omw3ds::debug
 {
     namespace
     {
-        // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3);
+        // autorun.txt scripted input: "btn:F,NAME,N" holds a button from game frame F for N frames (default 3).
         // "move:F,X,Y,N" / "look:F,X,Y,N" hold the circle pad / C-stick at X,Y (-1..1, +Y = up/forward);
         // "touch:F,X,Y,N" touches the bottom screen at pixel X,Y.
         struct ScriptedInput
@@ -144,7 +144,7 @@ namespace omw3ds::debug
             u32 held = 0;
             hidinject::Stick sticks[2];
             hidinject::Touch touch;
-            // SDL takes the first value an axis reports as its rest position and drops it; a scripted stick goes
+            // SDL takes the first value an axis reports as its rest position and drops it. A scripted stick goes
             // straight to its target, so its first move would be lost. Report a tiny value once, first.
             static bool primed = false;
             if (!primed)
@@ -521,7 +521,7 @@ namespace omw3ds::debug
     }
 
     // Where the player is and what the camera looks at, starting with autorun tokens that put the player
-    // back there: "view:F,X,Y,Z,YAW,PITCH,POV,CELL" (degrees; POV 1 or 3 = first/third person; CELL "ext"
+    // back there: "view:F,X,Y,Z,YAW,PITCH,POV,CELL" (degrees, POV 1 or 3 = first/third person, CELL "ext"
     // for exteriors, else the interior's name with '_' for spaces), "hour:F,H" and, outdoors, "weather:F,N".
     // Logged with every screenshot, so a view seen on the console can be recreated in the emulator. The
     // crosshair ray costs a few ms: screenshots only.

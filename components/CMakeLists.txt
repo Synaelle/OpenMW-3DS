@@ -591,7 +591,7 @@ if (OPENMW_PLATFORM_3DS)
     list(APPEND COMPONENT_FILES esm3/lazystring.cpp)
     # citro3d draw backend and the PC-cooked texture pack (render3ds/render3ds.hpp).
     list(APPEND COMPONENT_FILES render3ds/backend.cpp render3ds/texturepack.cpp)
-    # Per-frame hot code at -O2; everything else stays -Os (image size is memory). Scene graph callbacks,
+    # Per-frame hot code at -O2. Everything else stays -Os (image size is memory). Scene graph callbacks,
     # light manager, CPU skinning (sceneutil), keyframe controllers (nifosg), MyGUI rendering, draw backend.
     set(OMW3DS_HOT_COMPONENTS ${COMPONENT_FILES})
     list(FILTER OMW3DS_HOT_COMPONENTS INCLUDE REGEX "/(sceneutil|nifosg|myguiplatform|render3ds)/[^/]*\\.cpp$")

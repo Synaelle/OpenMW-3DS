@@ -447,7 +447,7 @@ namespace MWGui
         p3ds::memprobe::stage("initUI: dialogueWindow");
 #endif
 #ifndef OPENMW_PLATFORM_3DS
-        // 3DS (M8): the dialogue window's layout spans both screens; the saved PC position and size would
+        // 3DS (M8): the dialogue window's layout spans both screens. The saved PC position and size would
         // squeeze it onto the bottom one.
         trackWindow(mDialogueWindow, makeDialogueWindowSettingValues());
 #endif
@@ -603,9 +603,9 @@ namespace MWGui
 #ifdef OPENMW_PLATFORM_3DS
         // The windows not ported to the two screens yet (the tester, 2026-10-19: "any interface not ported should be
         // on the top screen with the mouse cursor, we will do something cleaner later"): their PC layouts, on the
-        // Unported3DS layer, which scales a 600x400 view onto the top screen (openmw_layers.xml); the circle pad's
+        // Unported3DS layer, which scales a 600x400 view onto the top screen (openmw_layers.xml). The circle pad's
         // cursor and A click them. updateVisible() centres them there whenever they show.
-        // (M17: the level-up window and the spell shop have 3DS layouts now; M19: rest, quick keys, alchemy and
+        // (M17: the level-up window and the spell shop have 3DS layouts now, M19: rest, quick keys, alchemy and
         // enchanting.)
         for (GuiMode mode : { GM_MerchantRepair, GM_Repair, GM_Recharge, GM_Jail, GM_Companion })
             for (WindowBase* window : mGuiModeStates[mode].mWindows)
@@ -689,7 +689,7 @@ namespace MWGui
         mInputBlocker = MyGUI::Gui::getInstance().createWidget<MyGUI::Widget>(
             {}, 0, 0, w, h, MyGUI::Align::Stretch, "InputBlocker");
 #ifdef OPENMW_PLATFORM_3DS
-        // M8: the blocker (game mode: no GUI input) only covers the top screen; the bottom screen's HUD and tabs
+        // M8: the blocker (game mode: no GUI input) only covers the top screen. The bottom screen's HUD and tabs
         // take touches while playing.
         if (Render3DS::drawsGui())
         {
@@ -1063,7 +1063,7 @@ namespace MWGui
         if (!mLocalMapRender)
             return;
 #ifdef OPENMW_PLATFORM_3DS
-    // 0.1.0: no minimap (test #106, the tester: the flashing meshes and interface follow the local map's drawing;
+    // 0.1.0: no minimap (test #106, the tester: the flashing meshes and interface follow the local map's drawing,
     // off until that is fixed). LocalMap::requestMap draws no tile either.
         return;
 #endif
@@ -1638,7 +1638,7 @@ namespace MWGui
         // M8: the inventory is the bottom screen's Inventory tab, which doesn't pause the game.
         if (mode == GM_Inventory && Render3DS::drawsGui() && omw3ds::toggleInventoryTab3DS())
             return;
-        // The crosshair's label (what the player looks at) goes when a window opens; the focus is updated only
+        // The crosshair's label (what the player looks at) goes when a window opens. The focus is updated only
         // every third frame (engine.cpp), so it could stay over the window until then.
         if (mToolTips)
             mToolTips->clear();
@@ -3056,7 +3056,7 @@ namespace MWGui
         }
         WindowBase* active = getActiveControllerWindow();
         const bool shown = active != nullptr && active->isVisible();
-        // At the bottom of the bottom screen; under the top screen's part for the windows that have no room left
+        // At the bottom of the bottom screen. Under the top screen's part for the windows that have no room left
         // at the bottom (layout user string Hints3DS = top: character creation's race page).
         const bool onTop = shown && active->mMainWidget->getUserString("Hints3DS") == "top";
         mControllerButtonsOverlay->mMainWidget->setCoord(onTop ? MyGUI::IntCoord(0, 222, 400, 18)

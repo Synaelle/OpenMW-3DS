@@ -378,7 +378,7 @@ namespace MWGui
         void toggleConsole() override;
 #ifdef OPENMW_PLATFORM_3DS
         // Select (n3ds: mwinput/controllermanager.cpp): the console on the top screen and the system keyboard for a
-        // command, run when confirmed; Select again types another, cancelling the keyboard closes it. Only opens from
+        // command, run when confirmed. Select again types another, cancelling the keyboard closes it. Only opens from
         // the game itself (no window, page or tab up).
         void selectConsole3DS();
 #endif

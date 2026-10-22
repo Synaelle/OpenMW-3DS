@@ -519,7 +519,7 @@ namespace MWRender
         auto workItem = std::make_shared<PreloadCommonAssetsWorkItem>(mResourceSystem);
 #ifndef OPENMW_PLATFORM_3DS
         // 3DS: no memory to hold every sky/moon/weather asset and all water frames up front (several MB,
-        // useless in interiors); they load on demand instead.
+        // useless in interiors). They load on demand instead.
         mSky->listAssetsToPreload(workItem->mModels, workItem->mTextures);
         mWater->listAssetsToPreload(workItem->mTextures);
 #endif

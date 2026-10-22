@@ -107,7 +107,7 @@ namespace omw3ds
         // An item on quick key `slot` (0-8), as QuickKeysMenu assigns it: items with a "cast when used" or "cast
         // once" enchantment cast it, the others are used or equipped.
         // Offers the player's item to the merchant, as a click on it in OpenMW's inventory window while bartering
-        // does (a count dialog for a stack); with a companion or a container open, moves it to them (M17).
+        // does (a count dialog for a stack). With a companion or a container open, moves it to them (M17).
         static void sell(const MWWorld::Ptr& item)
         {
             MWGui::InventoryWindow* inv = inventory();
@@ -204,7 +204,7 @@ namespace omw3ds
 
         std::array<Slot, kSlots> sSlots;
         const MWGui::HUD* sStripBoundTo = nullptr;
-        MyGUI::TextBox* sFps = nullptr; // the frame rate under the minimap
+        MyGUI::TextBox* sFps = nullptr; // the frame rate (debug builds), where the minimap's box is
 
         void onStripSlotClicked(MyGUI::Widget* sender)
         {
@@ -236,7 +236,7 @@ namespace omw3ds
             return true;
         }
 
-        // The frame rate once a second under the minimap (the bottom screen redraws it as a small rect; a caption
+        // The frame rate once a second (the bottom screen redraws it as a small rect, a caption
         // changing on the top overlay broke its redraw in test #61).
         void updateFps()
         {
@@ -575,8 +575,8 @@ namespace omw3ds
                 const bool wearable = !mSelected.getClass().getEquipmentSlots(mSelected).first.empty();
                 if (bartering())
                 {
-                    // Bartering: the item is offered to the merchant (the barter window's deal on the top screen);
-                    // with a companion, given to them.
+                    // Bartering: the item is offered to the merchant (the barter window's deal on the top screen).
+                    // With a companion, given to them.
                     mPicker.reset(false); // no Quick key either (it hides Use and Drop too)
                     mUse->setVisible(true);
                     mUse->setCaptionWithReplacing(windows().getMode() == MWGui::GM_Companion ? "#{OMW3DS:Give}"
@@ -591,7 +591,7 @@ namespace omw3ds
             void onItemClicked(MWGui::ItemModel::ModelIndex index)
             {
                 const MWWorld::Ptr item = mModel->getItem(index).mBase;
-                // A quick second touch on the selected item uses or equips it (test #67, the tester); a slow one
+                // A quick second touch on the selected item uses or equips it (test #67, the tester). A slow one
                 // clears the selection.
                 static uint64_t lastTick = 0;
                 static MWWorld::Ptr lastItem;
@@ -695,7 +695,7 @@ namespace omw3ds
         const MWGui::SpellWindow* sMagicBoundTo = nullptr;
         Tab sShown = Tab::None;
 
-        // Home shows the HUD; a tab shows its page, or the HUD again if it's already shown.
+        // Home shows the HUD. A tab shows its page, or the HUD again if it's already shown.
         void onTabClicked(MyGUI::Widget* sender)
         {
             const Tab tab = *sender->getUserData<Tab>();
@@ -755,7 +755,7 @@ namespace omw3ds
         {
             if (!bindTabs())
                 return;
-            // In game mode, while the GUI draws the bottom screen; OpenMW's menus (dialogue, containers...) still go
+            // In game mode, while the GUI draws the bottom screen. OpenMW's menus (dialogue, containers...) still go
             // to the M6 text menus.
             // ... and while a container is open (M8: its window on the top screen, the Inventory tab below).
             // ... and while bartering (the merchant's window on the top screen, test #74).
@@ -792,7 +792,7 @@ namespace omw3ds
             showWindow(Hud3DS::magic(), tab == Tab::Magic);
             showWindow(Hud3DS::stats(), tab == Tab::Stats);
             // A page replaces the HUD panel: OpenMW's own HUD toggle (the one bound to F12 on the PC), which the
-            // window manager applies on every mode change; hiding the HUD window directly broke its layout.
+            // window manager applies on every mode change. Hiding the HUD window directly broke its layout.
             static bool hudHidden = false;
             const bool noGame = MWBase::Environment::get().getStateManager()->getState()
                 == MWBase::StateManager::State_NoGame; // the main menu before a game: nothing of the HUD
@@ -838,7 +838,7 @@ namespace omw3ds
             MyGUI::EditBox* mSpellName = nullptr;
             std::string mWeaponText;
             std::string mSpellText;
-            // HUD::updatePositions moves the boxes left when one is hidden (PC's single row); here they keep their
+            // HUD::updatePositions moves the boxes left when one is hidden (PC's single row). Here they keep their
             // places, in two columns.
             std::array<std::pair<MyGUI::Widget*, MyGUI::IntPoint>, 3> mBoxes{};
             // The Skyrim-like bars on the top screen ([HUD] top bars): health, magicka, fatigue, and what they show
@@ -891,7 +891,7 @@ namespace omw3ds
                 { "FatigueFrame", [](MyGUI::Widget*) { openTab(Tab::Stats); } },
                 { "WeapBox", [](MyGUI::Widget*) { openTab(Tab::Items); } },
                 { "SpellBox", [](MyGUI::Widget*) { openTab(Tab::Magic); } },
-                { "MiniMapButton", nullptr }, // the Map tab, later
+                { "MiniMapButton", nullptr }, // the minimap is off in 0.1.0 (its touch: the Map tab, later)
                 { "Screenshot3DS", [](MyGUI::Widget*) { requestPlayerScreenshot3DS(); } },
             };
             for (const auto& [name, handler] : touches)
@@ -901,7 +901,7 @@ namespace omw3ds
                 if (handler != nullptr)
                     widget->eventMouseButtonClick += MyGUI::newDelegate(handler);
             }
-            // The screenshot button: with the start menu's experimental option only; its camera in the captions'
+            // The screenshot button: with the start menu's experimental option only. Its camera in the captions'
             // colour, as the Home tab's house.
             hud.getWidget("Screenshot3DS")->setVisible(screenshotButtonEnabled3DS());
             hud.getWidget("ScreenshotIcon3DS")->setColour(fontColour("#{fontcolour=normal}"));
@@ -978,7 +978,7 @@ namespace omw3ds
     std::string targetLabelText3DS(const std::string& caption, const std::string& text)
     {
         // Tags first, to see the lines as shown: a line starting in lower case continues the previous one, and so
-        // does the line after it ("to", then the destination); the others are separate details.
+        // does the line after it ("to", then the destination). The others are separate details.
         std::string label = caption;
         bool continues = false;
         const std::string lines = MyGUI::LanguageManager::getInstance().replaceTags(text);

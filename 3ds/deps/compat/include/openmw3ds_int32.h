@@ -6,7 +6,7 @@
  * (glibc/musl/MSVC/Apple/Android, and the Vita toolchain) int32_t is `int`, and code relies on it:
  * ICU 73 has ~70 overload/override errors otherwise (std::max(int, int32_t), virtuals declared with
  * int and overridden with int32_t, ...). Both are 32-bit with the same calling convention, so prebuilt
- * C libraries (newlib, libctru, citro3d, portlibs) are unaffected; only C++ name mangling changes,
+ * C libraries (newlib, libctru, citro3d, portlibs) are unaffected. Only C++ name mangling changes,
  * which is why every C++ library is rebuilt with this header.
  * newlib's <stdint.h>/<inttypes.h> derive their types and PRI macros from these macros.
  */

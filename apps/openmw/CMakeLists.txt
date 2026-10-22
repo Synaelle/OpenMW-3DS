@@ -223,7 +223,7 @@ target_link_libraries(openmw-lib
     components
 )
 if (OPENMW_PLATFORM_3DS)
-    # Our mpg123 (deps/build-deps.sh: integer decoder, ARM synth), not devkitPro's floating-point 3ds-mpg123; its
+    # Our mpg123 (deps/build-deps.sh: integer decoder, ARM synth), not devkitPro's floating-point 3ds-mpg123. Its
     # header is found first too (.deps/3ds/include comes before the portlibs).
     # ICU's data (English, deps/build-deps.sh build_icudata), embedded and registered at start-up (main3ds.cpp):
     # ICU's own data library is a stub with archive packaging. 16-byte aligned, as udata_setCommonData needs.

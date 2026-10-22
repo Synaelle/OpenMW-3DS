@@ -104,7 +104,7 @@ namespace p3ds::crash
             return true;
         }
 
-        // pc == 0: no faulting pc (software fatal error); the walk starts at the caller.
+        // pc == 0: no faulting pc (software fatal error). The walk starts at the caller.
         void appendBacktrace(u32 sp, u32 fp, u32 pc, u32 lr)
         {
             put("\nBacktrace (frame pointer walk):\n");
@@ -414,7 +414,7 @@ namespace p3ds::crash
 
     void install(const char* crashLogPath)
     {
-        // FS:USER wants an archive-relative path; strip "sdmc:".
+        // FS:USER wants an archive-relative path. Strip "sdmc:".
         const char* p = crashLogPath;
         if (strncmp(p, "sdmc:", 5) == 0)
             p += 5;
@@ -559,7 +559,7 @@ namespace p3ds::crash
                 svcSleepThread(500LL * 1000 * 1000);
                 if (__atomic_load_n(&gWatchdogPaused, __ATOMIC_RELAXED))
                     continue;
-                // Panic combination, every 0.5 s: held for 1 s, ask the main thread; 3 s later, leave anyway.
+                // Panic combination, every 0.5 s: held for 1 s, ask the main thread. 3 s later, leave anyway.
                 if ((rawButtonsHeld() & kPanicKeys) == kPanicKeys || panicTicks >= 3)
                     ++panicTicks;
                 else
@@ -574,7 +574,7 @@ namespace p3ds::crash
                 // Memory profile every 5 s (the log is thread-safe). The exact heap walk (mallinfo) holds the
                 // malloc lock for ~200 ms with OpenMW's heap from this core: a freeze every 5 s in game
                 // (hardware test #15). In game it only runs when the arena grew by 1 MB (a load, which
-                // stalls anyway); otherwise "used" is from the last walk.
+                // stalls anyway). Otherwise "used" is from the last walk.
                 const bool logTick = ++tick % 10 == 0;
                 const bool inGame = strcmp(gStep, "engine frame") == 0;
                 // Never in game since M9: the arena now counts the large pool's use, which goes up and down, so the
@@ -593,7 +593,7 @@ namespace p3ds::crash
                 const mem::Stats s = walk ? mem::queryExact() : mem::query();
                 if (s.heapUsed > peakHeap)
                     peakHeap = s.heapUsed;
-                // The bottom screen while the game starts (M15: the debug heartbeat line is gone; its figures are
+                // The bottom screen while the game starts (M15: the debug heartbeat line is gone, its figures are
                 // in the log): moved on every half second.
                 if (__atomic_load_n(&gInCrash, __ATOMIC_RELAXED) == 0)
                     loadscreen::tick();
@@ -695,7 +695,7 @@ thread_local int64_t p3ds_thread_net_bytes = 0;
 
 // Registry of per-thread counters so the watchdog can log every thread's net C++ allocations.
 // Note: memory freed by a different thread than the one that allocated it shows up as a negative
-// balance on the freeing thread; the sum is still exact.
+// balance on the freeing thread. The sum is still exact.
 namespace
 {
     // Global slots (not pointers into thread-local storage, which is freed when a thread exits).
@@ -724,7 +724,7 @@ namespace
     }
 
     // M10 (Zeste profile, 20/10: allocation was ~25% of the main thread's instructions): the per-thread net
-    // balance asks each block's size on every new and delete; it only feeds diagnostics (the memstage lines'
+    // balance asks each block's size on every new and delete. It only feeds diagnostics (the memstage lines'
     // "thread net", mem/threads, memprobe's per-record figures), so it runs only with sdmc:/openmw/memprofile.
     bool gThreadAccounting = false;
 
@@ -802,7 +802,7 @@ namespace
     constexpr u32 kLiveSlots = 1u << 19; // 512K entries, 6 MB
     constexpr u32 kLiveMax = kLiveSlots / 4 * 3;
     LiveEntry* volatile gLive = nullptr;
-    u32 gLiveUsed = 0; // entries ever filled (live + tombstones; no rehash)
+    u32 gLiveUsed = 0; // entries ever filled (live + tombstones, no rehash)
     size_t gLiveReserveTaken = 0;
 
     inline u32 hashPtr(const void* p)
@@ -1048,7 +1048,7 @@ namespace p3ds::memprobe
         gCallerTid = 0;
         P3DS_LOGI("caller profile [%s] (net = still allocated; symbolize with addr2line; %lu untracked):", label,
             (unsigned long)gCallerDropped);
-        // Top 40 by net bytes (selection sort; the table is small).
+        // Top 40 by net bytes (selection sort, the table is small).
         for (int k = 0; k < 40; ++k)
         {
             int best = -1;

@@ -137,7 +137,7 @@ namespace MWGui
             current = std::max(0, current);
 
 #ifdef OPENMW_PLATFORM_3DS
-        // M10: the stats watcher calls this whenever the float changes (fatigue: every frame while walking); a bar
+        // M10: the stats watcher calls this whenever the float changes (fatigue: every frame while walking). A bar
         // set to the same values still redraws the interface (MyGUI's ProgressBar re-lays its track), and the 3DS
         // shows the values on its own panel (n3ds/hud3ds.cpp), not in these tooltips.
         {
@@ -471,7 +471,7 @@ namespace MWGui
             = (player.getClass().getNpcStats(player).isWerewolf()) ? werewolfHand : stealthHandToHand;
 
 #ifdef OPENMW_PLATFORM_3DS
-        // M10: called every frame with empty hands; clearing then setting the fist again redrew the interface.
+        // M10: called every frame with empty hands. Clearing then setting the fist again redrew the interface.
         if (mWeapImage->currentIcon3DS() != icon)
 #endif
         {

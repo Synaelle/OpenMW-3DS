@@ -55,7 +55,7 @@ void MWState::Character::addSlot(const std::filesystem::path& path, const std::s
     Slot slot;
     slot.mPath = path;
 #ifdef __3DS__
-    // The SD card driver's stat leaves the time at 0 (the saves showed 1970.01.01); its own call has it.
+    // The SD card driver's stat leaves the time at 0 (the saves showed 1970.01.01). Its own call has it.
     u64 mtime = 0;
     if (R_SUCCEEDED(archive_getmtime(path.string().c_str(), &mtime)) && mtime != 0)
         slot.mTimeStamp = std::filesystem::file_time_type::clock::now()

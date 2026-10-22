@@ -11,7 +11,7 @@ param(
     [string]$Opt = 'Os',
     [string]$Target = 'all',
     [switch]$Clean,
-    # Debug tools (bottom-screen debug display, autorun, detailed profiling) are on unless -NoDebug; chosen on
+    # Debug tools (bottom-screen debug display, autorun, detailed profiling) are on unless -NoDebug. Chosen on
     # every configure like the Bullet precision (switching rebuilds everything).
     [switch]$NoDebug,
     [string]$Msys2Root = 'C:\msys64'

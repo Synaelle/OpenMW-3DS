@@ -1,7 +1,7 @@
 // Nintendo 3DS implementation of SDLUtil::GraphicsWindowSDL2 (replaces sdlgraphicswindow.cpp).
 //
 // There is no OpenGL on the 3DS: SDL runs its "dummy" video driver (events/joystick/touch/timers only),
-// and OSG renders through a stub GL. This window owns no GL context; buffer swaps are forwarded to a
+// and OSG renders through a stub GL. This window owns no GL context. Buffer swaps are forwarded to a
 // platform hook, which is where the port's citro3d backend presents a frame.
 
 #include "sdlgraphicswindow.hpp"

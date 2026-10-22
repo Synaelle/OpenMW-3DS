@@ -4,7 +4,7 @@
 // Nintendo 3DS: a string subrecord that stays in the content file until first read.
 //
 // Dialogue responses and book texts are ~8 MB of Morrowind.esm, but only the few on screen are ever
-// needed. load() records where the subrecord is (file, offset, size) and skips it; get() reads it back
+// needed. load() records where the subrecord is (file, offset, size) and skips it. get() reads it back
 // from the SD card on first use, converts it to UTF-8 exactly like ESMReader::getHString, and caches it.
 // Main thread only (dialogue, journal, books, Lua with "lua num threads = 0").
 

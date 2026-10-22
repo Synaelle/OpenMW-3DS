@@ -139,7 +139,7 @@ namespace MWRender
             new ObjectAnimation(ptr, animationMesh, mResourceSystem, animated, allowLight));
 #ifdef OPENMW_PLATFORM_3DS
         // Perf batch 2: a still object's particle systems (a candle's flame, a brazier's smoke) can share one
-        // recorded loop per kind (render3ds backend.cpp flameLoop); actors' and spells' stay live.
+        // recorded loop per kind (render3ds backend.cpp flameLoop). Actors' and spells' stay live.
         if (!animated)
         {
             SceneUtil::FindByClassVisitor finder("ParticleSystem");

@@ -187,7 +187,7 @@ namespace MWGui
                     current->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onButtonToggled);
             }
 #ifdef OPENMW_PLATFORM_3DS
-            // A level button (M19: [Camera] small details): Low, Medium, High; a touch or A goes to the next.
+            // A level button (M19: [Camera] small details): Low, Medium, High. A touch or A goes to the next.
             if (type == "Level3DS")
             {
                 setLevelCaption3DS(current);
@@ -507,7 +507,7 @@ namespace MWGui
         mControllerButtons.mB = "#{Interface:OK}";
 #endif
 #ifdef OPENMW_PLATFORM_3DS
-        // M17: the D-pad's highlight instead of the circle pad's cursor; the controls list is the controller's.
+        // M17: the D-pad's highlight instead of the circle pad's cursor. The controls list is the controller's.
         mControllerButtons.mDpad = "#{OMW3DS:Move}";
         mControllerButtons.mR1 = "#{OMW3DS:Tabs}";
         mDisableGamepadCursor = true;
@@ -740,7 +740,7 @@ namespace MWGui
     {
         auto& setting = Settings::get<int>(getSettingCategory(button), getSettingName(button));
         const int level = std::clamp(setting.get(), 0, 2);
-        // A or a touch (step 0) goes round, Low after High; the D-pad stops at either end.
+        // A or a touch (step 0) goes round, Low after High. The D-pad stops at either end.
         setting.set(step == 0 ? (level + 1) % 3 : std::clamp(level + step, 0, 2));
         setLevelCaption3DS(button);
         apply();

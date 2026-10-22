@@ -24,7 +24,7 @@ namespace Settings
         SettingValue<float> mSmallFeatureCullingPixelSize{ mIndex, "Camera", "small feature culling pixel size",
             makeMaxStrictSanitizerFloat(0) };
         // 3DS (Options > Visuals, the tester, test #105): how far small details stay drawn. 2 High: OpenMW's PC
-        // size (2 pixels); 1 Medium: the 3DS's own size (the small feature culling size above, settings-3ds.cfg);
+        // size (2 pixels). 1 Medium: the 3DS's own size (the small feature culling size above, settings-3ds.cfg).
         // 0 Low: the parts of scenery under 10 pixels left out too (render3ds backend), the most frame rate.
         SettingValue<int> mSmallDetails3DS{ mIndex, "Camera", "small details", makeClampSanitizerInt(0, 2) };
         // The small feature culling size in use: [Camera] small feature culling pixel size, or 2 on High.

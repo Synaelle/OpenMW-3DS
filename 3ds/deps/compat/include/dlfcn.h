@@ -1,6 +1,6 @@
 /*
  * 3DS compat: there is no dynamic loader. Code that merely *can* load shared objects (OSG's plugin
- * registry and GL extension lookup) compiles against these and gets "not available" at runtime;
+ * registry and GL extension lookup) compiles against these and gets "not available" at runtime.
  * all plugins are linked statically instead.
  */
 #ifndef OPENMW3DS_COMPAT_DLFCN_H

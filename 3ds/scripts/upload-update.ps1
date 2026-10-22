@@ -4,7 +4,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\upload-update.ps1
 #
-# Only the listed files are written; folders merge into the SD card's. Then checks the CIA's size on the card.
+# Only the listed files are written. Folders merge into the SD card's. Then checks the CIA's size on the card.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $baguette = Join-Path $repo '.toolsaguetteaguette-cli.exe'

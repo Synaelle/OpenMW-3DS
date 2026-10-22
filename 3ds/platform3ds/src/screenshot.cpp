@@ -1,3 +1,4 @@
+#include <platform3ds/crash.hpp>
 #include <platform3ds/screenshot.hpp>
 #include <platform3ds/textfb.hpp>
 
@@ -107,6 +108,7 @@ namespace p3ds::screenshot
 
         void saveThread(void* arg)
         {
+            crash::installForCurrentThread(); // a crash here writes a report too (M20)
             auto* save = static_cast<AsyncSave*>(arg);
             FILE* f = fopen(save->mPath, "wb");
             bool ok = f != nullptr;

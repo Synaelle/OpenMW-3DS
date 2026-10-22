@@ -121,7 +121,7 @@ namespace omw3ds
         {
             if (gViewer == nullptr)
                 return;
-            // Resource::StatsHandler turns "engine" off on every event while its overlay is hidden; turn it
+            // Resource::StatsHandler turns "engine" off on every event while its overlay is hidden. Turn it
             // back on before Engine::frame's ScopedProfiles run (the handler runs later, in eventTraversal).
             gViewer->getViewerStats()->collectStats("engine", true);
             const unsigned frame = gViewer->getFrameStamp()->getFrameNumber();
@@ -196,7 +196,7 @@ namespace omw3ds
             }
 #endif
 
-            // No HUD until M8 (menus are on the bottom screen, menus.cpp): say what the game is waiting for.
+            // The no-m8ui debug screen's state line: what the game is waiting for.
             const MWMechanics::CreatureStats& stats = player.getClass().getCreatureStats(player);
             MWBase::WindowManager* windows = env.getWindowManager();
             if (stats.isDead())
@@ -273,7 +273,7 @@ namespace omw3ds
     namespace
     {
         // The touch screen as MyGUI's mouse, in canvas coordinates (the bottom screen's place in it:
-        // Render3DS::kGuiBottomX/Y). Held touches move; touching and lifting press and release the left button.
+        // Render3DS::kGuiBottomX/Y). Held touches move. Touching and lifting press and release the left button.
 #ifdef OPENMW3DS_DEBUG
         // What a touch reached (scripted touches in autorun tests): the widget, its root and the root's layer.
         void logGuiTouch(MyGUI::InputManager& input, int x, int y, bool taken)
@@ -357,7 +357,7 @@ namespace omw3ds
                 MWBase::Environment::get().getStateManager()->requestQuit();
                 return;
             }
-            // OpenMW can't abort a load; the user wants out now.
+            // OpenMW can't abort a load. The user wants out now.
             P3DS_LOGI("%s: close requested while loading, exiting", who);
             p3ds::shutdown();
             svcExitProcess();
@@ -411,8 +411,7 @@ namespace omw3ds
         p3ds::GameSnapshot snap;
         snap.frame = &gStats;
         snap.cellName = gCellName == "-" ? "(loading)" : gCellName.c_str();
-        static const std::string loading = std::string("loading - ") + Render3DS::interfacePath();
-        snap.status = loading.c_str();
+        snap.status = "loading";
         gBottom.update(snap);
         gBottom.render(); // rate-limited internally
     }
@@ -519,14 +518,14 @@ namespace omw3ds
 #endif
 
         // Buttons: SDL's 3DS joystick driver reads hidKeysDown/Up but only its (unused) video driver scans,
-        // so scan once per frame here. All buttons are game controls (bindingsmanager.cpp); debug
+        // so scan once per frame here. All buttons are game controls (bindingsmanager.cpp). Debug
         // functions are on the touch screen.
         hidScanInput();
 #ifdef OPENMW3DS_DEBUG
         debug::applyScriptedInput(gStats.frameIndex);
 #endif
         // M8: MyGUI draws the bottom screen, except while an M6 text menu shows there (until each window has its
-        // M8 version); the text display then gets the whole screen back.
+        // M8 version). The text display then gets the whole screen back.
         // Without the text display (M15: the loading screen instead, platform3ds/loadscreen.cpp), MyGUI takes the
         // bottom screen from the first frame.
         if (Render3DS::drawsGui())
@@ -681,7 +680,7 @@ namespace omw3ds
         snap.lookingAt = gLooking;
         snap.state = gStateLine;
         snap.stateAlert = gStateAlert;
-        snap.status = Render3DS::isActive() ? Render3DS::interfacePath()
+        snap.status = Render3DS::isActive() ? "ui CPU"
             : Render3DS::failure()          ? Render3DS::failure()
                                             : "headless (renderer failed to start)";
         gBottom.update(snap);

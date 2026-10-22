@@ -26,7 +26,7 @@ namespace p3ds
         // True once after the SCREENSHOT button was tapped.
         bool consumeScreenshotRequest();
 
-        // Game menu (rows 2-25, in place of the debug rows) while set; nullptr: none.
+        // Game menu (rows 2-25, in place of the debug rows) while set. nullptr: none.
         // consumeMenuSelection returns the touched option's index once, else -1.
         void setMenu(const MenuView* menu);
         int consumeMenuSelection();

@@ -10,9 +10,9 @@
 // time (platform3ds/CMakeLists.txt) and sorted by size:
 // - the large pool takes requests of kLargeMin and up: file buffers, images, vertex arrays, big vectors. Its
 //   memory is linear memory the GPU doesn't use (the first region at the first large request, more regions
-//   on demand down to a floor kept for the GPU), so the heap also grows into what used to sit idle;
+//   on demand down to a floor kept for the GPU), so the heap also grows into what used to sit idle.
 // - the Lua pool takes the Lua state's allocations (its churn every frame), one region taken from the heap at
-//   the first Lua allocation;
+//   the first Lua allocation.
 // - newlib's malloc keeps everything else, in the app heap only.
 // Each falls back on the others when full. Both pools are TLSF allocators (two-level segregated fit: a good
 // fit in constant time, neighbours merged on free), under newlib's malloc lock.

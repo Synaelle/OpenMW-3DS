@@ -8,9 +8,9 @@
 #                                          -DataMode junction (emulator): a junction to out\emu-data, which holds
 #                                          copies of the content files and Morrowind.bsa (read from the Morrowind
 #                                          data, which is never modified) and sound3ds.bsa. -DataMode none (hardware
-#                                          package): only sound3ds.bsa; the tester adds their own files.
+#                                          package): only sound3ds.bsa. The tester adds their own files.
 #   <SdRoot>/openmw/cooked/textures.o3tp   textures converted for the 3DS GPU (out\cooked, cooked on
-#                                          first use by tools\cook_textures.py; a junction in the emulator)
+#                                          first use by tools\cook_textures.py, a junction in the emulator)
 #
 #   scripts\stage-sd.ps1                                   # Azahar's virtual SD, data junction
 #   scripts\stage-sd.ps1 -SdRoot out\sdcard -DataMode none # hardware package (data added separately)

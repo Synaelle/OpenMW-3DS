@@ -516,7 +516,7 @@ namespace MWGui
         }
 
 #ifdef OPENMW_PLATFORM_3DS
-        // The save's date comes from the SD card's file time; where it's unknown (emulators: 1970 or 2000), no
+        // The save's date comes from the SD card's file time. Where it's unknown (emulators: 1970 or 2000), no
         // date rather than a wrong one.
         if (Misc::toTimeT(mCurrentSlot->mTimeStamp) > 946771200) // 02/01/2000
 #endif

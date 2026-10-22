@@ -152,7 +152,7 @@ namespace ESM
 
 #ifdef OPENMW_PLATFORM_3DS
                     // M10: the game compiles scripts from their text (SCTX) and never reads the original compiler's
-                    // bytecode (only the editor and save() do; static scripts are never saved): not kept.
+                    // bytecode (only the editor and save() do, static scripts are never saved): not kept.
                     esm.skip(subSize);
 #else
                     mScriptData.resize(subSize);

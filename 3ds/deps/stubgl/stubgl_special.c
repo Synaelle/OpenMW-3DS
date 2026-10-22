@@ -1,7 +1,7 @@
 /*
  * Stub OpenGL for the 3DS port. There is no OpenGL on the PICA200: OpenSceneGraph is used for its
  * scene graph, update and cull traversals only, and drawing is done by the port's citro3d backend.
- * OSG still references gl* functions, so every one of them exists here as a no-op; the generator in
+ * OSG still references gl* functions, so every one of them exists here as a no-op. The generator in
  * deps/build-deps.sh adds a stub for each undefined gl* symbol found in the OSG libraries.
  *
  * This file holds the hand-written ones whose results OSG actually reads.
@@ -34,7 +34,7 @@ static GLint stubInteger(GLenum pname)
         case GL_MAX_TEXTURE_SIZE:
             return 1024; /* PICA200 limit */
         /* Desktop-like limits: this is only OSG/OpenMW bookkeeping (OpenMW reserves units for shadows
-         * etc.); the citro3d backend maps materials onto the PICA's 3 real texture units. */
+         * etc.). The citro3d backend maps materials onto the PICA's 3 real texture units. */
         case GL_MAX_TEXTURE_UNITS:
             return 8;
         case 0x8872: /* GL_MAX_TEXTURE_IMAGE_UNITS */

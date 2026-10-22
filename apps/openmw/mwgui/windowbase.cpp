@@ -105,7 +105,7 @@ void WindowBase::center()
     coord.top = (layerSize.height - coord.height) / 2;
 #ifdef OPENMW_PLATFORM_3DS
     // The canvas is both screens: a dialog is centred on the bottom one (its 320x240 at 40,240), above the button
-    // hint strip's 18 rows (M17); a window laid out over both screens by the port (the character creation ones)
+    // hint strip's 18 rows (M17). A window laid out over both screens by the port (the character creation ones)
     // stays where its layout put it. The not-yet-ported windows' scaled layer is one screen: plain centring there
     // (M17: the spell shop went to its corner after a purchase).
     const bool unported = mMainWidget->getLayer() && mMainWidget->getLayer()->getName() == "Unported3DS";

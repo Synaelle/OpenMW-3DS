@@ -799,7 +799,7 @@ namespace SceneUtil
 #ifdef OPENMW_PLATFORM_3DS
             // The 3DS draws an object with its first 4 lights (an NPC with its first one): render3ds backend, perf
             // batch 2. Unsorted, the list is in the order the lights were found while culling, which changes with the
-            // camera: candles and lanterns lit things or not as the view turned, and rooms came out darker (test #105;
+            // camera: candles and lanterns lit things or not as the view turned, and rooms came out darker (test #105,
             // Zeste, test #98 against #106). Always sorted, the first ones are the ones that matter most.
             if (mLightList.size() > 1)
 #else

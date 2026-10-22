@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "packaging", "ui3ds", "textures")
 
 # W: fill (brightest at the top, like Morrowind's embossed lettering), K: outline, .: transparent. 12 pixels high,
-# as the captions' letters inside a tab's frame (21 pixels, 13 inside); drawn on a 16x16 texture (a power of two).
+# as the captions' letters inside a tab's frame (21 pixels, 13 inside). Drawn on a 16x16 texture (a power of two).
 HOME = [
     ".....KK.....",
     "....KWWK....",

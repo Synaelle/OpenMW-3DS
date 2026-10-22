@@ -101,7 +101,7 @@ build_boost() {
     fetch "https://github.com/boostorg/boost/releases/download/boost-$v/boost-$v-cmake.tar.xz" "boost-$v-cmake.tar.xz"
     unpack "boost-$v-cmake.tar.xz" boost
     # Boost.Config has no __3DS__ platform file, so it never enables pthreads (and falls back to Win32
-    # code paths); Boost.Container's bundled dlmalloc must not use mmap. Env flags are appended to
+    # code paths). Boost.Container's bundled dlmalloc must not use mmap. Env flags are appended to
     # the toolchain's own CMAKE_<LANG>_FLAGS_INIT rather than replacing them.
     CFLAGS="-DBOOST_HAS_PTHREADS -DHAVE_MMAP=0" CXXFLAGS="-DBOOST_HAS_PTHREADS -DHAVE_MMAP=0" \
     cmake_build "$SRC/boost" boost \
@@ -127,7 +127,7 @@ build_bulletfloat() {
         -DBUILD_UNIT_TESTS=OFF -DBUILD_BULLET2_DEMOS=OFF -DBUILD_CPU_DEMOS=OFF -DBUILD_OPENGL3_DEMOS=OFF \
         -DBUILD_EXTRAS=OFF -DBUILD_CLSOCKET=OFF -DBUILD_ENET=OFF -DBUILD_EGL=OFF \
         -DBUILD_PYBULLET=OFF -DUSE_GRAPHICAL_BENCHMARK=OFF -DINSTALL_LIBS=ON \
-        -DBUILD_BULLET3=OFF  # OpenCL/GPU pipeline (needs dlopen); OpenMW uses BulletCollision + LinearMath only
+        -DBUILD_BULLET3=OFF  # OpenCL/GPU pipeline (needs dlopen). OpenMW uses BulletCollision + LinearMath only
 }
 
 # POSIX bits newlib/libctru lack (dlfcn.h, ...): header-only shims in deps/compat/include.
@@ -188,10 +188,10 @@ build_osg() {
     local rev=9b384d5439977784e5cd250ff8ff7966928ddd27   # same commit as openmw/extern/CMakeLists.txt
     fetch "https://github.com/OpenMW/osg/archive/$rev.zip" "osg-$rev.zip"
     unpack "osg-$rev.zip" osg
-    # Mirrors openmw/extern/CMakeLists.txt, minus the dae/ktx plugins; GL comes from the stub.
+    # Mirrors openmw/extern/CMakeLists.txt, minus the dae/ktx plugins. GL comes from the stub.
     # Unlike upstream, matrices/planes/quaternions are float (as in the Vita port): animation keyframes
-    # store osg::Quat values, and with doubles Morrowind's base animations alone exhaust the heap;
-    # the ARM11 VFP is also slower at double precision.
+    # store osg::Quat values, and with doubles Morrowind's base animations alone exhaust the heap.
+    # The ARM11 VFP is also slower at double precision.
     cmake_build "$SRC/osg" osg \
         -DOPENGL_PROFILE=GL2 \
         -DOPENGL_INCLUDE_DIR="$PREFIX/include" -DOPENGL_gl_LIBRARY="$PREFIX/lib/libGL.a" \
@@ -245,7 +245,7 @@ build_yamlcpp() {
 
 build_icu() {
     # 73.2, not upstream's pinned 70.1: ICU 70 assumes int32_t == int, but arm-none-eabi's int32_t
-    # is long (dozens of overload/override errors). 73.2 builds cleanly (the Vita port uses it too);
+    # is long (dozens of overload/override errors). 73.2 builds cleanly (the Vita port uses it too).
     # OpenMW only uses the stable MessageFormat/Locale API.
     local v=73-2 vu=73_2
     fetch "https://github.com/unicode-org/icu/releases/download/release-$v/icu4c-$vu-src.tgz" "icu4c-$vu-src.tgz"
@@ -269,7 +269,7 @@ build_icu() {
     # link the tools with -licu*, which fails. Only the host tools use this build.)
 
     # 2. Cross build for the 3DS. Data is packaged as an archive (icudt73l.dat, filtered by
-    #    deps/icu/icufilters.json); the port registers it at startup with udata_setCommonData().
+    #    deps/icu/icufilters.json). The port registers it at startup with udata_setCommonData().
     #    ("static" packaging needs the host pkgdata to generate C sources, and the MinGW-host pkgdata
     #    builds broken paths like ./out/tmpicudt73l_dat.c.)
     cp "$src/config/mh-linux" "$src/config/mh-unknown"

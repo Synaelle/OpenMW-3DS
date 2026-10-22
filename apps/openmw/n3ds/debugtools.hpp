@@ -1,7 +1,7 @@
 #ifndef OPENMW_APPS_OPENMW_N3DS_DEBUGTOOLS_H
 #define OPENMW_APPS_OPENMW_N3DS_DEBUGTOOLS_H
 
-// 3DS debug tools (debug builds only: OPENMW3DS_DEBUG, platform3ds/CMakeLists.txt; this file and
+// 3DS debug tools (debug builds only: OPENMW3DS_DEBUG, platform3ds/CMakeLists.txt, this file and
 // debugtools.cpp aren't compiled without it): the autorun script of automated emulator runs and its scripted
 // input, and replayable view lines for screenshots.
 #ifndef OPENMW3DS_DEBUG

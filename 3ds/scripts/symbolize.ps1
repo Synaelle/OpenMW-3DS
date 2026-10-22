@@ -37,7 +37,7 @@ if (-not $unique) { Write-Host 'No code addresses found.'; return }
 
 Write-Host "Symbolized ($Elf):"
 foreach ($a in $unique) {
-    # Return addresses point after the call; step back one instruction for the call site.
+    # Return addresses point after the call. Step back one instruction for the call site.
     $v = [Convert]::ToUInt32($a.Substring(2), 16)
     $q = if ($pcs.Contains($a) -or $v -lt 4) { $a } else { '0x{0:X8}' -f ($v - 4) }
     $res = & $addr2line -e $Elf -f -C -i -p $q 2>$null

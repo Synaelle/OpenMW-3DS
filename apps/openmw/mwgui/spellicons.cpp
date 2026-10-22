@@ -173,7 +173,7 @@ namespace MWGui
             const int newWidth = horizontalOffset > 2 ? horizontalOffset + 2 : 0;
             const int diff = parent->getWidth() - newWidth;
 #ifdef OPENMW_PLATFORM_3DS
-            // M10: called every frame; MyGUI redraws the interface on any setCoord, even an unchanged one.
+            // M10: called every frame. MyGUI redraws the interface on any setCoord, even an unchanged one.
             if (diff != 0)
 #endif
             {

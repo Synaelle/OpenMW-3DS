@@ -4,7 +4,7 @@
 // The benchmark (debug builds: the start menu's third choice, or "benchmark" in an automated run's autorun.txt):
 // a new game, then about 5 minutes through the places that weigh most on the frame rate, each with its weather and
 // hour, the camera turning slowly round. Per place: frame times, draws, GPU time, memory and the load, logged and
-// written to benchmark-<set>.txt in the run's log folder; then the game quits. No save, no screenshot.
+// written to benchmark-<set>.txt in the run's log folder. Then the game quits. No save, no screenshot.
 #ifndef OPENMW3DS_DEBUG
 #error "benchmark3ds.hpp is only for builds with the 3DS debug tools (OPENMW3DS_DEBUG)"
 #endif

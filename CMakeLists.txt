@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (OPENMW_PLATFORM_3DS)
-    # Nintendo 3DS port. int32_t = int ABI (arm-none-eabi defaults to long; see the header), and
+    # Nintendo 3DS port. int32_t = int ABI (arm-none-eabi defaults to long, see the header), and
     # POSIX declarations (strnlen, fileno, ...) that newlib hides in strict C++20 mode.
     add_compile_options("SHELL:-include ${OPENMW3DS_ROOT}/deps/compat/include/openmw3ds_int32.h")
     add_compile_definitions(_GNU_SOURCE OPENMW_PLATFORM_3DS=1)
@@ -609,7 +609,7 @@ endif(HAVE_MULTIVIEW)
 
 set(BOOST_COMPONENTS iostreams program_options)
 if (OPENMW_PLATFORM_3DS)
-    # Only boost::iostreams::stream (header-only) is used; the compiled part needs mmap.
+    # Only boost::iostreams::stream (header-only) is used. The compiled part needs mmap.
     set(BOOST_COMPONENTS program_options)
     add_compile_definitions(BOOST_HAS_PTHREADS) # no Boost.Config platform file for __3DS__
 endif()
@@ -641,7 +641,7 @@ else(USE_LUAJIT)
     find_package(Lua REQUIRED)
     add_compile_definitions(NO_LUAJIT)
 endif(USE_LUAJIT)
-if (NOT WIN32 AND NOT ANDROID AND NOT OPENMW_PLATFORM_3DS) # try_run is impossible when cross-compiling; PUC Lua 5.1 supports custom allocators
+if (NOT WIN32 AND NOT ANDROID AND NOT OPENMW_PLATFORM_3DS) # try_run is impossible when cross-compiling. PUC Lua 5.1 supports custom allocators
     include(cmake/CheckLuaCustomAllocator.cmake)
 endif()
 

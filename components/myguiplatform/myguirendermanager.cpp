@@ -652,7 +652,7 @@ namespace MyGUIPlatform
                 return;
             // M10: with only the HUD up, its changes (the minimap's steps, the compass, the bars while running:
             // ~40% of frames while walking, each a layout, a fingerprint and a redraw) show at most every 3rd frame
-            // (10 a second); menus and pages keep every frame. The layers stay out of date, so the next allowed
+            // (10 a second). Menus and pages keep every frame. The layers stay out of date, so the next allowed
             // frame lays everything out.
             if (collected && !mUpdate && Render3DS::hudOnly() && calls - lastLayout < 3)
                 return;
@@ -661,7 +661,7 @@ namespace MyGUIPlatform
         }
 #endif
 #if defined(OPENMW_PLATFORM_3DS) && defined(OPENMW3DS_DEBUG)
-        // The Seyda Neen freeze (tests #99-#102: 0.8-2.4 s once in the first stage; #102's spike report put 1285 of
+        // The Seyda Neen freeze (tests #99-#102: 0.8-2.4 s once in the first stage, #102's spike report put 1285 of
         // its 1317 ms in this pass): a slow pass logs what it spent its time on (SD reads, images, models: the
         // detail scopes) and names the resources it loaded (cache misses). Not inside another capture (a load).
         const bool capture = !p3ds::perf::detail::active();

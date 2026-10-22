@@ -34,7 +34,7 @@ namespace Nif
 #ifdef OPENMW_PLATFORM_3DS
     // Quaternion keys never carry tangents (readQuadratic skips them, quaternion TCB tangents are not
     // generated, NifOsg::ValueInterpolator only slerps mValue), so don't store them: 52 -> 20 bytes per
-    // key. Creature/NPC animation tracks are mostly rotations; this saves ~8 MB at the first cell.
+    // key. Creature/NPC animation tracks are mostly rotations. This saves ~8 MB at the first cell.
     template <>
     struct KeyT<osg::Quat>
     {

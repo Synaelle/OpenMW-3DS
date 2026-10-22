@@ -311,7 +311,7 @@ namespace MWGui
                 mBackground->setBackgroundImage("textures\\menu_morrowind.dds", true, stretch);
 #ifdef OPENMW_PLATFORM_3DS
                 // The picture on the top screen, with its proportions (the top screen is cleared black under
-                // it by the backend when no scene is drawn; the HUD is hidden while no game runs: hud3ds.cpp).
+                // it by the backend when no scene is drawn, the HUD is hidden while no game runs: hud3ds.cpp).
                 mBackground->setCoord(MyGUI::IntCoord(0, 0, mWidth, mHeight / 2));
 #endif
             }
@@ -467,7 +467,7 @@ namespace MWGui
                 static_cast<int>(requested.width / scale), static_cast<int>(height / scale - 16));
 #ifdef OPENMW_PLATFORM_3DS
             // Six buttons on the bottom screen's 240 px: 40 px apart (the images' lower rows are padding, the
-            // buttons overlap there; MyGUI draws the images at their own size).
+            // buttons overlap there, MyGUI draws the images at their own size).
             curH += 40;
 #else
             curH += static_cast<int>(height / scale - 16);

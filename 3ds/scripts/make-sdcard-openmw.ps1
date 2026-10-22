@@ -28,7 +28,7 @@ Copy-Item "$app\openmw.cia" "$sd\cias\openmw3ds.cia"
 $startArgs = @('--skip-menu', '--start', $Start)
 if (-not $NoDebug) {
     # Test builds: a console script run once at startup gives the new character gold and skills at 50
-    # (packaging/test-start.txt; the console's output goes to openmw.log).
+    # (packaging/test-start.txt, the console's output goes to openmw.log).
     Copy-Item (Join-Path $RepoRoot 'packaging\test-start.txt') "$sd\openmw\test-start.txt"
     # The hardware test's runs, chosen on the bottom screen at startup (main3ds.cpp testMenu): it creates the
     # chosen run's switch files, so the tester never handles them.
@@ -50,104 +50,44 @@ $elf = Get-Item (Join-Path $RepoRoot 'build\openmw\openmw.elf')
 $archived = Join-Path "$out\elf-archive" ('openmw-' + $elf.LastWriteTime.ToString('yyyyMMdd-HHmmss') + '.elf')
 if (-not (Test-Path $archived)) { Copy-Item $elf.FullName $archived } # once per build, not per package
 
+# What the test is about: test-menu.txt's title line (debug packages).
+$testTitle = ''
+$menuFile = Join-Path $RepoRoot 'packaging\test-menu.txt'
+if (-not $NoDebug -and (Test-Path $menuFile)) {
+    $testTitle = (Get-Content $menuFile | Where-Object { $_ -match '^title\s+(.+)' } | Select-Object -First 1) -replace '^title\s+', ''
+}
+
 @"
-OpenMW 3DS - OpenMW hardware test package ($stamp)
-===================================================
-This package's build: "build $shortBuild" at the top of the bottom screen while the game starts, and in
-the Debug tab (log: $buildId). If it shows another build, the new CIA is not the one installed.
-What this tests (hardware test #77: M10 phase 1, the interface's per-frame cost):
-  The interface no longer redoes its work every frame when nothing on it changed, and the minimap moves ~4
-  times a second (its arrow in 16 steps). The frame rate should be higher, mostly while walking outside. A short
-  run is enough: Seyda Neen outside for 3-4 minutes, walking and looking around, then an interior; check the
-  HUD still updates (health, magicka, fatigue, the minimap, messages). Also new since #76: every window not
-  ported yet (spell buying, rest, level-up, journal, alchemy, repair, enchanting, companions...) opens on the top
-  screen, used with the cursor. New: the CIA, openmw/test-menu.txt, openmw/ui3ds (layers, OMW3DS texts)
-  (uploaded). Logs: logs/test77-A/.
-  Note: Rosalina's menu combination (L + Down + SELECT) also reaches the game: sneak, rest ("Resting here is
-  illegal") and quick save. That's harmless.
+OpenMW 3DS - package ($stamp)
+=============================
+Build: "build $shortBuild" on the bottom screen while the game starts (log: $buildId). If it shows another
+build, the new CIA is not the one installed.
+$testTitle
 
-  As in test #26, the bottom screen is the game's own interface, in Morrowind's style:
-  - the HUD: health, magicka and fatigue with their values, the weapon and the spell with their names,
-    active effects, the minimap (still black: maps come in a later step) and the quick keys 1-9 (touch one
-    to use it);
-  - tabs at the top, which do NOT pause the game: Inventory, Magic, Stats, and Debug (the old debug lines:
-    build, FPS, cell..., and a Screenshot button). Touch a tab to open it; the house at the left (or the
-    open tab again) goes back to the HUD. Touching the bars, the weapon or the spell in the HUD opens their
-    tab too.
-  - top screen: the crosshair, and what it's on as one small line at the very top ("Wooden Door to Seyda
-    Neen").
-  Menus that pause the game (dialogue, containers, barter, books, journal, rest, START's game menu...) still
-  use the old text menus on the bottom screen: they're the next step.
-  Also new: closing from the HOME Menu exits immediately (no wait, no crash log on exit).
-  If the new interface goes badly wrong: an empty file sdmc:/openmw/no-m8ui brings back the old bottom screen
-  (delete it afterwards). The test character (5000 gold, attributes 75, skills 50, steel axe, Fire Bite and
-  Fireball) and the sound are unchanged.
-OpenMW starts a new game in "$Start"; the front door leads OUTSIDE into Seyda Neen.
-
-1. Every test build: copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and
-   overwriting files (the whole openmw folder + cias/openmw3ds.cia). Your Morrowind files in
-   sdmc:/openmw/data/ are not in the package, so they stay. The biggest files: openmw/data/sound3ds.bsa
-   (~240 MB) and openmw/cooked/textures.o3tp (~70 MB). (out\sdcard-openmw-update still lists only the
-   changed files, if ever needed.)
-2. Copy these two files from your Morrowind "Data Files" folder into sdmc:/openmw/data/ :
-     Morrowind.esm   (~79 MB)
-     Morrowind.bsa   (~310 MB)
-   (Nothing else: Sound and Music come packed in openmw/data/sound3ds.bsa, so don't copy those folders.
-   The files are only read, never modified.)
-   SOUND also needs the 3DS's DSP firmware, the file sdmc:/3ds/dspfirm.cdc (once per SD card, not per
-   build). If you've played homebrew with sound, it's already there. If not, run the DSP1 homebrew once:
-   it creates the file. Without it the game runs silent and logs/openmw3ds.log says
-   "sound: the DSP didn't start".
+1. Copy the CONTENTS of this folder to the ROOT of your SD card, merging folders and overwriting files (the
+   openmw folder and cias/openmw3ds.cia). Your Morrowind files in sdmc:/openmw/data/ are not in the package,
+   so they stay. The biggest files: openmw/data/sound3ds.bsa (~240 MB) and openmw/cooked/textures.o3tp
+   (~80 MB).
+2. Once: copy Morrowind.esm (~79 MB) and Morrowind.bsa (~310 MB) from your Morrowind "Data Files" folder into
+   sdmc:/openmw/data/ (nothing else: Sound and Music come packed in openmw/data/sound3ds.bsa). They are only
+   read, never modified. Sound also needs the 3DS's DSP firmware, sdmc:/3ds/dspfirm.cdc: if you've played
+   homebrew with sound it's there, otherwise run the DSP1 homebrew once.
 3. Install cias/openmw3ds.cia with FBI, then launch "OpenMW3DS" from the HOME Menu.
-4. While the game loads at startup, the top screen is black (dark) and the bottom screen shows "(loading)"
-   and the old debug lines, then the new interface once the game runs. Loading takes under a minute.
-   ALIVE INDICATOR (startup loading only) = the last line of the bottom screen, redrawn every second:
-     |   245s counting refs   idle   0s  53.0MB
-     ^spinner ^uptime ^current step  ^seconds without progress  ^memory
-   - spinner turning + uptime counting = the console is NOT frozen, just working.
-   - "idle" green < 10 s, yellow < 30 s, red after. At 60 s the watchdog writes logs/openmw3ds-crash.log
-     and returns to HOME by itself.
-   - the spinner/uptime stop moving = real freeze (then force the power off).
-   HOME works during loading too (Close exits immediately). Later loads (doors, travel) show a "Loading"
-   box on the bottom screen.
-5. Controls (unchanged, except B):
-     circle pad   walk (push past halfway to run)      C-stick   look
+4. Controls:
+     Circle Pad   walk (push past halfway to run)      C-Stick   look
      ZR           attack / cast                         ZL        jump
      L (hold)     sneak                                 R         1st / 3rd person
-     A            activate (talk, pick up, open doors)  B         Inventory tab (open / close), and closes
-                                                                  any menu
-     X            ready weapon (fists if none)          Y         ready magic (pick the spell in the Magic
-                                                                  tab first)
-     D-pad up     journal                               D-pad down  rest / wait
-     SELECT       quick save                            START     game menu
-     hold X + ZL/ZR   previous/next weapon              hold Y + ZL/ZR   previous/next spell
-   Screenshots: L + D-pad LEFT (or Debug tab -> [Screenshot]) saves both screens to sdmc:/openmw/screenshots/
-   (top_NNN.bmp, bottom_NNN.bmp and bottomgpu_NNN.bmp).
+     A            activate (talk, pick up, open doors)  B         Inventory tab, and closes any menu
+     X            ready weapon                          Y         ready magic
+     D-pad Up     journal                               D-pad Down  rest / wait
+     START        game menu                             SELECT    console (system keyboard)
+   The bottom screen: the HUD, and the Inventory, Magic and Stats tabs (touch a tab, touch it again or the
+   house to go back). They don't pause the game.
+   Screenshots: the start menu's Options -> "Screenshot: On (experimental)" adds a camera to the HUD; each
+   touch saves both screens to sdmc:/openmw/screenshots/. Rosalina's screenshots work too.
    Panic: L + R + START + SELECT held for a second quits the game.
-   Things to try, in one session:
-   - The HUD: do the bars, names and icons look right and read well? Is anything too small or cut off?
-   - Inventory tab: the filters (All, Weapon, Apparel, Magic, Misc); touch an item: its name, weight and
-     value, then Unequip/Equip, Drop (pick it up again with A), and Quick key -> a number: it shows in the
-     HUD's quick-key row; touch it there to use it.
-   - Magic tab: touch Fireball (it becomes the HUD's spell), then Y and ZR to cast. Put Fire Bite on a
-     quick key.
-   - Stats tab: scroll the skills list. Debug tab: note the FPS here and on the HUD.
-   - Walk, fight and look around with a tab open: the game keeps running.
-   - Talk to someone, open a container, START: the old text menus take the bottom screen, and the new
-     interface comes back when they close.
-   - Go outside (front door) and walk around Seyda Neen for a few minutes (see above).
-   - HOME -> Close at the end: it should close right away.
-   Note: anything that looks wrong or unpolished, touches that don't respond (or hit the wrong thing), the
-   FPS compared to the last test, and what you like and don't like about the layout.
-6. Send back the logs folder and your screenshots:
-     sdmc:/openmw/logs/openmw3ds.log         the 3DS port log (timings, memory, platform)
-     sdmc:/openmw/logs/openmw.log            OpenMW's own log
-     sdmc:/openmw/logs/openmw3ds-crash.log   only if there is one
-     sdmc:/openmw/screenshots/*.bmp          your screenshots
-   (Older builds wrote sdmc:/openmw/openmw3ds.log, openmw3ds-crash.log, openmw.log, crash.log and
-   sdmc:/openmw/config/openmw.log: those files can be deleted.)
-
-If you have to force the power off anyway, still send logs/openmw3ds.log.
+5. Send back the logs folder (sdmc:/openmw/logs/, the run's own folder for a Debug start) and your
+   screenshots. If you have to force the power off, still send logs/openmw3ds.log.
 "@ | Set-Content "$sd\README.txt"
 
 Write-Host "Package: $sd"
@@ -155,7 +95,7 @@ Get-ChildItem $sd -Recurse -File | Measure-Object Length -Sum | ForEach-Object {
 
 # Incremental update: out\sdcard-openmw-update\ holds only the files that differ from the previous
 # package (copying the ~380 small files of resources/ over FTP is slow), and UPDATE.txt lists them.
-# The manifest of the previous package is out\sdcard-openmw.manifest.json; -Full skips the diff.
+# The manifest of the previous package is out\sdcard-openmw.manifest.json. -Full skips the diff.
 $manifestPath = Join-Path $out 'sdcard-openmw.manifest.json'
 $update = Join-Path $out 'sdcard-openmw-update'
 $manifest = [ordered]@{}

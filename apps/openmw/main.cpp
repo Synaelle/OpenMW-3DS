@@ -99,7 +99,7 @@ bool parseOptions(int argc, char** argv, OMW::Engine& engine, Files::Configurati
 
 #ifdef OPENMW_PLATFORM_3DS
     // M11: an expansion is used when its files are in a data folder (its ESM, and its BSA when there), after
-    // Morrowind's; deleting them removes it (openmw.cfg doesn't list them). Saves made with it need it back.
+    // Morrowind's. Deleting them removes it (openmw.cfg doesn't list them). Saves made with it need it back.
     StringsVector expansions;
     for (const char* name : { "Tribunal", "Bloodmoon" })
         for (const auto& dir : dataDirs)

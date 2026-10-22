@@ -88,7 +88,7 @@ extern "C"
 
 // libctru carves the main thread's stack out of the start of the app heap (initSystem in
 // stack_adjust.s: [heap start, heap start + __stacksize__)), 32 KB by default. Bullet's GJK/EPA solver
-// alone needs ~30 KB in double precision and OSG/NIF traversals recurse deeply; desktop OpenMW
+// alone needs ~30 KB in double precision and OSG/NIF traversals recurse deeply. Desktop OpenMW
 // assumes 1-8 MB. Below the heap start nothing is mapped, so an overflow faults (on hardware).
 extern "C" u32 __stacksize__ = 1024 * 1024;
 
@@ -98,6 +98,25 @@ extern "C" u32 __stacksize__ = 1024 * 1024;
 // crawled on hardware. Put them on core 2 instead: on the New 3DS it runs at full speed and nothing
 // else uses it (measured in M0). 256 KB stacks: they load NIFs and traverse scene graphs.
 // Linked with -Wl,--wrap=__syscall_thread_create.
+namespace
+{
+    // M20: every thread gets the crash handler (a crash on a worker thread wrote no report): installed by the
+    // thread itself before the function it runs.
+    struct ThreadStart
+    {
+        void* (*mFunc)(void*);
+        void* mArg;
+    };
+
+    void threadEntry(void* p)
+    {
+        const ThreadStart start = *static_cast<ThreadStart*>(p);
+        delete static_cast<ThreadStart*>(p);
+        p3ds::crash::installForCurrentThread();
+        start.mFunc(start.mArg);
+    }
+}
+
 extern "C"
 {
     int __real___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size);
@@ -109,12 +128,14 @@ extern "C"
         if (stack_addr == nullptr)
         {
             // Same as libctru's implementation (the pthread handle is the libctru Thread), other core.
-            if (Thread t = threadCreate(reinterpret_cast<ThreadFunc>(func), arg, stack_size, 0x30, 2, false))
+            auto* start = new ThreadStart{ func, arg };
+            if (Thread t = threadCreate(threadEntry, start, stack_size, 0x30, 2, false))
             {
                 *thread = t;
                 P3DS_LOGI("thread: std::thread on core 2, prio 0x30, %u KB stack", unsigned(stack_size / 1024));
                 return 0;
             }
+            delete start;
             P3DS_LOGW("thread: core 2 unavailable, std::thread falls back to core 0 at prio 0x3F");
         }
         return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
@@ -261,15 +282,15 @@ extern "C"
 // ---------------------------------------------------------------------------------------------
 // sbrk over the app heap only (replaces libsysbase's weak _sbrk_r).
 //
-// The libctru app heap is capped by its virtual window (~95 MB even in the 178 MB mode); the linear heap gets
-// the rest of the memory. Until M9 malloc continued into a linear-heap segment when the app heap ran out; the
+// The libctru app heap is capped by its virtual window (~95 MB even in the 178 MB mode). The linear heap gets
+// the rest of the memory. Until M9 malloc continued into a linear-heap segment when the app heap ran out. The
 // large-allocation pool takes that memory now (pools.cpp), so newlib's arena stays in the app heap.
 extern "C"
 {
     size_t p3ds_linear_gpu_reserve = 24u * 1024u * 1024u; // linear memory left to the GPU by the first pool region
 
     static char* gSbrkCur = nullptr; // current break
-    // Diagnostics (read by the watchdog; sbrk runs under the malloc lock and must not log).
+    // Diagnostics (read by the watchdog, sbrk runs under the malloc lock and must not log).
     volatile uint32_t p3ds_sbrk_failures = 0;
     volatile int32_t p3ds_sbrk_last_fail_incr = 0;
     volatile uint32_t p3ds_sbrk_last_fail_linear_free = 0;

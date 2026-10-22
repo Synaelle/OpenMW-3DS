@@ -41,7 +41,7 @@ set(OPENGL_INCLUDE_DIR "${_root}/.deps/3ds/include" CACHE PATH "stub GL")
 set(OPENGL_gl_LIBRARY "${_root}/.deps/3ds/lib/libGL.a" CACHE FILEPATH "stub GL")
 set(CMAKE_DISABLE_PRECOMPILE_HEADERS ON CACHE BOOL "MSYS paths in generated PCH headers break the native compiler")
 
-# OpenMW links its static OSG plugins with $<LINK_LIBRARY:WHOLE_ARCHIVE,...>; the devkitPro
+# OpenMW links its static OSG plugins with $<LINK_LIBRARY:WHOLE_ARCHIVE,...>. The devkitPro
 # platform module doesn't define that feature, so use GNU ld's flags.
 set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:--whole-archive" "<LINK_ITEM>" "LINKER:--no-whole-archive" CACHE INTERNAL "")
 set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE CACHE INTERNAL "")

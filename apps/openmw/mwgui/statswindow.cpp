@@ -153,7 +153,7 @@ namespace MWGui
         getWidget(pt, name);
 #ifdef OPENMW_PLATFORM_3DS
         // M10: called whenever the stat's float changes (fatigue: every frame while it regenerates), with the window
-        // hidden or not; a bar set to the values it shows still redraws the interface.
+        // hidden or not. A bar set to the values it shows still redraws the interface.
         if (pt->getProgressRange() == static_cast<size_t>(std::max(0, max))
             && pt->getProgressPosition() == std::min(static_cast<size_t>(std::max(0, val)), pt->getProgressRange())
             && pt->getUserString("Shown3DS") == "1")

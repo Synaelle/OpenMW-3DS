@@ -19,7 +19,7 @@ namespace p3ds::log
 
         // Ring of recent lines (static: usable from the crash handler with no allocation).
         Line gRing[kRingLines];
-        uint32_t gRingNext = 0; // total lines ever written; index = gRingNext % kRingLines
+        uint32_t gRingNext = 0; // total lines ever written. Index = gRingNext % kRingLines
 
         // Double-buffered pending file output.
         char gPending[2][kPendingSize];
@@ -107,7 +107,7 @@ namespace p3ds::log
         gFile = fopen(path, "w");
         if (gFile == nullptr)
             return false;
-        // We do our own batching; keep stdio's buffer modest.
+        // We do our own batching. Keep stdio's buffer modest.
         setvbuf(gFile, nullptr, _IOFBF, 16 * 1024);
 
         LightEvent_Init(&gWake, RESET_ONESHOT);
@@ -156,7 +156,7 @@ namespace p3ds::log
         const double t = secondsSinceBoot();
         const int prefixLen = snprintf(prefix, sizeof(prefix), "[%9.3f] %c ", t, levelChar(level));
 
-        // Strip one trailing newline; we add our own.
+        // Strip one trailing newline. We add our own.
         if (!msg.empty() && msg.back() == '\n')
             msg.remove_suffix(1);
 

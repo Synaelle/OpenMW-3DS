@@ -2,7 +2,7 @@
 //
 // Brings up the platform layer (log file, crash logger, hang watchdog, memory split, bottom-screen
 // debug display) before handing over to OpenMW's unchanged runApplication(). Command-line options come
-// from sdmc:/openmw/args.txt (one argument per line); the debug default boots straight into a new game
+// from sdmc:/openmw/args.txt (one argument per line). The debug default boots straight into a new game
 // with the default generated character in Seyda Neen:
 //   --skip-menu --start "Seyda Neen"
 // (--new-game is deliberately absent: it would start character generation and the intro movie.)
@@ -57,7 +57,7 @@ namespace
     constexpr const char* kArgsPath = "sdmc:/openmw/args.txt";
 
     // The start menu's choice (M15): Start boots the game's own main menu (a new game goes through character
-    // creation); Debug's "Start game", intro skipped, keeps the test set-up of args.txt (--skip-menu --start <cell>
+    // creation). Debug's "Start game", intro skipped, keeps the test set-up of args.txt (--skip-menu --start <cell>
     // --script-run test-start.txt: the test character with its gold, skills, axe and spells). Not skipped, it is the
     // game's own start with the debug tools on. Automated runs skip the intro.
     bool gSkipIntro = true;
@@ -126,12 +126,12 @@ namespace
     // ------------------------------------------------------------------ the start menu (M15)
     //
     // Shown before the platform is up (p3ds::init: the chosen start decides the debug mode and where the logs go),
-    // drawn on the bottom screen by the CPU. "Start" is the game; "Debug" holds the test set-ups (skip the intro, the
-    // benchmark, the hardware test's runs); "Options" (the experimental screenshot button), "Check for updates",
+    // drawn on the bottom screen by the CPU. "Start" is the game. "Debug" holds the test set-ups (skip the intro, the
+    // benchmark, the hardware test's runs). "Options" (the experimental screenshot button), "Check for updates",
     // "Quit".
     //
     // Hardware tests: sdmc:/openmw/test-menu.txt lists the test's runs (the switch files each one needs), shown in
-    // Debug as "Test run: <label>" (A goes to the next run); Debug's starts create the chosen run's switch files and
+    // Debug as "Test run: <label>" (A goes to the next run). Debug's starts create the chosen run's switch files and
     // delete the others', a normal Start deletes them all:
     //   title <text>
     //   logs <prefix>
@@ -192,12 +192,10 @@ namespace
     }
 
     // The chosen run's switch files exist afterwards, every other known one doesn't (`run` null: none, a normal
-    // start). Past tests' switches are in the list too (hardware test #57: a "gpu-ui" left by test #56 kept the
-    // deprecated GPU interface on).
+    // start). Past tests' switches are in the list too (hardware test #57: a switch left by test #56 stayed on).
     void applySwitches(const TestRuns& runs, const TestRun* run)
     {
-        std::set<std::string> all{ "gpu-ui", "no-fills", "fills", "fills-top", "fills-opaque", "gui-on-scene",
-            "no-m8ui", "cpu-skinning", "draw-census", "memwalk",
+        std::set<std::string> all{ "no-m8ui", "cpu-skinning", "draw-census", "memwalk",
             // The performance batches' off switches (test #99 run B's stayed on the card through #100-#102:
             // later menus didn't name them).
             "no-thinweather", "no-posecadence", "no-smallcull", "no-flameloops", "no-samestate" };
@@ -349,7 +347,7 @@ namespace
     };
 
     // Options (test #107, the tester): the old renderer, layout and interface choices are gone (one of each for
-    // a long while); the screenshot button on the Home tab, off by default: experimental. Kept as a switch file the
+    // a long while). The screenshot button on the Home tab, off by default: experimental. Kept as a switch file the
     // game reads at its start (frame3ds.cpp screenshotButtonEnabled3DS).
     void optionsPage()
     {
@@ -482,7 +480,7 @@ int main(int, char**)
     struct stat autorun;
     if (stat(p3ds::kAutorunPath, &autorun) == 0)
     {
-        // An automated (emulator) run: the test set-up, or the benchmark its autorun.txt asks for; the usual logs.
+        // An automated (emulator) run: the test set-up, or the benchmark its autorun.txt asks for. The usual logs.
         std::ifstream file(p3ds::kAutorunPath);
         const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         gBenchmark = text.find("benchmark") != std::string::npos;
@@ -512,7 +510,7 @@ int main(int, char**)
         gSkipIntro = start != Start::Game && start != Start::DebugIntro;
         gBenchmark = start == Start::Benchmark;
         opts.debugMode = start != Start::Game;
-        // A normal start runs without any test switch; a debug one with the chosen run's.
+        // A normal start runs without any test switch. A debug one with the chosen run's.
         applySwitches(runs, opts.debugMode && !runs.mRuns.empty() ? &runs.mRuns[runs.mSelected] : nullptr);
         // A debug run's logs get a folder of their own (creating one costs ~1.5 s on hardware: not for a normal
         // start, whose logs stay in logs/, rotated).
@@ -526,6 +524,11 @@ int main(int, char**)
         opts.logSubdir = runLogs.c_str();
         setenv("OPENMW3DS_LOG_DIR", ("/openmw/logs/" + runLogs).c_str(), 1); // OpenMW's openmw.log, MyGUI.log
     }
+#else
+    // A normal build (M20, the tester): no start menu, the game's own start (a test's args.txt left on the card
+    // doesn't skip it), the debug mode off.
+    gSkipIntro = false;
+    opts.debugMode = false;
 #endif
     p3ds::init(opts);
     P3DS_LOGI("ICU data (%lu KB): %s", (unsigned long)(icudt73l_dat_size / 1024), u_errorName(icuStatus));
@@ -542,8 +545,7 @@ int main(int, char**)
     // the debug display instead.
     if (access("sdmc:/openmw/no-m8ui", F_OK) == 0)
     {
-        const std::string starting = std::string("(starting OpenMW) ") + Render3DS::interfacePath();
-        omw3ds::initBottomScreen(starting.c_str());
+        omw3ds::initBottomScreen("(starting OpenMW)");
     }
     else
     {
@@ -558,7 +560,7 @@ int main(int, char**)
     // on the PC by tools/cook_textures.py.
     if (!Render3DS::init())
         P3DS_LOGE("citro3d renderer failed to start: running headless");
-    // M8's UI (MyGUI drawn on both screens). While M8 is being built, sdmc:/openmw/no-m8ui goes back to M6's text
+    // M8's UI (MyGUI drawn on both screens). sdmc:/openmw/no-m8ui, the emergency fallback, goes back to M6's text
     // screens (the bottom screen's debug display and menus).
     Render3DS::setDrawsGui(access("sdmc:/openmw/no-m8ui", F_OK) != 0);
     Render3DS::openTexturePack("sdmc:/openmw/cooked/textures.o3tp");
@@ -582,7 +584,7 @@ int main(int, char**)
     setenv("OPENMW_DONT_PRECOMPILE", "1", 1);
     // Physics steps at 60 Hz by default: two steps per frame at the 30 fps cap, 17-26 ms of each 33 ms frame on
     // core 2 in Seyda Neen (hardware test #21), where the work queue thread loading models also runs. One step
-    // per frame halves it; actor movement uses swept shapes, so the longer step doesn't let actors tunnel.
+    // per frame halves it. Actor movement uses swept shapes, so the longer step doesn't let actors tunnel.
     setenv("OPENMW_PHYSICS_FPS", "30", 1);
 
     std::vector<std::string> args = loadArguments();
@@ -614,6 +616,6 @@ void omw3ds::exitProcess(int code)
     p3ds::crash::kick("shutdown: platform");
     p3ds::shutdown();
     gfxExit();
-    // No static destructors (OpenMW's objects still exist); libctru still closes its services.
+    // No static destructors (OpenMW's objects still exist). libctru still closes its services.
     _exit(code);
 }

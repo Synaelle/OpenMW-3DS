@@ -67,7 +67,7 @@ namespace MWGui
     void LoadingScreen::findSplashScreens()
     {
 #ifdef OPENMW_PLATFORM_3DS
-        // No splash wallpapers on 3DS: each full-size TGA decodes to ~3 MB and stays cached; one is
+        // No splash wallpapers on 3DS: each full-size TGA decodes to ~3 MB and stays cached. One is
         // shown every 5 s, which cost ~15 MB during data loading alone. The loading bar remains.
         return;
 #endif

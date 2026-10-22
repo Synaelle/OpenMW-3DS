@@ -21,7 +21,7 @@ namespace p3ds::screenshot
     // bottom one (centred, black on its sides), as the 3DS shows them. `top` is the top screen in the rotated BGR8
     // layout above (240 x 400). The image is built now (the bottom screen as it shows now) and written by a
     // background thread: the SD card's file creation takes seconds on hardware. false: one is still being written
-    // (or no memory); nothing is done.
+    // (or no memory). Nothing is done.
     bool saveBothScreensAsync(const char* path, const uint8_t* top);
     // A finished background save, once: 1 saved, -1 failed, 0 nothing new.
     int takeAsyncResult();

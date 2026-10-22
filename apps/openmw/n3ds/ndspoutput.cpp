@@ -4,10 +4,10 @@
 //   starts once loaded, ~20-100 ms later), then copied into linear memory (the DSP reads it there) on the main thread:
 //   libctru's linear allocator has no lock, and the renderer uses it on the main thread. One NDSP channel per sound.
 // - Music and voices: streamed in 4 buffers of 0.25 s, decoded by the same thread.
-// - The sound thread runs on the system core (core 1, time-limited, so it never takes time from the game's cores;
+// - The sound thread runs on the system core (core 1, time-limited, so it never takes time from the game's cores,
 //   core 2 when the system core isn't available).
-// - 3D: OpenAL's model as OpenMW sets it (inverse distance, clamped, rolloff 1) for the gain; the left/right mix from
-//   the direction to the listener; no Doppler, no reverb. Underwater: the DSP's one-pole low-pass on the channel.
+// - 3D: OpenAL's model as OpenMW sets it (inverse distance, clamped, rolloff 1) for the gain. The left/right mix from
+//   the direction to the listener. No Doppler, no reverb. Underwater: the DSP's one-pole low-pass on the channel.
 // - 24 channels in all (the DSP's limit). When they're all busy, new sounds don't play (as OpenAL without sources).
 
 #include "sound3ds.hpp"
@@ -27,6 +27,7 @@
 #include <components/misc/resourcehelpers.hpp>
 #include <components/vfs/manager.hpp>
 
+#include <platform3ds/crash.hpp>
 #include <platform3ds/log.hpp>
 #include <platform3ds/platform.hpp>
 
@@ -121,7 +122,7 @@ namespace MWSound
         bool isPlaying() const { return isQueued(mWave[0]) || isQueued(mWave[1]); }
     };
 
-    // A music or voice stream. The sound thread decodes into it outside of any lock that the main thread waits on;
+    // A music or voice stream. The sound thread decodes into it outside of any lock that the main thread waits on.
     // mLock only guards the few fields both read (held for microseconds).
     struct OpenALOutput::StreamVoice
     {
@@ -266,7 +267,7 @@ namespace MWSound
         }
     };
 
-    // The sound thread: keeps the streams' buffers filled (a buffer lasts 250 ms; it wakes every 40 ms) and loads
+    // The sound thread: keeps the streams' buffers filled (a buffer lasts 250 ms, it wakes every 40 ms) and loads
     // effects, one at a time between stream refills.
     class OpenALOutput::StreamThread
     {
@@ -333,7 +334,11 @@ namespace MWSound
         }
 
     private:
-        static void entry(void* self) { static_cast<StreamThread*>(self)->run(); }
+        static void entry(void* self)
+        {
+            p3ds::crash::installForCurrentThread(); // a crash here writes a report too (M20)
+            static_cast<StreamThread*>(self)->run();
+        }
 
         void run()
         {
@@ -612,7 +617,7 @@ namespace MWSound
         }
         else
         {
-            // Never fully on one side; centred sounds at full gain on both.
+            // Never fully on one side. Centred sounds at full gain on both.
             const float p = 0.8f * pan;
             mix[0] = gain * std::min(1.f, std::sqrt(1.f - p));
             mix[1] = gain * std::min(1.f, std::sqrt(1.f + p));

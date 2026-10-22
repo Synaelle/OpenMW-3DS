@@ -66,7 +66,7 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mTextEdit);
 #ifdef OPENMW_PLATFORM_3DS
         // The system keyboard types the text (M8): opened at the next frame's start, outside any drawing, and
-        // the dialog is accepted as if OK were pressed; cancelled, the dialog stays for a second try by touch.
+        // the dialog is accepted as if OK were pressed. Cancelled, the dialog stays for a second try by touch.
         omw3ds::deferToFrame([this] {
             std::string text = getTextInput();
             MyGUI::TextBox* label = nullptr;

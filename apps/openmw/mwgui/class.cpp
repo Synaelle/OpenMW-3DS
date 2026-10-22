@@ -464,8 +464,8 @@ namespace MWGui
     }
 
 #ifdef OPENMW_PLATFORM_3DS
-    // M17. The bottom screen's box when it fits above the hint strip; otherwise the top screen's, as wide as it
-    // (lines wrap less); otherwise split: the question on the top screen, the answers on the bottom one. (It ran
+    // M17. The bottom screen's box when it fits above the hint strip. Otherwise the top screen's, as wide as it
+    // (lines wrap less). Otherwise split: the question on the top screen, the answers on the bottom one. (It ran
     // over both screens.)
     void InfoBoxDialog::layout3DS()
     {
@@ -520,7 +520,7 @@ namespace MWGui
         }
 
         // 3. Split over the two screens: the root covers both, each part in its own frame. The answers get the
-        // whole bottom screen (the hint strip goes under the question); still too long (the Telepaths question),
+        // whole bottom screen (the hint strip goes under the question). Still too long (the Telepaths question),
         // they take the smaller font of the button hints.
         mMainWidget->setUserString("Hints3DS", "top");
         fit(376, 300, 3);
@@ -685,7 +685,7 @@ namespace MWGui
         descriptionButton->eventMouseButtonClick += MyGUI::newDelegate(this, &CreateClassDialog::onDescriptionClicked);
         mButtons.push_back(descriptionButton);
 #ifdef OPENMW_PLATFORM_3DS
-        // M8: no description on the 3DS (the tester's choice); the name is typed on the system keyboard from a
+        // M8: no description on the 3DS (the tester's choice). The name is typed on the system keyboard from a
         // click on its box (A with the pointer: the window is on the top screen), without accepting the class.
         descriptionButton->setVisible(false);
         // The click lands on the edit box's inner widgets (its text area), not on the box: all of them open it

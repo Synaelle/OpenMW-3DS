@@ -12,7 +12,7 @@ namespace MWWorld
 }
 
 // Radial hydration (the Vita port's technique, M5). In exterior cells, an object is only in the scene
-// (rendering, physics, mechanics, Lua "active") while it is near the player; the 3x3 grid of exterior cells
+// (rendering, physics, mechanics, Lua "active") while it is near the player. The 3x3 grid of exterior cells
 // keeps all its references, but their models, collision shapes and actor controllers don't fit in memory
 // together. Fog hides everything past the viewing distance anyway. Interiors are not affected.
 namespace omw3ds::hydration

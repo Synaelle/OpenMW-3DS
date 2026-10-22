@@ -173,7 +173,7 @@ namespace MWGui
         if (ptr.isEmpty())
         {
 #ifdef OPENMW_PLATFORM_3DS
-            // M10: the HUD clears its empty spell box every frame; each clear redraws the interface.
+            // M10: the HUD clears its empty spell box every frame. Each clear redraws the interface.
             if (mCleared3DS && mCurrentIcon.empty() && mCurrentFrame.empty())
                 return;
             mCleared3DS = true;

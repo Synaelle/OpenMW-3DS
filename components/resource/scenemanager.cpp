@@ -906,12 +906,12 @@ namespace Resource
 
 #ifdef OPENMW_PLATFORM_3DS
     // M10 phase 2: the NIF loader makes each shape a transform holding the shape's properties (a state set) with
-    // its geometry as only child; the optimizer bakes the transform into the geometry but keeps the node, as a
+    // its geometry as only child. The optimizer bakes the transform into the geometry but keeps the node, as a
     // Group, for its state set. ~680 of an interior's ~2850 cull-traversed nodes were those one-child groups
     // (Arrille's Tradehouse). This folds each into its geometry: the geometry takes the group's state set merged
     // under its own (StateSet::merge keeps the parent/child override rules), its name if it has none, its user
     // data, and the group's place. Only plain static groups over a plain Geometry, with the optimizer's own
-    // restrictions (no descriptions, no reserved names); per model, before instancing.
+    // restrictions (no descriptions, no reserved names). Per model, before instancing.
     class CollapseShapeGroups3DS : public osg::NodeVisitor
     {
     public:

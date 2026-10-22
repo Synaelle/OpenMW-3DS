@@ -5,7 +5,7 @@
 // The look of the start menu and the loading screen (M15), drawn on the CPU before the engine and its interface
 // exist. Bottom screen (textfb's RGB565 framebuffer): flat and left-aligned, like a console's system menu - a warm
 // black background, thin separator lines, a short gold mark beside the current line, and text in OpenMW's
-// MysticCards (a free look-alike of Morrowind's font, SIL Open Font License 1.1; tools/make_menu_font.py),
+// MysticCards (a free look-alike of Morrowind's font, SIL Open Font License 1.1, tools/make_menu_font.py),
 // anti-aliased. Top screen: the HOME Menu icon's emblem (tools/make_menu_emblem.py).
 namespace p3ds::menuart
 {
@@ -43,7 +43,7 @@ namespace p3ds::menuart
 
     // The whole screen.
     void background();
-    // The top screen: the emblem of the HOME Menu icon, centred on the same background. Once; the engine's first
+    // The top screen: the emblem of the HOME Menu icon, centred on the same background. Once. The engine's first
     // frame replaces it.
     void topScreen();
     // The background again in a rectangle (under text about to be redrawn).
