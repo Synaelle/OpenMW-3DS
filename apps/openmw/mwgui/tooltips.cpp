@@ -113,6 +113,11 @@ namespace MWGui
             if (!winMgr->getCursorVisible() && !winMgr->getControllerTooltipVisible())
                 return;
             const MyGUI::IntPoint& mousePos = MyGUI::InputManager::getInstance().getMousePosition();
+#ifdef OPENMW_PLATFORM_3DS
+            // Only the pointer's menus on the top screen have tooltips: the touch menus below never did.
+            if (mousePos.top >= Render3DS::kGuiBottomY)
+                return;
+#endif
 
             if (winMgr->getWorldMouseOver()
                 && (winMgr->isConsoleMode() || (winMgr->getMode() == GM_Container)
@@ -314,6 +319,30 @@ namespace MWGui
                 MyGUI::IntPoint tooltipPosition = MyGUI::InputManager::getInstance().getMousePosition();
 
                 position(tooltipPosition, tooltipSize, viewSize);
+#ifdef OPENMW_PLATFORM_3DS
+                // The pointer is on the top screen (class creation). A skill's or an attribute's description goes to
+                // the bottom screen, centred above its button hints, clear of what the pointer looks at. The others
+                // (a specialization's skills) stay by the pointer, on the top screen (the tester).
+                const std::string_view layout3DS = focus->getUserString("ToolTipLayout");
+                if (layout3DS == "SkillNoProgressToolTip" || layout3DS == "AttributeToolTip")
+                {
+                    tooltipPosition.left = Render3DS::kGuiBottomX + std::max(0, (320 - tooltipSize.width) / 2);
+                    tooltipPosition.top = Render3DS::kGuiBottomY + std::max(0, (216 - tooltipSize.height) / 2);
+                }
+                else if (tooltipPosition.top + tooltipSize.height > Render3DS::kGuiBottomY)
+                {
+                    // Above the pointer, or beside it when the screen is too short for either.
+                    tooltipPosition.top = mousePos.top - 8 - tooltipSize.height;
+                    if (tooltipPosition.top < 0)
+                    {
+                        tooltipPosition.top = std::clamp(mousePos.top - tooltipSize.height / 2, 0,
+                            std::max(0, Render3DS::kGuiBottomY - tooltipSize.height));
+                        tooltipPosition.left = mousePos.left + 16 + tooltipSize.width <= viewSize.width
+                            ? mousePos.left + 16
+                            : std::max(0, mousePos.left - 16 - tooltipSize.width);
+                    }
+                }
+#endif
 
                 setCoord(tooltipPosition.left, tooltipPosition.top, tooltipSize.width, tooltipSize.height);
             }

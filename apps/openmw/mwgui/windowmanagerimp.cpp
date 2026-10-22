@@ -817,7 +817,12 @@ namespace MWGui
             return; // UI not created yet
 
         mHud->setVisible(mHudEnabled && !loading);
+#ifdef OPENMW_PLATFORM_3DS
+        // The port hides the HUD under every menu (n3ds/hud3ds.cpp), not the menus' tooltips (class creation's).
+        mToolTips->setVisible((mHudEnabled || isGuiMode()) && !loading);
+#else
         mToolTips->setVisible(mHudEnabled && !loading);
+#endif
 
         bool gameMode = !isGuiMode();
 
