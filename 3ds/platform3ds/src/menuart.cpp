@@ -97,7 +97,7 @@ namespace p3ds::menuart
         drawn = true;
         // The top screen as gfxInitDefault leaves it (BGR8, double buffered, 400 x 240 stored as 400 columns of
         // 240): both buffers, so swapping shows the picture whichever is current.
-        const uint8_t bg[3] = { 11, 14, 18 };
+        const uint8_t bg[3] = { colour::backgroundRgb[2], colour::backgroundRgb[1], colour::backgroundRgb[0] }; // BGR
         constexpr int kTopWidth = 400;
         const int x0 = (kTopWidth - kEmblemSize) / 2, y0 = (kHeight - kEmblemSize) / 2;
         for (int buffer = 0; buffer < 2; ++buffer)

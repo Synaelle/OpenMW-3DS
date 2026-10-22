@@ -56,11 +56,13 @@ extern "C"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace omw3ds
 {
@@ -71,6 +73,7 @@ namespace omw3ds
         p3ds::FrameStats gStats;
         bool gBottomReady = false;
         bool gScreenshotRequested = false; // M8's Debug tab
+        int gPlayerShotWait = 0; // frames left for the player's screenshot to start (requestPlayerScreenshot3DS)
 
         // Cell name / position / player state are refreshed a few times a second only (string work).
         std::string gCellName = "-";
@@ -249,6 +252,35 @@ namespace omw3ds
     void requestScreenshot3DS()
     {
         gScreenshotRequested = true;
+    }
+
+    bool screenshotButtonEnabled3DS()
+    {
+        static const bool enabled = access("sdmc:/openmw/config/screenshot-button", F_OK) == 0;
+        return enabled;
+    }
+
+    void requestPlayerScreenshot3DS()
+    {
+        // At most one every 500 ms (the tester, test #107: no spamming the button).
+        static u64 last = 0;
+        const u64 now = osGetTime();
+        if (gPlayerShotWait > 0 || (last != 0 && now - last < 500))
+            return;
+        last = now;
+        mkdir("sdmc:/openmw/screenshots", 0777); // may be missing (empty folders and FTP copies)
+        // Named by the console's clock: a new game session doesn't write over the last one's pictures.
+        const time_t clock = time(nullptr);
+        const tm* t = localtime(&clock);
+        char path[96];
+        std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/%04d-%02d-%02d_%02d-%02d-%02d.bmp",
+            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+        for (int n = 2; access(path, F_OK) == 0 && n < 100; ++n) // twice in a second
+            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/%04d-%02d-%02d_%02d-%02d-%02d_%d.bmp",
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, n);
+        Render3DS::requestPlayerCapture(path);
+        gPlayerShotWait = 3; // taken at the next frame's start
+        P3DS_LOGI("screenshot (player): %s", path);
     }
 
     bool exteriorsEnabled()
@@ -590,6 +622,20 @@ namespace omw3ds
 #else
             P3DS_LOGI("screenshot %s", path);
 #endif
+        }
+        // The player's screenshot: started (or not: one still being written), then saved or not.
+        if (gPlayerShotWait > 0)
+        {
+            if (Render3DS::playerCaptureStarted())
+                gPlayerShotWait = 0;
+            else if (--gPlayerShotWait == 0)
+                MWBase::Environment::get().getWindowManager()->messageBox("#{OMW3DS:ScreenshotBusy}");
+        }
+        if (const int saved = p3ds::screenshot::takeAsyncResult(); saved != 0)
+        {
+            P3DS_LOGI("screenshot (player): %s", saved > 0 ? "saved" : "failed");
+            MWBase::Environment::get().getWindowManager()->messageBox(
+                saved > 0 ? "#{OMW3DS:ScreenshotSaved}" : "#{OMW3DS:ScreenshotFailed}");
         }
         if (gBottomReady)
             refreshMenus(gBottom);

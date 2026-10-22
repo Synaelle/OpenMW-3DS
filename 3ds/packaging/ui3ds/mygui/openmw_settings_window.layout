@@ -36,19 +36,9 @@
                     <Property key="Caption" value="#{OMWEngine:DifficultyHard}"/>
                     <Property key="TextAlign" value="Right"/>
                 </Widget>
-                <!-- The HUD's minimap (3DS setting [Map] minimap) -->
-                <Widget type="HBox" position="4 62 280 26">
-                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
-                        <UserString key="SettingCategory" value="Map"/>
-                        <UserString key="SettingName" value="minimap"/>
-                        <UserString key="SettingType" value="CheckButton"/>
-                    </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
-                        <Property key="Caption" value="#{OMW3DS:Minimap}"/>
-                    </Widget>
-                </Widget>
+                <!-- No minimap row in 0.1.0: the minimap is off until its flashing is fixed (test #106) -->
                 <!-- Skyrim-like small bars on the top screen (3DS setting [HUD] top bars) -->
-                <Widget type="HBox" position="4 90 280 26">
+                <Widget type="HBox" position="4 62 280 26">
                     <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
                         <UserString key="SettingCategory" value="HUD"/>
                         <UserString key="SettingName" value="top bars"/>

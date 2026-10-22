@@ -184,6 +184,9 @@ namespace MWRender
 
     void LocalMap::requestMap(const MWWorld::CellStore* cell)
     {
+#ifdef OPENMW_PLATFORM_3DS
+        return; // 0.1.0: no minimap, no tile drawn (WindowManager::updateMap)
+#endif
         if (!cell->isExterior())
         {
             requestInteriorMap(cell);

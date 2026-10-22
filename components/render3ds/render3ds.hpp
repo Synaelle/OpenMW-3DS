@@ -158,6 +158,10 @@ namespace Render3DS
 
     // Saves the next completed top-screen frame as a BMP (main thread).
     void requestCapture(const char* path);
+    // The player's screenshot: both screens in one BMP at the next frame, written in the background (main thread).
+    // playerCaptureStarted: true once, when the save began (p3ds::screenshot::takeAsyncResult then tells its end).
+    void requestPlayerCapture(const char* path);
+    bool playerCaptureStarted();
 
     // PC-cooked texture pack (tools/cook_textures.py). Missing pack = every texture falls back to OSG's
     // loaders (DDS can't be displayed, see ImageManager).

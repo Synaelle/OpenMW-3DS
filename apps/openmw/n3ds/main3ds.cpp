@@ -57,9 +57,9 @@ namespace
     constexpr const char* kArgsPath = "sdmc:/openmw/args.txt";
 
     // The start menu's choice (M15): Start boots the game's own main menu (a new game goes through character
-    // creation); Debug's "Start (skip the intro)" keeps the test set-up of args.txt (--skip-menu --start <cell>
-    // --script-run test-start.txt: the test character with its gold, skills, axe and spells), its "Start (with the
-    // intro)" is the game's own start with the debug tools on. Automated runs skip the intro.
+    // creation); Debug's "Start game", intro skipped, keeps the test set-up of args.txt (--skip-menu --start <cell>
+    // --script-run test-start.txt: the test character with its gold, skills, axe and spells). Not skipped, it is the
+    // game's own start with the debug tools on. Automated runs skip the intro.
     bool gSkipIntro = true;
     bool gBenchmark = false; // the start menu's third choice (benchmark3ds.hpp)
 #ifdef OPENMW3DS_DEBUG
@@ -127,7 +127,8 @@ namespace
     //
     // Shown before the platform is up (p3ds::init: the chosen start decides the debug mode and where the logs go),
     // drawn on the bottom screen by the CPU. "Start" is the game; "Debug" holds the test set-ups (skip the intro, the
-    // benchmark, the hardware test's runs); "Check for updates", "Quit" (no "Options" until there is a choice).
+    // benchmark, the hardware test's runs); "Options" (the experimental screenshot button), "Check for updates",
+    // "Quit".
     //
     // Hardware tests: sdmc:/openmw/test-menu.txt lists the test's runs (the switch files each one needs), shown in
     // Debug as "Test run: <label>" (A goes to the next run); Debug's starts create the chosen run's switch files and
@@ -348,6 +349,28 @@ namespace
         Quit,
     };
 
+    // Options (test #107, the tester): the old renderer, layout and interface choices are gone (one of each for
+    // a long while); the screenshot button on the Home tab, off by default: experimental. Kept as a switch file the
+    // game reads at its start (frame3ds.cpp screenshotButtonEnabled3DS).
+    void optionsPage()
+    {
+        constexpr const char* kScreenshotSwitch = "sdmc:/openmw/config/screenshot-button";
+        size_t selected = 0;
+        std::string note; // the item says it's experimental (the tester, test #107: a note line ran off the screen)
+        while (true)
+        {
+            const bool on = access(kScreenshotSwitch, F_OK) == 0;
+            const int option = menu::page("Options",
+                { { on ? "Screenshot: On (experimental)" : "Screenshot: Off" }, { "Back" } }, note, selected, true);
+            if (option != 0)
+                return;
+            if (on)
+                remove(kScreenshotSwitch);
+            else if (FILE* f = std::fopen(kScreenshotSwitch, "w"))
+                std::fclose(f);
+        }
+    }
+
     Start startMenu(TestRuns& runs, std::string& chosenLine)
     {
         std::string message;
@@ -355,8 +378,8 @@ namespace
         while (true)
         {
             const int choice = menu::page("",
-                { { "Start" }, { "Debug" }, { "Check for updates" }, { "Quit" } }, message, mainSelected,
-                false);
+                { { "Start" }, { "Debug" }, { "Options" }, { "Check for updates" }, { "Quit" } }, message,
+                mainSelected, false);
             message.clear();
             if (choice == 0)
             {
@@ -365,22 +388,25 @@ namespace
             }
             if (choice == 2)
             {
+                optionsPage();
+                continue;
+            }
+            if (choice == 3)
+            {
                 message = "No update information yet.";
                 continue;
             }
-            if (choice == 3 || choice < 0)
+            if (choice == 4 || choice < 0)
                 return Start::Quit;
-            // No "Options" page until there is something to choose (the tester, 2026-10-21: one renderer, one
-            // layout, one interface so far; it comes back with the first alternative, docs/PLANNED_FEATURES.md).
             // Debug.
             size_t selected = 0;
             std::string note;
             while (true)
             {
-                // M19 (the tester, test #104): a start with the intro too, to test the game's own beginning with the
-                // spike reports and the detailed logs on.
-                std::vector<menu::Item> items{ { "Start (skip the intro)" }, { "Start (with the intro)" },
-                    { "Benchmark" } };
+                // One "Start game", then whether to skip the intro (the tester, test #107): skipping is the test
+                // set-up of args.txt (the test character), not skipping the game's own beginning with the debug tools
+                // on (test #104).
+                std::vector<menu::Item> items{ { "Start game" }, { "Benchmark" } };
                 // The test's runs to choose from: only when there is a choice (the tester, test #105).
                 if (runs.mRuns.size() > 1)
                     items.push_back({ "Test run: " + runs.mRuns[runs.mSelected].mLabel });
@@ -389,7 +415,7 @@ namespace
                 note.clear();
                 if (option < 0 || option == int(items.size()) - 1)
                     break;
-                if (option == 3)
+                if (option == 2)
                 {
                     runs.mSelected = (runs.mSelected + 1) % runs.mRuns.size();
                     continue;
@@ -398,11 +424,16 @@ namespace
                                                            : " (test run " + runs.mRuns[runs.mSelected].mLabel + ")";
                 if (option == 0)
                 {
-                    chosenLine = "start: debug, skip the intro" + run;
-                    return Start::DebugGame;
-                }
-                if (option == 1)
-                {
+                    size_t answer = 0;
+                    std::string none;
+                    const int skip = menu::page("Skip the intro?", { { "Yes" }, { "No" } }, none, answer, true);
+                    if (skip < 0)
+                        continue;
+                    if (skip == 0)
+                    {
+                        chosenLine = "start: debug, skip the intro" + run;
+                        return Start::DebugGame;
+                    }
                     chosenLine = "start: debug, with the intro" + run;
                     return Start::DebugIntro;
                 }

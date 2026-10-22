@@ -1,4 +1,4 @@
-# Puts an archived test's whole SD environment back on the 3DS over Wi-Fi (chomp-cli), from
+# Puts an archived test's whole SD environment back on the 3DS over Wi-Fi (baguette-cli), from
 # out\test-archive\<test> (written by make-sdcard-openmw.ps1 for every package).
 #   scripts\restore-test.ps1 -Test test77          # the files that differ from what the SD holds now
 #   scripts\restore-test.ps1 -Test test77 -List    # only say what would change
@@ -19,7 +19,7 @@ if (-not (Test-Path "$archive\manifest.json")) {
         Where-Object { $_.Name -ne '.store' }).Name -join ', '
     throw "No archive for '$Test' (archived: $known)"
 }
-$chomp = Join-Path $root '.tools\chomp\chomp-cli.exe'
+$baguette = Join-Path $root '.toolsaguetteaguette-cli.exe'
 $sdManifestPath = Join-Path $out 'sdcard-openmw.manifest.json'
 
 $wanted = @{}
@@ -36,18 +36,18 @@ Write-Host "Send ($($send.Count)):"; $send | ForEach-Object { Write-Host "  sdmc
 if ($delete.Count) { Write-Host "Delete ($($delete.Count)):"; $delete | ForEach-Object { Write-Host "  sdmc:/$_" } }
 if ($List) { return }
 
-function Invoke-Chomp([string[]]$arguments) {
-    & $chomp --json --quiet @arguments | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "chomp-cli $($arguments -join ' ') failed (exit $LASTEXITCODE)" }
+function Invoke-Baguette([string[]]$arguments) {
+    & $baguette --json --quiet @arguments | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "baguette-cli $($arguments -join ' ') failed (exit $LASTEXITCODE)" }
 }
 foreach ($rel in $send) {
     $dir = Split-Path $rel -Parent
-    Invoke-Chomp @('put', (Join-Path "$archive\sd" $rel.Replace('/', '\')), "sd:/$($dir.Replace('\', '/'))/")
+    Invoke-Baguette @('put', (Join-Path "$archive\sd" $rel.Replace('/', '\')), "sd:/$($dir.Replace('\', '/'))/")
     $onSd[$rel] = $wanted[$rel] # recorded per file: an interrupted restore can be run again
     $onSd | ConvertTo-Json | Set-Content $sdManifestPath
 }
 foreach ($rel in $delete) {
-    Invoke-Chomp @('rm', "sd:/$rel")
+    Invoke-Baguette @('rm', "sd:/$rel")
     $onSd.Remove($rel)
     $onSd | ConvertTo-Json | Set-Content $sdManifestPath
 }

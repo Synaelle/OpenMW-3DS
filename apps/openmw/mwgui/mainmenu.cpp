@@ -326,35 +326,18 @@ namespace MWGui
         {
             mPanel3DS = mMainWidget->createWidget<MyGUI::Widget>(
                 "MW_Dialog", MyGUI::IntCoord(40, 240, 320, 222), MyGUI::Align::Default);
+            // The character only (test #106, the tester: the touch buttons were messy, the information useful):
+            // the top screen's menu does the rest. Four lines in the middle of the panel.
             for (int i = 0; i < 4; ++i)
             {
                 mPanelLines3DS[i] = mPanel3DS->createWidget<MyGUI::TextBox>(i == 0 ? "HeaderText" : "SandText",
-                    MyGUI::IntCoord(8, 8 + i * 22, 304, 20), MyGUI::Align::Default);
+                    MyGUI::IntCoord(8, 56 + i * 28, 304, 20), MyGUI::Align::Default);
                 mPanelLines3DS[i]->setTextAlign(MyGUI::Align::Center);
-            }
-            const std::pair<const char*, const char*> buttons[]
-                = { { "savegame", "#{OMW3DS:MenuSave}" }, { "loadgame", "#{OMW3DS:MenuLoad}" },
-                      { "options", "#{OMW3DS:MenuOptions}" }, { "return", "#{OMW3DS:MenuReturn}" } };
-            for (int i = 0; i < 4; ++i)
-            {
-                MyGUI::Button* button = mPanel3DS->createWidget<MyGUI::Button>("MW_Button",
-                    MyGUI::IntCoord(i % 2 == 0 ? 18 : 166, 110 + (i / 2) * 50, 136, 38), MyGUI::Align::Default);
-                button->setCaptionWithReplacing(buttons[i].second);
-                button->setUserData(std::string(buttons[i].first));
-                button->eventMouseButtonClick += MyGUI::newDelegate(this, &MainMenu::onPanelButton3DS);
-                mPanelButtons3DS[buttons[i].first] = button;
             }
         }
         mPanel3DS->setVisible(inGame);
         if (!inGame)
             return;
-
-        // The buttons the top menu offers now (saving can be forbidden, there may be no save to load).
-        for (const auto& [id, button] : mPanelButtons3DS)
-        {
-            const auto top = mButtons.find(id);
-            button->setVisible(top != mButtons.end() && top->second->getVisible());
-        }
 
         const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
         const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
@@ -379,13 +362,6 @@ namespace MWGui
         mPanelLines3DS[3]->setCaptionWithReplacing(std::format("{} {} (#{{Calendar:day}} {}) {} {}", date.mDay,
             timeManager.getMonthName(), timeManager.getTimeStamp().getDay(), hour,
             pm ? "#{Calendar:pm}" : "#{Calendar:am}"));
-    }
-
-    void MainMenu::onPanelButton3DS(MyGUI::Widget* sender)
-    {
-        const auto top = mButtons.find(*sender->getUserData<std::string>());
-        if (top != mButtons.end())
-            onButtonClicked(top->second); // as the top menu's button
     }
 #endif
 

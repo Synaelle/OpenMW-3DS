@@ -796,7 +796,15 @@ namespace SceneUtil
 
             const size_t maxLights = mLightManager->getMaxLights();
 
+#ifdef OPENMW_PLATFORM_3DS
+            // The 3DS draws an object with its first 4 lights (an NPC with its first one): render3ds backend, perf
+            // batch 2. Unsorted, the list is in the order the lights were found while culling, which changes with the
+            // camera: candles and lanterns lit things or not as the view turned, and rooms came out darker (test #105;
+            // Zeste, test #98 against #106). Always sorted, the first ones are the ones that matter most.
+            if (mLightList.size() > 1)
+#else
             if (mLightList.size() > maxLights)
+#endif
             {
                 // Sort by proximity to object: prefer closer lights with larger radius
                 std::sort(mLightList.begin(), mLightList.end(),
@@ -808,7 +816,8 @@ namespace SceneUtil
                         return left->mViewBound.radius() * rightDist > right->mViewBound.radius() * leftDist;
                     });
 
-                mLightList.resize(maxLights);
+                if (mLightList.size() > maxLights)
+                    mLightList.resize(maxLights);
             }
         }
 

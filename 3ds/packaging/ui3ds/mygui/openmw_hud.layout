@@ -107,6 +107,18 @@
                 </Widget>
             </Widget>
 
+            <!-- The screenshot button (test #107): the start menu's experimental option shows it; a small camera in the
+                 corner the minimap left (n3ds/hud3ds.cpp, frame3ds.cpp requestPlayerScreenshot3DS) -->
+            <!-- 36x30: easier to hit with a finger than the tabs' 24x21 (the tester, test #107) -->
+            <Widget type="Button" skin="MW_Button" position="272 4 36 30" align="Left Top" name="Screenshot3DS">
+                <Property key="Visible" value="false"/>
+                <Property key="NeedKey" value="false"/>
+                <Widget type="ImageBox" skin="ImageBox" position="10 7 16 16" name="ScreenshotIcon3DS">
+                    <Property key="ImageTexture" value="textures\omw_3ds_camera.png"/>
+                    <Property key="NeedMouse" value="false"/>
+                </Widget>
+            </Widget>
+
             <!-- Equipped weapon box and its name (n3ds/hud3ds.cpp) -->
             <Widget type="Button" skin="" position="4 78 36 42" align="Left Top" name="WeapBox">
                 <Widget type="Widget" skin="HUD_Box" position="0 0 36 36">

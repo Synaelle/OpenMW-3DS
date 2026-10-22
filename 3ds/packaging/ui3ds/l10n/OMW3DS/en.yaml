@@ -19,10 +19,6 @@ QuickKeysHelp: "Choose a slot to assign a spell, a magic item or an inventory it
 QuickKeyEmpty: "Empty"
 LoadGame: "Load Game"
 SaveGame: "Save Game"
-MenuSave: "Save"
-MenuLoad: "Load"
-MenuOptions: "Options"
-MenuReturn: "Return"
 Page: "Page"
 PreviousPage: "Previous"
 NextPage: "Next"
@@ -38,3 +34,7 @@ TutorialCaptain: "Press A to talk to the Captain. Select topics to ask about the
 TutorialJournal: "Press Up on the D-pad to use your journal and review what you've been told. You should probably check out Arrille's Tradehouse up on the left. You're on your own now. Good luck."
 TutorialDagger: "You should learn how to do combat. Pick up the dagger on the table by activating it with A."
 TutorialMove: "The Circle Pad moves you, and the C-Stick looks around."
+# The screenshot button (n3ds/frame3ds.cpp).
+ScreenshotSaved: "Screenshot saved"
+ScreenshotFailed: "The screenshot could not be saved."
+ScreenshotBusy: "The last screenshot is still being saved."

@@ -49,6 +49,12 @@ namespace omw3ds
     std::string debugScreenText3DS();
     void requestScreenshot3DS();
 
+    // The player's screenshot (test #107: the Home tab's camera, shown with the start menu's experimental option,
+    // screenshotButtonEnabled3DS): both screens in one BMP, sdmc:/openmw/screenshots/<date>_<time>.bmp, written in
+    // the background; a message says when it is saved.
+    void requestPlayerScreenshot3DS();
+    bool screenshotButtonEnabled3DS(); // sdmc:/openmw/config/screenshot-button exists (read once)
+
     // Doors to exteriors are refused (with a message) when sdmc:/openmw/no-exteriors exists. Before M5's radial
     // hydration they ran out of memory; the switch stays for memory experiments.
     bool exteriorsEnabled();

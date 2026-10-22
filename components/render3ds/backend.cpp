@@ -47,6 +47,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <utility>
 #include <map>
 #include <tuple>
 #include <osg/observer_ptr>
@@ -1793,17 +1794,22 @@ namespace Render3DS
             return true;
         }
 
-        void writeLights(const float* data, int count)
+        // evaluated: the slots the bound program reads (4 for gProgram, 2 for gProgram2). Test #107: the cache placed
+        // lights in any of the 8 slots, as the 8-light program of before perf batch 2b read them all; a light kept in
+        // slot 4-7 from an earlier draw was then ignored, and which one depended on the draw order, so on the
+        // camera: objects' lighting changed as the view turned. Lights now go to the slots read, the rest of those
+        // off; the slots above keep what they hold (not read).
+        void writeLights(const float* data, int count, int evaluated)
         {
             bool used[kMaxLights] = {};
             int pending[kMaxLights];
             int pendingCount = 0;
-            // Lights already in a slot stay there.
+            // Lights already in a slot read stay there.
             for (int i = 0; i < count; ++i)
             {
                 const float* m = data + i * 16;
                 int found = -1;
-                for (int slot = 0; slot < kMaxLights && found < 0; ++slot)
+                for (int slot = 0; slot < evaluated && found < 0; ++slot)
                     if (!used[slot] && gLightSlots[slot].mKnown && gLightSlots[slot].mLit
                         && std::memcmp(gLightSlots[slot].mData, m, sizeof(LightSlot::mData)) == 0)
                         found = slot;
@@ -1816,10 +1822,10 @@ namespace Render3DS
             for (int k = 0; k < pendingCount; ++k)
             {
                 int target = -1;
-                for (int slot = 0; slot < kMaxLights && target < 0; ++slot)
+                for (int slot = 0; slot < evaluated && target < 0; ++slot)
                     if (!used[slot] && gLightSlots[slot].mKnown && !gLightSlots[slot].mLit)
                         target = slot;
-                for (int slot = 0; slot < kMaxLights && target < 0; ++slot)
+                for (int slot = 0; slot < evaluated && target < 0; ++slot)
                     if (!used[slot])
                         target = slot;
                 const float* m = data + pending[k] * 16;
@@ -1829,8 +1835,8 @@ namespace Render3DS
                 gLightSlots[target].mLit = true;
                 gLightSlots[target].mKnown = true;
             }
-            // Everything else off.
-            for (int slot = 0; slot < kMaxLights; ++slot)
+            // The other slots read off.
+            for (int slot = 0; slot < evaluated; ++slot)
                 if (!used[slot] && (!gLightSlots[slot].mKnown || gLightSlots[slot].mLit))
                 {
                     writeSlot(slot, nullptr);
@@ -1948,7 +1954,8 @@ namespace Render3DS
             gBound.mLightBuffer = buffer;
             gBound.mLightBufferModified = modified;
             gBound.mLightCount = count;
-            writeLights(count > 0 ? &(*buffer->getFloatArray())[0] : nullptr, count);
+            writeLights(count > 0 ? &(*buffer->getFloatArray())[0] : nullptr, count,
+                program == &gProgram2 ? 2 : kDrawLights);
         }
 
         // Sky passes as unlit draws (lighting = 0, color = E): the colors of files/shaders/compatibility/sky.frag.
@@ -2335,7 +2342,7 @@ namespace Render3DS
                 m[8] = m[9] = m[10] = 1.f; // diffuse
                 m[15] = 100.f; // radius
             }
-            writeLights(data, count);
+            writeLights(data, count, kDrawLights);
         }
 
         void setupTestTexture(C3D_Tex& tex, const CookedImage& image)
@@ -3376,6 +3383,28 @@ namespace Render3DS
         void checkDisplayState(); // with the MyGUI section (it reads the bottom target)
         void captureAll(const std::string& path); // likewise
 
+        // The player's screenshot (the Home tab's camera button): the top screen's finished frame, with the bottom
+        // screen as it shows, in one file written in the background (p3ds::screenshot::saveBothScreensAsync).
+        std::string gPlayerCapturePath;
+        bool gPlayerCaptureStarted = false;
+        void capturePlayer(const std::string& path)
+        {
+            const unsigned kW = gTarget->frameBuf.width, kH = gTarget->frameBuf.height; // portrait, as the LCD
+            const auto* src = static_cast<const u32*>(gTarget->frameBuf.colorBuf);
+            GSPGPU_InvalidateDataCache(src, kW * kH * 4);
+            std::vector<uint8_t> out(kW * kH * 3);
+            for (unsigned y = 0; y < kH; ++y)
+                for (unsigned x = 0; x < kW; ++x)
+                {
+                    const u32 texel = src[((y / 8) * (kW / 8) + x / 8) * 64 + morton8(x % 8, y % 8)]; // 0xRRGGBBAA
+                    uint8_t* dst = &out[(y * kW + x) * 3]; // BGR8, as the LCD framebuffer
+                    dst[0] = static_cast<uint8_t>(texel >> 8);
+                    dst[1] = static_cast<uint8_t>(texel >> 16);
+                    dst[2] = static_cast<uint8_t>(texel >> 24);
+                }
+            gPlayerCaptureStarted = p3ds::screenshot::saveBothScreensAsync(path.c_str(), out.data());
+        }
+
 #ifdef OPENMW3DS_LUMIERE
         namespace lumiere
         {
@@ -3439,6 +3468,11 @@ namespace Render3DS
             {
                 captureAll(gCapturePath);
                 gCapturePath.clear();
+            }
+            if (!gPlayerCapturePath.empty())
+            {
+                capturePlayer(gPlayerCapturePath);
+                gPlayerCapturePath.clear();
             }
             ++gFrame;
             gResolvedCount = 0;
@@ -6534,6 +6568,17 @@ namespace Render3DS
     void requestCapture(const char* path)
     {
         gCapturePath = path;
+    }
+
+    void requestPlayerCapture(const char* path)
+    {
+        gPlayerCapturePath = path;
+        gPlayerCaptureStarted = false;
+    }
+
+    bool playerCaptureStarted()
+    {
+        return std::exchange(gPlayerCaptureStarted, false);
     }
 
     const FrameStats& getLastFrameStats()

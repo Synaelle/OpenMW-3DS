@@ -1,5 +1,5 @@
 # Uploads a packaged test's changed files (out\sdcard-openmw-update\UPDATE.txt) to the 3DS's SD card over Wi-Fi,
-# in one chomp-cli call: one connection and one job, so the 3DS shows "file x of n" and the time left (a call per
+# in one baguette-cli call: one connection and one job, so the 3DS shows "file x of n" and the time left (a call per
 # file reconnected, logged in and checked the card each time).
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\upload-update.ps1
@@ -7,7 +7,7 @@
 # Only the listed files are written; folders merge into the SD card's. Then checks the CIA's size on the card.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$chomp = Join-Path $repo '.tools\chomp\chomp-cli.exe'
+$baguette = Join-Path $repo '.toolsaguetteaguette-cli.exe'
 $root = Join-Path $repo 'out\sdcard-openmw'
 $list = Join-Path $repo 'out\sdcard-openmw-update\UPDATE.txt'
 
@@ -25,12 +25,12 @@ foreach ($f in $files) {
 }
 
 $tops = Get-ChildItem $stage | ForEach-Object FullName
-& $chomp --json --quiet put @tops sd:/ | Out-Null
+& $baguette --json --quiet put @tops sd:/ | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Output "Upload failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
 Write-Output "Uploaded $($files.Count) files."
 
 if ($files -contains '/cias/openmw3ds.cia') {
-    $entries = ((& $chomp --json --quiet ls /cias) | ConvertFrom-Json).entries
+    $entries = ((& $baguette --json --quiet ls /cias) | ConvertFrom-Json).entries
     $onCard = ($entries | Where-Object name -eq 'openmw3ds.cia').size
     $local = (Get-Item (Join-Path $root 'cias\openmw3ds.cia')).Length
     if ($onCard -ne $local) { Write-Output "CIA size differs: card $onCard, local $local."; exit 1 }

@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBLEM = os.path.join(ROOT, "packaging", "source", "morrowind_emblem.png")
 OUT = os.path.join(ROOT, "platform3ds", "src", "menuemblem.inc")
 SIZE = 176
-BACKGROUND = (18, 14, 11)  # menuart::colour::background (platform3ds/include/platform3ds/menuart.hpp)
+BACKGROUND = (9, 8, 8)  # menuart::colour::background (platform3ds/include/platform3ds/menuart.hpp)
 
 
 def main():

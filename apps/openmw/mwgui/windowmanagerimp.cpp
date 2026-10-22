@@ -208,7 +208,13 @@ namespace MWGui
         , mInputBlocker(nullptr)
         , mHudEnabled(true)
         , mCursorVisible(true)
+#ifdef OPENMW_PLATFORM_3DS
+        // Inactive until the circle pad moves it (test #107, the tester: the stick cursor showed at the top left, the
+        // mouse's starting place, in the game's first windows until a button was pressed).
+        , mCursorActive(false)
+#else
         , mCursorActive(true)
+#endif
         , mCursorInteractionEnabled(false)
         , mPlayerBounty(-1)
         , mGuiModes()
@@ -831,8 +837,7 @@ namespace MWGui
 
         // Icons of forced hidden windows are displayed
 #ifdef OPENMW_PLATFORM_3DS
-        setMinimapVisibility(Settings::map().mMinimap3DS && (mAllowed & GW_Map)
-            && (!mMap->pinned() || (mForceHidden & GW_Map)));
+        setMinimapVisibility(false); // 0.1.0: no minimap (updateMap)
 #else
         setMinimapVisibility((mAllowed & GW_Map) && (!mMap->pinned() || (mForceHidden & GW_Map)));
 #endif
@@ -1057,6 +1062,11 @@ namespace MWGui
     {
         if (!mLocalMapRender)
             return;
+#ifdef OPENMW_PLATFORM_3DS
+    // 0.1.0: no minimap (test #106, the tester: the flashing meshes and interface follow the local map's drawing;
+    // off until that is fixed). LocalMap::requestMap draws no tile either.
+        return;
+#endif
 
         MWWorld::ConstPtr player = MWMechanics::getPlayer();
 

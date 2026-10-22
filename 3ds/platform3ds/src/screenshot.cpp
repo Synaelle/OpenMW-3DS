@@ -1,6 +1,9 @@
 #include <platform3ds/screenshot.hpp>
 #include <platform3ds/textfb.hpp>
 
+#include <3ds.h>
+
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -87,5 +90,118 @@ namespace p3ds::screenshot
         if (textfb::gpuOwned())
             GSPGPU_InvalidateDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
         return saveRotatedFramebuffer(path, textfb::framebuffer(), textfb::kWidth, textfb::kHeight, Format::RGB565);
+    }
+
+    namespace
+    {
+        // One save at a time: the file built in memory, written by its thread, then freed.
+        struct AsyncSave
+        {
+            char mPath[96];
+            u8* mFile;
+            size_t mSize;
+        };
+        std::atomic<bool> gSaving{ false };
+        std::atomic<int> gResult{ 0 };
+        Thread gSaveThread = nullptr;
+
+        void saveThread(void* arg)
+        {
+            auto* save = static_cast<AsyncSave*>(arg);
+            FILE* f = fopen(save->mPath, "wb");
+            bool ok = f != nullptr;
+            if (ok)
+            {
+                ok = fwrite(save->mFile, 1, save->mSize, f) == save->mSize;
+                ok = fclose(f) == 0 && ok;
+            }
+            free(save->mFile);
+            delete save;
+            gResult = ok ? 1 : -1;
+            gSaving = false;
+        }
+    }
+
+    bool saveBothScreensAsync(const char* path, const uint8_t* top)
+    {
+        if (gSaving)
+            return false;
+        if (gSaveThread != nullptr)
+        {
+            threadJoin(gSaveThread, U64_MAX); // finished (gSaving is false): only its resources are left
+            threadFree(gSaveThread);
+            gSaveThread = nullptr;
+        }
+        constexpr int kW = 400, kH = 480, kTopH = 240, kBottomX = 40, kBottomW = 320;
+        constexpr int rowBytes = kW * 3; // 1200: already a multiple of 4
+        constexpr uint32_t imageBytes = uint32_t(rowBytes) * kH;
+        auto* save = new AsyncSave;
+        std::snprintf(save->mPath, sizeof(save->mPath), "%s", path);
+        save->mSize = 54 + imageBytes;
+        save->mFile = static_cast<u8*>(calloc(1, save->mSize)); // black: the bottom screen's sides
+        if (save->mFile == nullptr)
+        {
+            delete save;
+            return false;
+        }
+        u8* header = save->mFile;
+        header[0] = 'B';
+        header[1] = 'M';
+        put32(header + 2, uint32_t(save->mSize));
+        put32(header + 10, 54);
+        put32(header + 14, 40);
+        put32(header + 18, kW);
+        put32(header + 22, kH); // positive: bottom-up rows
+        put16(header + 26, 1);
+        put16(header + 28, 24);
+        put32(header + 34, imageBytes);
+
+        if (textfb::gpuOwned())
+            GSPGPU_InvalidateDataCache(textfb::framebuffer(), textfb::kWidth * textfb::kHeight * sizeof(uint16_t));
+        const auto* bottom = static_cast<const uint16_t*>(textfb::framebuffer());
+        // Image row y (from the top) is BMP row kH-1-y. Rotated framebuffers: screen pixel (x, y) at x*240 + 239-y.
+        for (int y = 0; y < kH; ++y)
+        {
+            u8* line = save->mFile + 54 + size_t(kH - 1 - y) * rowBytes;
+            if (y < kTopH)
+            {
+                for (int x = 0; x < kW; ++x)
+                    memcpy(line + x * 3, top + (x * 240 + (239 - y)) * 3, 3);
+            }
+            else
+            {
+                const int by = y - kTopH;
+                for (int x = 0; x < kBottomW; ++x)
+                {
+                    const uint16_t px = bottom[x * 240 + (239 - by)];
+                    u8* dst = line + (kBottomX + x) * 3;
+                    dst[0] = u8((px & 0x1F) << 3);
+                    dst[1] = u8(((px >> 5) & 0x3F) << 2);
+                    dst[2] = u8(((px >> 11) & 0x1F) << 3);
+                }
+            }
+        }
+
+        // Above the main thread's priority, on the system core when there is one, like the log's flusher: it
+        // mostly waits for the SD card.
+        s32 mainPrio = 0x30;
+        svcGetThreadPriority(&mainPrio, CUR_THREAD_HANDLE);
+        gSaving = true;
+        gSaveThread = threadCreate(saveThread, save, 8 * 1024, mainPrio - 1, 1, false);
+        if (gSaveThread == nullptr)
+            gSaveThread = threadCreate(saveThread, save, 8 * 1024, mainPrio - 1, 0, false);
+        if (gSaveThread == nullptr)
+        {
+            gSaving = false;
+            free(save->mFile);
+            delete save;
+            return false;
+        }
+        return true;
+    }
+
+    int takeAsyncResult()
+    {
+        return gResult.exchange(0);
     }
 }

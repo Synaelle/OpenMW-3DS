@@ -5,6 +5,7 @@
 
 Outputs (committed; read at runtime as PNG, the 3DS build has OSG's PNG reader):
   packaging/ui3ds/textures/omw_3ds_home.png  house (12 high on 16x16): the tab bar's Home button, back to the HUD
+  packaging/ui3ds/textures/omw_3ds_camera.png  camera (10 high on 16x16): the Home tab's screenshot button
 
 The icons are white with a dark outline: the code tints them with the interface's font colours (sand, blue when
 selected), as MW_Button tints its caption, so they follow the game's colours.
@@ -32,6 +33,19 @@ HOME = [
     "..KWWKKWWK..",
     "..KKKKKKKK..",
 ]
+# The camera: body, viewfinder bump on top, a round lens (a light ring, dark inside).
+CAMERA = [
+    "....KKKKK....",
+    "...KWWWWWK...",
+    "KKKKWWWWWKKKK",
+    "KWWWWKKKWWWWK",
+    "KWWWKWWWKWWWK",
+    "KWWWKWKWKWWWK",
+    "KWWWKWWWKWWWK",
+    "KWWWWKKKWWWWK",
+    "KWWWWWWWWWWWK",
+    "KKKKKKKKKKKKK",
+]
 TEXTURE = 16
 
 
@@ -52,8 +66,9 @@ def draw(rows):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    draw(HOME).save(os.path.join(OUT, "omw_3ds_home.png"))
-    print("written:", os.path.join(OUT, "omw_3ds_home.png"))
+    for name, rows in (("omw_3ds_home.png", HOME), ("omw_3ds_camera.png", CAMERA)):
+        draw(rows).save(os.path.join(OUT, name))
+        print("written:", os.path.join(OUT, name))
 
 
 if __name__ == "__main__":

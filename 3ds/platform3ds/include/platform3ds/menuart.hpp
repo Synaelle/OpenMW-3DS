@@ -21,17 +21,21 @@ namespace p3ds::menuart
         return uint16_t(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
     }
 
-    // The game's own interface colours (normal text, its header gold) on a warm black.
+    // Bone and ash on ebony black, a dark red mark (test #107).
     namespace colour
     {
-        constexpr uint16_t background = rgb(18, 14, 11); // tools/make_menu_emblem.py blends the emblem over it
-        constexpr uint16_t line = rgb(84, 66, 42);
-        constexpr uint16_t accent = rgb(232, 186, 96);
-        constexpr uint16_t title = rgb(223, 201, 159);
-        constexpr uint16_t selected = rgb(250, 236, 200);
-        constexpr uint16_t text = rgb(202, 165, 96);
-        constexpr uint16_t dim = rgb(150, 122, 78);
-        constexpr uint16_t disabled = rgb(96, 80, 56);
+        // Test #107 (the tester: darker, no yellow): "Ebony & bone", docs/start-menu-palette-a.png, its footer lighter.
+        // The background as bytes too: the top screen (BGR8) is filled with it around the emblem, which
+        // tools/make_menu_emblem.py blends over the same colour (test #107: a box showed when the two differed).
+        constexpr uint8_t backgroundRgb[3] = { 9, 8, 8 };
+        constexpr uint16_t background = rgb(backgroundRgb[0], backgroundRgb[1], backgroundRgb[2]);
+        constexpr uint16_t line = rgb(56, 52, 49);
+        constexpr uint16_t accent = rgb(176, 58, 46);
+        constexpr uint16_t title = rgb(214, 208, 196);
+        constexpr uint16_t selected = rgb(244, 240, 232);
+        constexpr uint16_t text = rgb(170, 164, 154);
+        constexpr uint16_t dim = rgb(146, 140, 132);
+        constexpr uint16_t disabled = rgb(84, 80, 76);
     }
 
     // The margin left and right of everything.
