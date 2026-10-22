@@ -401,7 +401,12 @@ namespace MWGui
         if (state == MWBase::StateManager::State_Running)
             buttons.emplace_back("return");
 
-        buttons.emplace_back("newgame");
+#ifdef OPENMW_PLATFORM_3DS
+        // A new game only from the main menu: starting one over a running game is untested on the console and
+        // could run out of memory (the tester, 22/10/2026).
+        if (state != MWBase::StateManager::State_Running)
+#endif
+            buttons.emplace_back("newgame");
 
         if (state == MWBase::StateManager::State_Running
             && MWBase::Environment::get().getWorld()->getGlobalInt(MWWorld::Globals::sCharGenState) == -1
