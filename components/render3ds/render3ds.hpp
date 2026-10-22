@@ -3,7 +3,7 @@
 
 // Nintendo 3DS rendering backend (citro3d).
 //
-// OpenSceneGraph keeps the scene graph, update and cull; its GL calls go to a stub library. This backend
+// OpenSceneGraph keeps the scene graph, update and cull. Its GL calls go to a stub library. This backend
 // replaces the draw: an OSG hook (deps/patches/osg/0003) hands every RenderStage to it, and it walks the
 // culled render bins itself, emitting citro3d commands for each leaf (geometry uploaded once to linear
 // memory, textures from the PC-cooked pack, OpenMW's lighting evaluated per vertex on the PICA).
@@ -36,16 +36,13 @@ namespace Render3DS
     bool isActive();
     // Why rendering stopped (a GPU hang: the GPU core was reset and the game runs on headless), or nullptr.
     const char* failure();
-    // Whether MyGUI is drawn (M8; off: the M6 text menus). While it isn't, its batches aren't built either (cull
+    // Whether MyGUI is drawn (M8, off: the M6 text menus). While it isn't, its batches aren't built either (cull
     // time). Set before OpenMW creates its UI (the canvas size depends on it).
     void setDrawsGui(bool draws);
     bool drawsGui();
-    // Which path draws the interface, for the debug display: "ui CPU", or the deprecated GPU one.
-    const char* interfacePath();
-    bool interfaceByCpu(); // the CPU path (the port's one) rather than the deprecated GPU one
 
     // While a loading screen is up (hardware test #54: the cell being torn down and rebuilt drew smears on the
-    // top screen), the top screen keeps its last frame: no clear, no scene draws; the interface still draws.
+    // top screen), the top screen keeps its last frame: no clear, no scene draws. The interface still draws.
     void setHoldTopScreen(bool hold);
     // Both screens' interface drawn whole again: after a system applet (the keyboard), whose transition writes
     // the screens' capture into VRAM over the top overlay texture (test #63).
@@ -53,13 +50,13 @@ namespace Render3DS
     // MyGUI laid its layers out again this frame (myguirendermanager.cpp): its batches may differ from the last
     // ones. Without it, the backend knows they're the same and skips its fingerprint of them.
     void noteGuiCollected();
-    // Only the HUD is up (in game, no menu, no page; n3ds/hud3ds.cpp): its layout may then run at most every 3rd
+    // Only the HUD is up (in game, no menu, no page, n3ds/hud3ds.cpp): its layout may then run at most every 3rd
     // frame (myguirendermanager.cpp).
     void setHudOnly(bool hudOnly);
     bool hudOnly();
 
     // MyGUI's canvas has the console's shape: the top screen (400x240) at (0, 0) and the bottom screen (320x240)
-    // centred under it at (40, 240). Its vertices arrive in the canvas's clip space; each screen draws them through
+    // centred under it at (40, 240). Its vertices arrive in the canvas's clip space. Each screen draws them through
     // its own projection and the GPU clips what lies on the other screen.
     constexpr int kGuiCanvasWidth = 400;
     constexpr int kGuiCanvasHeight = 480;
@@ -73,7 +70,7 @@ namespace Render3DS
         Premultiplied, // ONE, ONE_MINUS_SRC_ALPHA (character preview)
     };
 
-    // One MyGUI draw: triangles of MyGUI::Vertex (float x, y, z; colour bytes R, G, B, A; float u, v).
+    // One MyGUI draw: triangles of MyGUI::Vertex (float x, y, z, colour bytes R, G, B, A, float u, v).
     struct GuiBatch
     {
         const osg::Texture* mTexture; // nullptr: vertex colour only
@@ -118,9 +115,7 @@ namespace Render3DS
         uint32_t mWeatherSkipped = 0; // rain drops and storm particles left out near the eye (perf batch 1)
         uint32_t mFlameReplays = 0; // particle systems drawn from a recorded loop (perf batch 2)
         uint32_t mSameState = 0; // draws that kept the previous draw's state (perf batch 4)
-        uint32_t mGuiDraws = 0; // GUI draws (both screens; batches with one texture and blend merged)
-        uint32_t mGuiTextureBinds = 0; // distinct textures of the GUI passes, summed (one per screen: the UI atlas)
-        uint32_t mGuiTopFrames = 0; // frames that redrew the top screen's interface texture
+        uint32_t mGuiDraws = 0; // GUI draws (both screens, batches with one texture and blend merged)
         uint32_t mGuiBottomFrames = 0; // frames in which the bottom screen was redrawn (0 or 1)
     };
     const FrameStats& getLastFrameStats();
@@ -143,7 +138,7 @@ namespace Render3DS
     // nullptr if the pack has no texture for this normalized VFS path (extension ignored).
     osg::ref_ptr<osg::Image> loadCookedImage(std::string_view normalizedPath);
 
-    // The size of the original image a pack texture was cooked from (MyGUI measures skins in its pixels); false
+    // The size of the original image a pack texture was cooked from (MyGUI measures skins in its pixels). false
     // for any other image.
     bool cookedSourceSize(const osg::Image& image, int& width, int& height);
 
@@ -156,7 +151,7 @@ namespace Render3DS
     {
         std::vector<uint16_t> mBones; // palette slot -> the mesh's bone (RigGeometry's bone list)
         std::vector<uint16_t> mVertices; // the batch's vertices: source vertex index
-        std::vector<uint8_t> mSlots; // 4 per vertex: palette slot x 3 (the slot's first row); unused slots 0
+        std::vector<uint8_t> mSlots; // 4 per vertex: palette slot x 3 (the slot's first row). Unused slots 0
         std::vector<uint8_t> mWeights; // 4 per vertex: 0..255, summing to 255
         std::vector<uint16_t> mIndices; // triangle list, batch vertex indices
     };
@@ -173,14 +168,14 @@ namespace Render3DS
         osg::ref_ptr<const SkinMesh> mMesh;
         std::vector<osg::Matrixf> mBones;
     };
-    // Whether skinned meshes are drawn by the skinned shader; otherwise RigGeometry skins them on the CPU.
+    // Whether skinned meshes are drawn by the skinned shader. Otherwise RigGeometry skins them on the CPU.
     bool gpuSkinning();
 
     // Performance batch 1 (docs/MW3DS_STUDY.md), each on unless its file is on the SD card (read once, at the first
     // call), so a hardware run can compare with and without:
-    //   thin rain and faded storm clouds near the eye (sdmc:/openmw/no-thinweather);
-    //   distant actors' bones updated every 2nd/3rd/4th frame by distance (sdmc:/openmw/no-posecadence);
-    //   scenery parts culled at 10 pixels instead of the setting's 6 (sdmc:/openmw/no-smallcull).
+    //   thin rain and faded storm clouds near the eye (sdmc:/openmw/no-thinweather).
+    //   Distant actors' bones updated every 2nd/3rd/4th frame by distance (sdmc:/openmw/no-posecadence).
+    //   Scenery parts culled at 10 pixels instead of the setting's 6 (sdmc:/openmw/no-smallcull).
     bool thinWeather();
     bool poseCadence();
     bool smallCullBoost();

@@ -30,8 +30,8 @@ namespace Render3DS
     {
         // tools/cook_textures.py
         constexpr char kMagic[4] = { 'O', '3', 'T', 'P' };
-        // 2: the UI atlas (FLAG_ATLAS entries, "ui-atlas/<n>"); 3: one 512x256 atlas with the reserved icon and map
-        // regions; 4: the TrueType fonts' glyphs in it (the font and glyph tables).
+        // 2: the UI atlas (FLAG_ATLAS entries, "ui-atlas/<n>"). 3: one 512x256 atlas with the reserved icon and map
+        // regions. 4: the TrueType fonts' glyphs in it (the font and glyph tables).
         constexpr uint32_t kVersion = 4;
 
         struct PackHeader
@@ -91,9 +91,6 @@ namespace Render3DS
             }
             return -1;
         }
-        std::vector<CookedFont> gFonts;
-        std::vector<CookedGlyph> gGlyphs;
-        uint32_t gReservedPos = 0;
 
         uint64_t fnv1a64(std::string_view text)
         {
@@ -150,7 +147,7 @@ namespace Render3DS
 
     namespace
     {
-        // VRAM (6 MB at 0x1F000000): the render targets and the top screen's interface overlay take ~1 MB; scene
+        // VRAM (6 MB at 0x1F000000): the render targets and the top screen's interface overlay take ~1 MB. Scene
         // textures fill the rest when it has room, which leaves that much linear memory to the heap's large pool
         // (M9). vramAlloc has no lock: one here.
         constexpr uintptr_t kVramBegin = 0x1F000000, kVramEnd = 0x1F600000;
@@ -236,40 +233,22 @@ namespace Render3DS
             std::fclose(file);
             return false;
         }
+        // The header's reserved words held the atlas fonts and the GPU interface's reserved atlas region (packs
+        // cooked before M20): not read any more.
         std::vector<PackEntry> index(header.mCount);
-        std::vector<CookedFont> fonts(header.mReserved[1]);
-        static_assert(sizeof(CookedFont) == 24 && sizeof(CookedGlyph) == 32);
         if (std::fseek(file, static_cast<long>(header.mIndexOffset), SEEK_SET) != 0
-            || std::fread(index.data(), sizeof(PackEntry), index.size(), file) != index.size()
-            || std::fseek(file, static_cast<long>(header.mReserved[0]), SEEK_SET) != 0
-            || std::fread(fonts.data(), sizeof(CookedFont), fonts.size(), file) != fonts.size())
+            || std::fread(index.data(), sizeof(PackEntry), index.size(), file) != index.size())
         {
             P3DS_LOGE("render3ds: %s: truncated index", path);
             std::fclose(file);
             return false;
         }
-        size_t glyphCount = 0;
-        for (const CookedFont& font : fonts)
-            glyphCount = std::max<size_t>(glyphCount, font.mFirstGlyph + font.mGlyphCount);
-        std::vector<CookedGlyph> glyphs(glyphCount);
-        if (std::fread(glyphs.data(), sizeof(CookedGlyph), glyphs.size(), file) != glyphs.size())
-        {
-            P3DS_LOGE("render3ds: %s: truncated glyph table", path);
-            std::fclose(file);
-            return false;
-        }
-        gFonts = std::move(fonts);
-        gGlyphs = std::move(glyphs);
-        gReservedPos = header.mReserved[2];
         // Every texture is one read straight into linear memory: no stdio buffering in between.
         std::setvbuf(file, nullptr, _IONBF, 0);
         gPack = file;
         gIndex = index;
         gPacks.insert(gPacks.begin(), Pack{ file, std::move(index) });
-        P3DS_LOGI("render3ds: texture pack %s: %u textures, %u fonts (%u glyphs) in the UI atlas, its reserved "
-                  "region at %u,%u",
-            path, (unsigned)gIndex.size(), (unsigned)gFonts.size(), (unsigned)gGlyphs.size(),
-            (unsigned)(gReservedPos & 0xFFFF), (unsigned)(gReservedPos >> 16));
+        P3DS_LOGI("render3ds: texture pack %s: %u textures", path, (unsigned)gIndex.size());
         return true;
     }
 
@@ -301,41 +280,10 @@ namespace Render3DS
         return true;
     }
 
-    const CookedFont* cookedFont(std::string_view omwfontPath, unsigned ppem, const CookedGlyph** glyphs)
-    {
-        const uint64_t hash = fnv1a64(stripExtension(omwfontPath));
-        for (const CookedFont& font : gFonts)
-            if (font.mHash == hash && font.mPpem == ppem)
-            {
-                *glyphs = gGlyphs.data() + font.mFirstGlyph;
-                return &font;
-            }
-        return nullptr;
-    }
-
-    void uiAtlasReservedRegion(unsigned& x, unsigned& y)
-    {
-        x = gReservedPos & 0xFFFF;
-        y = gReservedPos >> 16;
-    }
-
-    bool uiAtlasWhiteCell(unsigned& x, unsigned& y, unsigned& size)
-    {
-        static const uint64_t hash = fnv1a64("ui/white");
-        const auto it = std::lower_bound(gIndex.begin(), gIndex.end(), hash,
-            [](const PackEntry& entry, uint64_t value) { return entry.mHash < value; });
-        if (it == gIndex.end() || it->mHash != hash || (it->mFlags & 8) == 0)
-            return false;
-        x = it->mAtlasPos & 0xFFFF;
-        y = it->mAtlasPos >> 16;
-        size = it->mSrcWidth;
-        return true;
-    }
-
     namespace
     {
         // Scene textures (not interface images: the CPU interface reads those) go to VRAM through a heap buffer
-        // (the file system can't write VRAM); nullptr when VRAM has no room.
+        // (the file system can't write VRAM). nullptr when VRAM has no room.
         // The CPU writes VRAM since packaging/app.rsf maps it writable (it was read-only: hardware test #71 faulted
         // in the memcpy below).
         constexpr bool kTexturesInVram = true;

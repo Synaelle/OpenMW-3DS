@@ -53,7 +53,7 @@ namespace Render3DS
         // UI images are padded, not resampled (FLAG_PADDED): the image fills sourceWidth x sourceHeight from the
         // top left, so texture coordinates over the image are scaled by source / cooked size.
         bool padded() const { return (mFlags & 4) != 0; }
-        // Small UI images are also packed into a UI atlas (FLAG_ATLAS; uiAtlasTexture): the image's (u, v) is at
+        // Small UI images are also packed into a UI atlas (FLAG_ATLAS, uiAtlasTexture): the image's (u, v) is at
         // atlas texel (atlasX + u * sourceWidth, atlasY + v * sourceHeight), or with the axes swapped when it is
         // stored transposed (atlasX + v * sourceHeight, atlasY + u * sourceWidth). A 1-texel repeated-edge gutter
         // surrounds it. This image's own data is still the standalone texture (for skins that tile).
@@ -67,7 +67,7 @@ namespace Render3DS
         // Set for an image in VRAM: where its data is in the texture pack (reloadVramTextures).
         void setPackOffset(uint32_t offset) { mPackOffset = offset; }
         uint32_t packOffset() const { return mPackOffset; }
-        // Which texture pack holds it (0: the main one; an expansion's pack after it).
+        // Which texture pack holds it (0: the main one, an expansion's pack after it).
         void setPackIndex(uint8_t index) { mPackIndex = index; }
         uint8_t packIndex() const { return mPackIndex; }
 
@@ -91,33 +91,6 @@ namespace Render3DS
     // The UI atlas texture (pack entry "ui-atlas/<index>", loaded on first use and kept: clamped, bilinear, no
     // mipmaps), or nullptr when the pack has none. Render thread.
     osg::Texture* uiAtlasTexture(unsigned index);
-
-    // A TrueType font at one pixel size whose glyphs the cooker rendered into the UI atlas (tools/cook_textures.py
-    // FONTS, FONT_SIZES), with MyGUI's GlyphInfo metrics; the special codes (tab, selection, cursor, substitute)
-    // are MyGUI's FontCodeType values.
-    struct CookedGlyph
-    {
-        uint32_t mCode;
-        uint16_t mX, mY, mW, mH; // the cell in the atlas; w = h = 0: nothing drawn
-        float mWidth, mHeight, mAdvance, mBearingX, mBearingY;
-    };
-    struct CookedFont
-    {
-        uint64_t mHash; // of "fonts/<name>" (the .omwfont's key)
-        uint16_t mPpem;
-        uint16_t mLineHeight; // MyGUI's DefaultHeight
-        uint32_t mGlyphCount;
-        uint32_t mFirstGlyph; // into the pack's glyph table
-        uint32_t mReserved;
-    };
-    // The cooked font of an .omwfont VFS path ("fonts/mysticcards.omwfont") at a pixel size, with its glyphs, or
-    // nullptr. Any thread after the pack is open.
-    const CookedFont* cookedFont(std::string_view omwfontPath, unsigned ppem, const CookedGlyph** glyphs);
-    // The top-left texel of the atlas's reserved region (the icon slots, the map square under them).
-    void uiAtlasReservedRegion(unsigned& x, unsigned& y);
-    // The atlas's opaque white cell (the pack's "ui/white" entry: x, y and its side), across which the interface's
-    // plain-colour fills are drawn; false when the pack has none.
-    bool uiAtlasWhiteCell(unsigned& x, unsigned& y, unsigned& size);
 }
 
 #endif

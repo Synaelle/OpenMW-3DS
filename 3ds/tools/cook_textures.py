@@ -36,20 +36,9 @@ short. The image's entry keeps its own standalone texture (the runtime uses it f
 coordinates leave [0, 1]) and records its atlas and position (flag 8, see the index), so the renderer maps the
 batch's texture coordinates into the atlas and binds one texture for the whole interface.
 
-The same atlas holds (version 3):
-  - the glyphs of OpenMW's TrueType fonts (FONTS: resources/vfs/fonts/*.omwfont, the game font and the scroll
-    font) at the pixel sizes the port's interface uses (FONT_SIZES: the windows' size and the journal's), rendered
-    with FreeType exactly as MyGUI's ResourceTrueTypeFont renders them (same ppem, hinting and metrics; white with
-    the coverage in alpha), each glyph's cell placed with a gutter, plus the three uniform cells MyGUI's text
-    cursor and selection use. The font table (see below) gives the runtime every glyph's atlas rectangle and
-    metrics, so the font loader builds MyGUI manual fonts on the atlas instead of letting MyGUI render the fonts
-    into pages of their own: no font texture is ever bound;
-  - a reserved icon region (ICON_SLOTS slots of ICON_SIZE texels) the runtime fills with the item and effect
-    icons the interface shows, and a reserved MAP_SIZE square for the local map, both at the bottom right (the
-    regions' place is in the header). The runtime copies into them while the GPU is idle.
-
 Pack layout (little endian), read by components/render3ds/texturepack.cpp:
-  header  (32 bytes): magic 'O3TP', version, entry count, index offset, data offset, 3 x reserved
+  header  (32 bytes): magic 'O3TP', version, entry count, index offset, data offset, 3 x reserved (0; packs
+          cooked before M20 kept the atlas fonts and the GPU interface's reserved region there, read no more)
   index   (entry count x 32 bytes, sorted by hash):
           u64 hash   FNV-1a 64 of the normalized VFS path without extension ("textures/tx_wood")
           u32 offset, u32 size        (texture data, from the start of the file)
@@ -66,17 +55,7 @@ atlas (atlas, atlasPos), 16 = stored transposed in the atlas (atlas x runs along
 (u, v) is at atlas texel (x + v * srcHeight, y + u * srcWidth)), 32 = the atlas copy is half the size on each
 side (the item frames, ATLAS_HALVED_PREFIX).
 
-  fonts   (at the header's fonts offset: font count x 24 bytes, then all the glyphs, 32 bytes each)
-          font:  u64 hash of the .omwfont's key ("fonts/mysticcards"), u16 ppem (the pixel size), u16 line height
-                 (MyGUI's DefaultHeight), u32 glyph count, u32 first glyph, u32 reserved
-          glyph: u32 code (MyGUI's FontCodeType for the specials: tab, selected, selected_back, cursor,
-                 substitute), u16 x, y, w, h (the cell in the atlas; w = h = 0: nothing drawn), f32 width, height,
-                 advance, bearing x, bearing y (MyGUI's GlyphInfo)
-  header reserved[0] = fonts offset, reserved[1] = font count, reserved[2] = icon region x | y << 16 (the icon
-  slots fill it row by row from the top left; the map square sits under them at the same x).
-
-Version 4 (one 512x256 atlas with the TrueType fonts and the reserved regions); older packs are refused by the
-runtime. Needs the freetype-py module (pip install freetype-py) besides Pillow and numpy.
+Version 4 (one 512x256 UI atlas); older packs are refused by the runtime. Needs Pillow and numpy.
 
 Usage:
   python tools/cook_textures.py --data "D:/.../Morrowind/Data Files" --resources build/openmw/resources/vfs \
@@ -116,7 +95,7 @@ FLAG_ATLAS = 8
 FLAG_ATLAS_TRANSPOSED = 16
 FLAG_ATLAS_HALVED = 32
 # ItemWidget's frames over the icons (named by concatenation in the code, so not found by the reference scan),
-# 64x64 drawn at about 40 px: their atlas copy is halved (flag 32; their own texture keeps the full size).
+# 64x64 drawn at about 40 px: their atlas copy is halved (flag 32, their own texture keeps the full size).
 ATLAS_HALVED_PREFIX = "textures/menu_icon_"
 
 # UI images (see the docstring). Prefixes of normalized paths, then basename prefixes under textures/.
@@ -130,34 +109,6 @@ ATLAS_KEY = "ui-atlas/"
 ATLAS_WIDTH = 512
 ATLAS_HEIGHT = 256
 ATLAS_GUTTER = 1
-# The TrueType fonts whose glyphs go in the atlas (the port's openmw.cfg: Fonts_Font_0 and Fonts_Font_2, the game
-# and scroll fonts; the debug console's DejaVu mono stays a runtime font) and the pixel sizes (FreeType ppem) the
-# port's interface uses them at: the windows (font size 16 at the .omwfont's 70 dpi) and the journal's scaled
-# layer. The runtime asks for (font, ppem) and falls back to MyGUI's own rendering for a size that isn't here.
-FONTS = ("mysticcards", "demonicletters")
-FONT_SIZES = (16, 10)
-# The code points cooked, within each .omwfont's own ranges: ASCII, Latin-1 and the punctuation OpenMW's text uses
-# (the .omwfont's full ranges, Latin Extended and Cyrillic, would need a page of their own; a code point outside
-# shows the font's substitute, as a missing glyph does). A setup for another language extends this.
-FONT_CODE_RANGES = ((32, 126), (160, 255), (8208, 8230))
-FONT_RECORD_SIZE = 24
-GLYPH_RECORD_SIZE = 32
-# MyGUI's FontCodeType for the glyphs every font has besides its characters.
-CODE_TAB, CODE_SPACE = 0x0009, 0x0020
-CODE_SELECTED, CODE_SELECTED_BACK, CODE_CURSOR, CODE_NOT_DEFINED = 0xFFFFFFFC, 0xFFFFFFFD, 0xFFFFFFFE, 0xFFFFFFFF
-# The uniform cells those specials sample (MyGUI's charMask alphas), one texel each.
-SPECIAL_CELLS = {"ui/font-selected": 0x88, "ui/font-selected-back": 0x60, "ui/font-cursor": 0xFF}
-# An opaque white 8x8 cell, a pack entry of its own ("ui/white", in the atlas like any skin image): the runtime
-# draws OpenMW's plain-colour fills ("white", "black", "transparent" 8x8 runtime images) across it with their
-# colour in the vertices, so they are ordinary atlas quads (hardware test #49: texture coordinates collapsed onto
-# one texel flashed).
-WHITE_KEY = "ui/white"
-WHITE_SIZE = 8
-# The reserved regions, bottom right: icon slots (an item icon is 32x32; the Inventory window shows 5x4, the quick
-# keys and the effects a few more) and the local map square under them.
-ICON_SIZE = 32
-ICON_SLOTS = (7, 2)
-MAP_SIZE = 64
 # Not atlased: the item icons (1,200 of them: two more atlases, 8 MB of linear memory for the Inventory tab alone),
 # book and level-up art, birthsigns (big pictures).
 ATLAS_EXCLUDED = ("icons/", "bookart/", "textures/levelup/", "textures/birthsigns/")
@@ -258,29 +209,16 @@ def atlas_gutters(width, height):
 
 def cell_gutters(key, width, height):
     """(left, top, right, bottom, numpy pad mode) of a cell: a skin image repeats its edge all around (bilinear
-    filtering at its edge sees the edge itself); a glyph cell, drawn texel for texel and transparent at its edges
-    anyway, only gets a transparent texel right and below (as MyGUI's own font pages space glyphs), its left and
-    top neighbours' gutters keeping it apart from them."""
-    if key.startswith("glyph:"):
-        return 0, 0, 1, 1, "constant"
+    filtering at its edge sees the edge itself)."""
     gx, gy = atlas_gutters(width, height)
     return gx, gy, gx, gy, "edge"
 
 
-def reserved_region():
-    """The reserved rectangle (x, y, w, h), bottom right: the icon slots with the map square under them."""
-    w = max(ICON_SLOTS[0] * ICON_SIZE, MAP_SIZE)
-    h = ICON_SLOTS[1] * ICON_SIZE + MAP_SIZE
-    return ATLAS_WIDTH - w, ATLAS_HEIGHT - h, w, h
-
-
 def pack_atlas(cells):
     """cells: [(key, rgba numpy array)] -> {key: (x, y)} of each cell's top-left texel inside its gutter. Guillotine
-    packing of one ATLAS_WIDTH x ATLAS_HEIGHT page with the reserved region kept free: the page starts as two free
-    rectangles around the region; each cell (tallest first, then widest) takes the free rectangle whose shorter
+    packing of one ATLAS_WIDTH x ATLAS_HEIGHT page: each cell (tallest first, then widest) takes the free rectangle whose shorter
     leftover is the smallest and splits its remainder along the longer leftover; the long strips go first."""
-    rx, ry, rw, rh = reserved_region()
-    free = [(0, 0, ATLAS_WIDTH, ry), (0, ry, rx, ATLAS_HEIGHT - ry)]
+    free = [(0, 0, ATLAS_WIDTH, ATLAS_HEIGHT)]
     sized = []
     for key, texels in cells:
         h, w = texels.shape[:2]
@@ -293,7 +231,7 @@ def pack_atlas(cells):
     for key, w, h, gx, gy in sorted(sized, key=lambda c: (0 if c[1] > ATLAS_WIDTH // 4 else 1, -c[2], -c[1], c[0])):
         best = None
         # A skin image may also go in turned on its side (flag 16) when that is the only way it still fits.
-        for turned in ((False, True) if not key.startswith(("glyph:", "ui/")) and w != h else (False,)):
+        for turned in ((False, True) if w != h else (False,)):
             cw, ch = (h, w) if turned else (w, h)
             for index, (fx, fy, fw, fh) in enumerate(free):
                 if cw <= fw and ch <= fh:
@@ -349,116 +287,6 @@ def build_atlas(cells, placements, tex3ds):
     return (fnv1a64(key), key, data, width, height, width, height, GPU_RGBA8, 1, FLAG_ALPHA, 0, 0), canvas
 
 
-def read_omwfont(path):
-    """OpenMW's .omwfont (a MyGUI ResourceTrueTypeFont definition): (ttf file name, properties, code ranges)."""
-    import xml.etree.ElementTree as ET
-    root = ET.parse(path).getroot()
-    resource = root.find("Resource")
-    if resource is None or resource.get("type") != "ResourceTrueTypeFont":
-        raise RuntimeError(f"{path}: not a ResourceTrueTypeFont")
-    props = {p.get("key"): p.get("value") for p in resource.findall("Property")}
-    include, exclude = [], []
-    codes = resource.find("Codes")
-    if codes is not None:
-        for code in codes.findall("Code"):
-            for key, target in (("range", include), ("hide", exclude)):
-                value = code.get(key)
-                if value:
-                    parts = value.split()
-                    target.append((int(parts[0]), int(parts[-1])))
-    return props["Source"], props, include, exclude
-
-
-def sfnt_os2(ttf_path):
-    """(units per em, usWinAscent, usWinDescent, sTypoAscender, sTypoDescender) from the TrueType tables."""
-    with open(ttf_path, "rb") as f:
-        raw = f.read()
-    count = struct.unpack(">H", raw[4:6])[0]
-    tables = {}
-    for i in range(count):
-        tag, _, offset, length = struct.unpack(">4sIII", raw[12 + 16 * i : 28 + 16 * i])
-        tables[tag] = offset
-    units = struct.unpack(">H", raw[tables[b"head"] + 18 : tables[b"head"] + 20])[0]
-    os2 = tables.get(b"OS/2")
-    if os2 is None:
-        return units, 0, 0, 0, 0
-    typo_asc, typo_desc = struct.unpack(">hh", raw[os2 + 68 : os2 + 72])
-    win_asc, win_desc = struct.unpack(">HH", raw[os2 + 74 : os2 + 78])
-    return units, win_asc, win_desc, typo_asc, typo_desc
-
-
-def render_truetype(fonts_dir, name, ppem):
-    """One font at one pixel size, as MyGUI's ResourceTrueTypeFont makes it: (line height, [(code, rgba cell or
-    None, width, height, advance, bearing x, bearing y)]). Glyphs are loaded hinted (FT_LOAD_DEFAULT) and rendered
-    8-bit; MyGUI copies that coverage into alpha under white whatever the Antialias property says."""
-    import freetype
-    omwfont = next((os.path.join(fonts_dir, f) for f in os.listdir(fonts_dir) if f.lower() == name + ".omwfont"), None)
-    if omwfont is None:
-        raise RuntimeError(f"{name}.omwfont not found in {fonts_dir}")
-    source, props, include, exclude = read_omwfont(omwfont)
-    ttf = os.path.join(fonts_dir, source)
-    face = freetype.Face(ttf)
-    face.set_char_size(ppem * 64, 0, 72, 72)
-    if face.size.x_ppem != ppem:
-        raise RuntimeError(f"{source}: FreeType picked {face.size.x_ppem} ppem for {ppem}")
-    # The ascent and descent as MyGUI takes them: the largest of the face's and the OS/2 header's (integer maths).
-    units, win_asc, win_desc, typo_asc, typo_desc = sfnt_os2(ttf)
-    ascent = max(face.size.ascender >> 6, win_asc * ppem // units, typo_asc * ppem // units)
-    descent = max(-face.size.descender >> 6, win_desc * ppem // units, -typo_desc * ppem // units)
-    line_height = ascent + descent
-    offset_height = float(props.get("OffsetHeight", 0))
-    tab_width = float(props.get("TabWidth", 0))
-    substitute = int(props.get("SubstituteCode", CODE_NOT_DEFINED)) & 0xFFFFFFFF
-
-    def glyph(code, index):
-        face.load_glyph(index, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_RENDER)
-        g = face.glyph
-        metrics = g.metrics
-        bearing_x = metrics.horiBearingX / 64.0
-        width = max(float(g.bitmap.width), metrics.width / 64.0)
-        height = max(float(g.bitmap.rows), metrics.height / 64.0)
-        advance = metrics.horiAdvance / 64.0 - bearing_x
-        bearing_y = math.floor(ascent - metrics.horiBearingY / 64.0 - offset_height)
-        cell = None
-        cw, ch = math.ceil(width), math.ceil(height)
-        if cw > 0 and ch > 0 and g.bitmap.width > 0 and g.bitmap.rows > 0:
-            cell = np.zeros((ch, cw, 4), dtype=np.uint8)
-            cell[..., :3] = 255
-            rows = np.frombuffer(bytes(g.bitmap.buffer), dtype=np.uint8).reshape(g.bitmap.rows, g.bitmap.pitch)
-            cell[: g.bitmap.rows, : g.bitmap.width, 3] = rows[:, : g.bitmap.width]
-        return (code, cell, width, height, advance, bearing_x, float(bearing_y))
-
-    codes = set()
-    for lo, hi in include:
-        codes.update(range(lo, hi + 1))
-    if not codes:
-        codes.update(range(0, 0x10000))
-    for lo, hi in exclude:
-        codes.difference_update(range(lo, hi + 1))
-    codes.add(CODE_SPACE)
-    codes.intersection_update(c for lo, hi in FONT_CODE_RANGES for c in range(lo, hi + 1))
-    glyphs = []
-    for code in sorted(codes):
-        index = face.get_char_index(code)
-        if index == 0:
-            continue
-        glyphs.append(glyph(code, index))
-    by_code = {g[0]: g for g in glyphs}
-    if substitute != CODE_NOT_DEFINED and substitute in by_code:
-        g = by_code[substitute]
-        glyphs.append((CODE_NOT_DEFINED,) + g[1:])
-    else:
-        glyphs.append(glyph(CODE_NOT_DEFINED, 0))
-    if tab_width == 0 and CODE_SPACE in by_code:
-        tab_width = 8.0 * by_code[CODE_SPACE][4]
-    glyphs.append((CODE_TAB, None, 0.0, 0.0, tab_width, 0.0, 0.0))
-    # The selection and cursor glyphs: uniform cells, their size is the line height.
-    glyphs.append((CODE_SELECTED, "ui/font-selected", 1.0, float(line_height), 0.0, 0.0, 0.0))
-    glyphs.append((CODE_SELECTED_BACK, "ui/font-selected-back", 1.0, float(line_height), 0.0, 0.0, 0.0))
-    glyphs.append((CODE_CURSOR, "ui/font-cursor", 2.0, float(line_height), 0.0, 0.0, 0.0))
-    return line_height, glyphs
-
-
 def collect_sources(data_dir, archives, prefixes, resources=None, after=(), loose=True):
     """name -> (file, offset, size). Later archives and loose files override earlier ones (VFS order); OpenMW's own
     resources (resources/vfs) come first, as OpenMW adds them before the game's data, and the folders in `after`
@@ -484,7 +312,7 @@ def collect_sources(data_dir, archives, prefixes, resources=None, after=(), loos
         walk(data_dir)
     for folder in after:
         walk(folder)
-    # One texture per key; OpenMW prefers .dds when both exist.
+    # One texture per key. OpenMW prefers .dds when both exist.
     by_key = {}
     for name in sorted(sources):
         key = stem_key(name)
@@ -621,7 +449,7 @@ def cook_one(job):
 
     atlas_texels = None
     if ui and referenced and is_atlas_candidate(key, src_w, src_h):
-        # The image itself (no padding, top row first); strips taller than wide are stored transposed.
+        # The image itself (no padding, top row first). Strips taller than wide are stored transposed.
         atlas_texels = np.array(rgba) if resampled else np.array(rgba)[:src_h, :src_w].copy()
         if key.startswith(ATLAS_HALVED_PREFIX) and max(src_w, src_h) > 32:
             half = Image.fromarray(atlas_texels, "RGBA").resize((src_w // 2, src_h // 2), Image.Resampling.LANCZOS)
@@ -685,7 +513,7 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="cook only the first N textures (testing)")
     parser.add_argument("--addon", action="store_true",
                         help="an expansion's own pack (Tribunal, Bloodmoon): only the textures of --archives, no loose "
-                             "files, no UI atlas or fonts (those stay in the main pack); loaded after it, its textures "
+                             "files, no UI atlas (it stays in the main pack); loaded after it, its textures "
                              "override the main pack's")
     parser.add_argument("--atlas-preview", default="", help="also write the UI atlas as this PNG (top row first)")
     parser.add_argument("--layouts", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -731,25 +559,13 @@ def main():
                 print(f"  {i + 1}/{len(keys)}", flush=True)
 
     if args.addon:
-        # An expansion's pack: its textures only; the interface atlas and the fonts are the main pack's.
+        # An expansion's pack: its textures only. The interface atlas is the main pack's.
         entries = [(fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags & ~FLAG_ATLAS, 0, 0)
                    for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results]
-        fonts = []
-        font_table = bytearray()
-        rx = ry = 0
     else:
-        # The UI atlas: the candidate images and the fonts' glyphs packed into one page.
+        # The UI atlas: the candidate images packed into one page.
         cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
                  if texels is not None]
-        fonts = []
-        for font in FONTS:
-            for ppem in FONT_SIZES:
-                line_height, glyphs = render_truetype(os.path.join(args.resources, "fonts"), font, ppem)
-                fonts.append((font, ppem, line_height, glyphs))
-                cells += [(f"glyph:{font}:{ppem}:{g[0]}", g[1]) for g in glyphs if isinstance(g[1], np.ndarray)]
-        for key, alpha in SPECIAL_CELLS.items():
-            cells.append((key, np.array([[[255, 255, 255, alpha]]], dtype=np.uint8)))
-        cells.append((WHITE_KEY, np.full((WHITE_SIZE, WHITE_SIZE, 4), 255, dtype=np.uint8)))
         placements, turned = pack_atlas(cells)
         cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
         entries = []
@@ -760,51 +576,25 @@ def main():
             entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
         atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
         entries.append(atlas_entry)
-        wx, wy = placements[WHITE_KEY]
-        entries.append((fnv1a64(WHITE_KEY), WHITE_KEY, bytes([255]) * (WHITE_SIZE * WHITE_SIZE * 4), WHITE_SIZE,
-                        WHITE_SIZE, WHITE_SIZE, WHITE_SIZE, GPU_RGBA8, 1, FLAG_ATLAS, 0, wx | (wy << 16)))
         if args.atlas_preview:
             Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
-        font_table = bytearray()
-        glyph_table = bytearray()
-        for font, ppem, line_height, glyphs in fonts:
-            font_table += struct.pack("<QHHIII", fnv1a64(f"fonts/{font}"), ppem, line_height, len(glyphs),
-                                      len(glyph_table) // GLYPH_RECORD_SIZE, 0)
-            for code, cell, width, height, advance, bearing_x, bearing_y in glyphs:
-                rect = (0, 0, 0, 0)
-                if isinstance(cell, np.ndarray):
-                    x, y = placements[f"glyph:{font}:{ppem}:{code}"]
-                    rect = (x, y, cell.shape[1], cell.shape[0])
-                elif isinstance(cell, str):
-                    rect = placements[cell] + (1, 1)
-                glyph_table += struct.pack("<IHHHHfffff", code, *rect, width, height, advance, bearing_x, bearing_y)
-        assert len(font_table) == FONT_RECORD_SIZE * len(fonts)
-        font_table += glyph_table
-        rx, ry, rw, rh = reserved_region()
-        used = sum(w * h for _, w, h, _, _ in
-                   [(k, t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2],
-                     t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3],
-                     0, 0) for k, t in cells])
-        glyph_cells = sum(1 for key, _ in cells if key.startswith("glyph:"))
-        print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells) - glyph_cells - len(SPECIAL_CELLS)} images, "
-              f"{glyph_cells} glyph cells of {len(fonts)} fonts ({', '.join(f'{f[0]} {f[1]} px' for f in fonts)}), "
-              f"reserved {rw}x{rh} at {rx},{ry} "
-              f"({ICON_SLOTS[0]}x{ICON_SLOTS[1]} icon slots, {MAP_SIZE}x{MAP_SIZE} map), "
-              f"{100 * (used + rw * rh) // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
+        used = sum((t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2])
+                   * (t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3])
+                   for k, t in cells)
+        print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells)} images, "
+              f"{100 * used // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
     entries.sort(key=lambda e: e[0])
     for a, b in zip(entries, entries[1:]):
         if a[0] == b[0]:
             raise RuntimeError(f"hash collision: {a[1]} / {b[1]}")
 
     index_offset = HEADER_SIZE
-    fonts_offset = index_offset + ENTRY_SIZE * len(entries)
-    data_offset = (fonts_offset + len(font_table) + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN
+    data_offset = (index_offset + ENTRY_SIZE * len(entries) + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     tmp_out = args.out + ".tmp"
     by_format = {}
     with open(tmp_out, "wb") as f:
-        f.write(struct.pack("<4sIIII3I", MAGIC, VERSION, len(entries), index_offset, data_offset, fonts_offset,
-                            len(fonts), rx | (ry << 16)))
+        f.write(struct.pack("<4sIIII3I", MAGIC, VERSION, len(entries), index_offset, data_offset, 0, 0, 0))
         offset = data_offset
         index = bytearray()
         for hash_, key, data, w, h, src_w, src_h, fmt, levels, flags, atlas, atlas_pos in entries:
@@ -814,7 +604,6 @@ def main():
             count, total = by_format.get(fmt, (0, 0))
             by_format[fmt] = (count + 1, total + len(data))
         f.write(index)
-        f.write(font_table)
         for hash_, key, data, *_ in entries:
             f.seek((f.tell() + DATA_ALIGN - 1) // DATA_ALIGN * DATA_ALIGN)
             f.write(data)
