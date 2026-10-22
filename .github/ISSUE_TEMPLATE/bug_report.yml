@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report this! Please check the [known issues](https://github.com/Synaelle/OpenMW-N3DS/blob/main/KNOWN_ISSUES.md) first, your problem might already be there.
+        Thanks for taking the time to report this! Please check the [known issues](https://github.com/Synaelle/OpenMW-3DS/blob/main/KNOWN_ISSUES.md) first, your problem might already be there.
 
   - type: textarea
     id: what

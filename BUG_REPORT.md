@@ -6,7 +6,7 @@ Before you start, check the [known issues](KNOWN_ISSUES.md). Your problem might 
 
 ## Report it on GitHub
 
-[Open a bug report](https://github.com/Synaelle/OpenMW-N3DS/issues/new?template=bug_report.yml). The form asks for:
+[Open a bug report](https://github.com/Synaelle/OpenMW-3DS/issues/new?template=bug_report.yml). The form asks for:
 
 1. **What happened**, and what you expected instead.
 2. **Where it happened**, and the quest if it's about one.

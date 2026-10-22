@@ -27,7 +27,7 @@ that recreates it.
 
 ## Getting started
 
-1. Download the [latest release](https://github.com/Synaelle/OpenMW-N3DS/releases/latest) and run the setup app. It
+1. Download the [latest release](https://github.com/Synaelle/OpenMW-3DS/releases/latest) and run the setup app. It
    finds your Morrowind and prepares everything.
 2. Copy the folder it makes to your SD card.
 3. Install the CIA with [FBI](https://github.com/Steveice10/FBI/releases/latest) or
