@@ -1,6 +1,6 @@
 # Known issues
 
-What we already know about in 0.1.0. No need to report these.
+What we already know about in 0.1.1. No need to report these.
 
 * **Loading takes a few seconds** when you go through a door, travel or walk into a new area.
 * **The game sometimes freezes for a second or two**, now and then.
