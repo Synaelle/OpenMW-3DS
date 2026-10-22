@@ -228,6 +228,12 @@
                 <Property key="AddItem" value="2048"/>
                 <Property key="AddItem" value="4096"/>
             </Widget>
+            <!-- OpenMW's newer settings window asks for it too (three items: it selects index 0 to 2) -->
+            <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 2 2" name="ShadowPlanesComputationMethod">
+                <Property key="AddItem" value="bounds"/>
+                <Property key="AddItem" value="primitives"/>
+                <Property key="AddItem" value="none"/>
+            </Widget>
             <Widget type="ScrollBar" skin="MW_HScroll" position="0 0 2 2" name="GammaSlider"/>
             <Widget type="TextBox" skin="NormalText" position="0 0 2 2" name="GammaText"/>
             <Widget type="TextBox" skin="SandText" position="0 0 2 2" name="GammaTextDark"/>
