@@ -49,7 +49,7 @@ body:
     attributes:
       label: The port's version
       description: It's shown on the game's start menu.
-      placeholder: "0.1.0"
+      placeholder: "0.1.1"
     validations:
       required: true
 

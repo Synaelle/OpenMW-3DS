@@ -22,11 +22,11 @@ if (OPENMW_PLATFORM_3DS)
     # packaging/test-menu.txt (the tester, 21/10), read again whenever that file changes.
     set(OPENMW3DS_TEST_MENU "${OPENMW3DS_ROOT}/packaging/test-menu.txt")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${OPENMW3DS_TEST_MENU}")
-    set(OPENMW3DS_VERSION "0.1.0-dev")
+    set(OPENMW3DS_VERSION "0.1.1-dev")
     if (EXISTS "${OPENMW3DS_TEST_MENU}")
         file(STRINGS "${OPENMW3DS_TEST_MENU}" _omw3ds_title REGEX "^title Test #[0-9]+")
         if (_omw3ds_title MATCHES "#([0-9]+)")
-            set(OPENMW3DS_VERSION "0.1.0-dev${CMAKE_MATCH_1}")
+            set(OPENMW3DS_VERSION "0.1.1-dev${CMAKE_MATCH_1}")
         endif()
     endif()
     # A release build (scripts/make-release.ps1) names its version: 0.1.0, no test number.

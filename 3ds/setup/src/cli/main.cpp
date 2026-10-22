@@ -1,6 +1,6 @@
 // The setup app's command-line tool: the same preparation as the window, for scripts and testing.
 //
-//     openmw3ds-setup-cli --morrowind "<Morrowind folder>" --output <folder> --port <port files> [--version 0.1.0]
+//     openmw3ds-setup-cli --morrowind "<Morrowind folder>" --output <folder> --port <port files> [--version 0.1.1]
 //
 // Developer commands (the texture cooker alone, against the port's Python cooker):
 //
@@ -85,7 +85,7 @@ int main(int argc, char** argv)
             options.morrowind = get(ARG("--morrowind"));
             options.output = get(ARG("--output"));
             options.port = get(ARG("--port"));
-            options.version = args.count(ARG("--version")) ? get(ARG("--version")).string() : "0.1.0";
+            options.version = args.count(ARG("--version")) ? get(ARG("--version")).string() : "0.1.1";
             if (options.morrowind.empty() || options.output.empty() || options.port.empty())
                 return usage();
             setup::prepare(options, printProgress);

@@ -82,7 +82,7 @@ namespace
         }
     }
 
-    const char* kVersion = "0.1.0";
+    const char* kVersion = "0.1.1";
     constexpr float kBodySize = 22.f;
     constexpr float kTitleSize = 28.f;
     float gScale = 1.f; // the display's DPI over 96

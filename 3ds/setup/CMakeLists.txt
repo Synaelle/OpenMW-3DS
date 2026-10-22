@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(openmw3ds-setup VERSION 0.1.0 LANGUAGES CXX)
+project(openmw3ds-setup VERSION 0.1.1 LANGUAGES CXX)
 
 # The setup app for OpenMW for New 3DS: prepares the folder players copy to their 3DS's SD card from their own
 # Morrowind installation. A core library (no interface), the command-line tool on top of it, the window later.

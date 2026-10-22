@@ -710,7 +710,7 @@ def main():
     if not os.path.isdir(default_port):
         default_port = os.path.join(HERE, "..", "port")  # python/ next to port/
     parser.add_argument("--port", default=default_port, help="the release's port files")
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="0.1.1")
     parser.add_argument("--jobs", type=int, default=os.cpu_count(), help="processes for the textures")
     args = parser.parse_args()
 
