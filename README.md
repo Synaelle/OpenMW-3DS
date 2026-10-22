@@ -7,8 +7,7 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-Play The Elder Scrolls III: Morrowind on your New 3DS, through [OpenMW](https://openmw.org), the open source engine
-that recreates it.
+[OpenMW](https://openmw.org) (Morrowind's open-source engine) for the New 3DS.
 
 > [!CAUTION]
 > No assets from the game are provided here. You need your own legally owned copy of Morrowind for PC (Steam, GOG or
