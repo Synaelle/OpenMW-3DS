@@ -19,7 +19,7 @@ if (-not (Test-Path "$archive\manifest.json")) {
         Where-Object { $_.Name -ne '.store' }).Name -join ', '
     throw "No archive for '$Test' (archived: $known)"
 }
-$baguette = Join-Path $root '.toolsaguetteaguette-cli.exe'
+$baguette = Join-Path $root '.tools\baguette\baguette-cli.exe'
 $sdManifestPath = Join-Path $out 'sdcard-openmw.manifest.json'
 
 $wanted = @{}
