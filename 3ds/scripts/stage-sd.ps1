@@ -115,19 +115,6 @@ if (-not (Test-Path $pack)) {
     & python (Join-Path $RepoRoot 'tools\cook_textures.py') --data $DataFiles --resources (Join-Path $Build 'resources\vfs') --out $pack
     if ($LASTEXITCODE -ne 0) { throw 'texture cooking failed' }
 }
-# M11: each expansion's textures in a pack of its own (tools/cook_textures.py --addon), cooked when its BSA is in the
-# data: a player without it, or who removes it, keeps the main pack untouched (the game loads an expansion's pack
-# only when its ESM is in openmw/data).
-$addonPacks = @()
-foreach ($expansion in 'Tribunal', 'Bloodmoon') {
-    if (-not (Test-Path (Join-Path $DataFiles "$expansion.bsa"))) { continue }
-    $addonPack = Join-Path $cookedSrc ($expansion.ToLower() + '.o3tp')
-    if (-not (Test-Path $addonPack)) {
-        & python (Join-Path $RepoRoot 'tools\cook_textures.py') --addon --data $DataFiles --archives "$expansion.bsa" --out $addonPack
-        if ($LASTEXITCODE -ne 0) { throw "texture cooking failed ($expansion)" }
-    }
-    $addonPacks += $addonPack
-}
 $cooked = Join-Path $Dst 'cooked'
 if ($DataMode -eq 'junction') {
     $item = Get-Item $cooked -ErrorAction SilentlyContinue
@@ -136,7 +123,6 @@ if ($DataMode -eq 'junction') {
 } else {
     New-Item -ItemType Directory -Force $cooked | Out-Null
     Copy-Item $pack $cooked -Force
-    foreach ($addonPack in $addonPacks) { Copy-Item $addonPack $cooked -Force }
 }
 
 Write-Host "Staged $Dst (data: $DataMode)"

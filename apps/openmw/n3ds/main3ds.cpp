@@ -434,30 +434,9 @@ namespace
                     chosenLine = "start: debug, with the intro" + run;
                     return Start::DebugIntro;
                 }
-                // Benchmark: Morrowind's places, or an installed expansion's.
-                std::vector<menu::Item> sets{ { "Morrowind" } };
-                std::vector<omw3ds::benchmark::Set> setIds{ omw3ds::benchmark::Set::Morrowind };
-                if (access("sdmc:/openmw/data/Tribunal.esm", F_OK) == 0)
-                {
-                    sets.push_back({ "Tribunal (Mournhold)" });
-                    setIds.push_back(omw3ds::benchmark::Set::Tribunal);
-                }
-                if (access("sdmc:/openmw/data/Bloodmoon.esm", F_OK) == 0)
-                {
-                    sets.push_back({ "Bloodmoon (Solstheim)" });
-                    setIds.push_back(omw3ds::benchmark::Set::Bloodmoon);
-                }
-                int set = 0;
-                if (setIds.size() > 1)
-                {
-                    size_t setSelected = 0;
-                    std::string length = "About 5 minutes, then the game quits.";
-                    set = menu::page("Benchmark", sets, length, setSelected, true);
-                    if (set < 0)
-                        continue;
-                }
-                gBenchmarkSet = setIds[set];
-                chosenLine = "start: benchmark, " + sets[set].mLabel + run;
+                // Benchmark: Morrowind's places (about 5 minutes, then the game quits).
+                gBenchmarkSet = omw3ds::benchmark::Set::Morrowind;
+                chosenLine = "start: benchmark, Morrowind" + run;
                 return Start::Benchmark;
             }
         }
@@ -484,9 +463,7 @@ int main(int, char**)
         std::ifstream file(p3ds::kAutorunPath);
         const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         gBenchmark = text.find("benchmark") != std::string::npos;
-        gBenchmarkSet = text.find("benchmark:tribunal") != std::string::npos ? omw3ds::benchmark::Set::Tribunal
-            : text.find("benchmark:bloodmoon") != std::string::npos      ? omw3ds::benchmark::Set::Bloodmoon
-            : text.find("benchmark:tour") != std::string::npos           ? omw3ds::benchmark::Set::Tour
+        gBenchmarkSet = text.find("benchmark:tour") != std::string::npos ? omw3ds::benchmark::Set::Tour
                                                                           : omw3ds::benchmark::Set::Morrowind;
         if (const size_t at = text.find("benchmark@"); at != std::string::npos)
             gBenchmarkFirst = std::max(0, std::atoi(text.c_str() + at + 10) - 1);
@@ -564,11 +541,6 @@ int main(int, char**)
     // screens (the bottom screen's debug display and menus).
     Render3DS::setDrawsGui(access("sdmc:/openmw/no-m8ui", F_OK) != 0);
     Render3DS::openTexturePack("sdmc:/openmw/cooked/textures.o3tp");
-    // M11: an installed expansion's own textures (its ESM in the data folder, as main.cpp loads it).
-    if (access("sdmc:/openmw/data/Tribunal.esm", F_OK) == 0)
-        Render3DS::openAddonTexturePack("sdmc:/openmw/cooked/tribunal.o3tp");
-    if (access("sdmc:/openmw/data/Bloodmoon.esm", F_OK) == 0)
-        Render3DS::openAddonTexturePack("sdmc:/openmw/cooked/bloodmoon.o3tp");
 
     // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)
     // does not consider "sdmc:/..." absolute, and OpenMW resolves relative paths against config dirs.

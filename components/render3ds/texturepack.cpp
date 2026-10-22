@@ -62,34 +62,18 @@ namespace Render3DS
         } __attribute__((packed));
         static_assert(sizeof(PackEntry) == 32);
 
-        // The texture packs: the main one (textures/textures.o3tp: Morrowind, the interface atlas, the fonts), then
-        // each expansion's (tribunal.o3tp, bloodmoon.o3tp: its BSA's textures only), whose textures override the
-        // ones before them, as their BSAs do.
-        struct Pack
-        {
-            FILE* mFile = nullptr;
-            std::vector<PackEntry> mIndex;
-        };
+        // The texture pack (cooked/textures.o3tp: Morrowind's textures and the interface atlas). The expansions'
+        // packs of their own went with their support in M20 (back with M11, git history).
         std::mutex gPackMutex;
-        std::vector<Pack> gPacks;
-        FILE* gPack = nullptr; // the main pack's file
-        std::vector<PackEntry> gIndex; // the main pack's index (the interface atlas, the white cell)
+        FILE* gPack = nullptr;
+        std::vector<PackEntry> gIndex; // sorted by hash
 
-        // The newest pack holding the hash, or -1.
-        int findInPacks(uint64_t hash, const PackEntry** entry)
+        // The pack's entry of a hash, or nullptr.
+        const PackEntry* findEntry(uint64_t hash)
         {
-            for (int p = int(gPacks.size()) - 1; p >= 0; --p)
-            {
-                const std::vector<PackEntry>& index = gPacks[p].mIndex;
-                const auto it = std::lower_bound(index.begin(), index.end(), hash,
-                    [](const PackEntry& e, uint64_t value) { return e.mHash < value; });
-                if (it != index.end() && it->mHash == hash)
-                {
-                    *entry = &*it;
-                    return p;
-                }
-            }
-            return -1;
+            const auto it = std::lower_bound(gIndex.begin(), gIndex.end(), hash,
+                [](const PackEntry& e, uint64_t value) { return e.mHash < value; });
+            return it != gIndex.end() && it->mHash == hash ? &*it : nullptr;
         }
 
         uint64_t fnv1a64(std::string_view text)
@@ -246,37 +230,8 @@ namespace Render3DS
         // Every texture is one read straight into linear memory: no stdio buffering in between.
         std::setvbuf(file, nullptr, _IONBF, 0);
         gPack = file;
-        gIndex = index;
-        gPacks.insert(gPacks.begin(), Pack{ file, std::move(index) });
+        gIndex = std::move(index);
         P3DS_LOGI("render3ds: texture pack %s: %u textures", path, (unsigned)gIndex.size());
-        return true;
-    }
-
-    bool openAddonTexturePack(const char* path)
-    {
-        std::lock_guard<std::mutex> lock(gPackMutex);
-        FILE* file = std::fopen(path, "rb");
-        if (file == nullptr)
-            return false;
-        PackHeader header;
-        std::vector<PackEntry> index;
-        bool ok = std::fread(&header, sizeof(header), 1, file) == 1 && std::memcmp(header.mMagic, kMagic, 4) == 0
-            && header.mVersion == kVersion;
-        if (ok)
-        {
-            index.resize(header.mCount);
-            ok = std::fseek(file, static_cast<long>(header.mIndexOffset), SEEK_SET) == 0
-                && std::fread(index.data(), sizeof(PackEntry), index.size(), file) == index.size();
-        }
-        if (!ok)
-        {
-            P3DS_LOGE("render3ds: %s is not a usable version %lu texture pack", path, (unsigned long)kVersion);
-            std::fclose(file);
-            return false;
-        }
-        std::setvbuf(file, nullptr, _IONBF, 0);
-        gPacks.push_back(Pack{ file, std::move(index) });
-        P3DS_LOGI("render3ds: expansion texture pack %s: %u textures", path, unsigned(gPacks.back().mIndex.size()));
         return true;
     }
 
@@ -288,7 +243,7 @@ namespace Render3DS
         // in the memcpy below).
         constexpr bool kTexturesInVram = true;
 
-        CookedImage* loadIntoVram(const PackEntry& entry, int pack)
+        CookedImage* loadIntoVram(const PackEntry& entry)
         {
             if (!kTexturesInVram || (entry.mFlags & (4 | 8)) != 0)
                 return nullptr;
@@ -307,7 +262,7 @@ namespace Render3DS
             {
                 staging.resize(entry.mSize);
                 std::lock_guard<std::mutex> lock(gPackMutex);
-                FILE* file = gPacks[pack].mFile;
+                FILE* file = gPack;
                 ok = std::fseek(file, static_cast<long>(entry.mOffset), SEEK_SET) == 0
                     && std::fread(staging.data(), 1, entry.mSize, file) == entry.mSize;
             }
@@ -325,7 +280,6 @@ namespace Render3DS
                 entry.mSrcHeight, static_cast<GPU_TEXCOLOR>(entry.mFormat), entry.mLevels, entry.mFlags,
                 entry.mAtlas, entry.mAtlasPos);
             image->setPackOffset(entry.mOffset);
-            image->setPackIndex(static_cast<uint8_t>(pack));
             std::lock_guard<std::mutex> lock(gVramMutex);
             gVramImages.push_back(image);
             return image;
@@ -356,10 +310,10 @@ namespace Render3DS
             return smaller;
         }
 
-        osg::ref_ptr<osg::Image> loadEntry(const PackEntry& fullEntry, std::string_view name, int pack = 0)
+        osg::ref_ptr<osg::Image> loadEntry(const PackEntry& fullEntry, std::string_view name)
         {
             const PackEntry entry = tierDown(fullEntry);
-            if (CookedImage* inVramImage = loadIntoVram(entry, pack))
+            if (CookedImage* inVramImage = loadIntoVram(entry))
             {
                 osg::ref_ptr<osg::Image> image = inVramImage;
                 image->setFileName(std::string(name));
@@ -377,7 +331,7 @@ namespace Render3DS
             bool ok;
             {
                 std::lock_guard<std::mutex> lock(gPackMutex);
-                FILE* file = gPacks[pack].mFile;
+                FILE* file = gPack;
                 ok = std::fseek(file, static_cast<long>(entry.mOffset), SEEK_SET) == 0
                     && std::fread(data, 1, entry.mSize, file) == entry.mSize;
             }
@@ -413,7 +367,7 @@ namespace Render3DS
                 break;
             }
             std::lock_guard<std::mutex> lock(gPackMutex);
-            FILE* file = image->packIndex() < gPacks.size() ? gPacks[image->packIndex()].mFile : gPack;
+            FILE* file = gPack;
             if (std::fseek(file, static_cast<long>(image->packOffset()), SEEK_SET) == 0
                 && std::fread(staging.data(), 1, image->gpuSize(), file) == image->gpuSize())
             {
@@ -440,11 +394,10 @@ namespace Render3DS
     {
         if (gPack == nullptr)
             return nullptr;
-        const PackEntry* entry = nullptr;
-        const int pack = findInPacks(fnv1a64(stripExtension(normalizedPath)), &entry);
-        if (pack < 0)
+        const PackEntry* entry = findEntry(fnv1a64(stripExtension(normalizedPath)));
+        if (entry == nullptr)
             return nullptr;
-        return loadEntry(*entry, normalizedPath, pack);
+        return loadEntry(*entry, normalizedPath);
     }
 
     namespace

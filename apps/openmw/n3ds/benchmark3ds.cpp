@@ -87,26 +87,6 @@ namespace omw3ds::benchmark
             { "Balmora", nullptr, { -21792, -12087, 882 }, 270.f, Thunder, 22.f },
             { "Pelagiad", nullptr, { 2507, -56048, 1570 }, 134.6f, Clear, 18.f },
         };
-        // Tribunal: Mournhold's districts are interiors with a sky (the hour shows, the weather doesn't).
-        constexpr Stage sTribunalStages[] = {
-            { "Plaza Brindisi Dorom", "Mournhold, Plaza Brindisi Dorom", {}, 0.f, -1, 12.f },
-            { "Great Bazaar", "Mournhold, Great Bazaar", {}, 0.f, -1, 12.f },
-            { "Godsreach", "Mournhold, Godsreach", {}, 0.f, -1, 12.f },
-            { "Royal Palace Throne Room", "Mournhold, Royal Palace Throne Room", {}, 0.f, -1, 12.f },
-            { "Temple High Chapel", "Mournhold Temple: High Chapel", {}, 0.f, -1, 12.f },
-            { "Godsreach", "Mournhold, Godsreach", {}, 0.f, -1, 22.f },
-            { "Old Mournhold: Battlefield", "Old Mournhold: Battlefield", {}, 0.f, -1, 12.f },
-        };
-        // Bloodmoon: Solstheim, alternating outside and inside so each exterior's weather is forced on arrival.
-        constexpr Stage sBloodmoonStages[] = {
-            { "Raven Rock", nullptr, {}, 0.f, Clear, 12.f, "Raven Rock" },
-            { "Raven Rock, Bar", "Raven Rock, Bar", {}, 0.f, -1, 12.f },
-            { "Fort Frostmoth", nullptr, {}, 0.f, Snow, 12.f, "Fort Frostmoth" },
-            { "Fort Frostmoth, Quarters", "Fort Frostmoth, General Quarters", {}, 0.f, -1, 12.f },
-            { "Skaal Village", nullptr, {}, 0.f, Blizzard, 18.f, "Skaal Village" },
-            { "Raven Rock", nullptr, {}, 0.f, Snow, 22.f, "Raven Rock" },
-        };
-
         // The long tour: towns (found by name, as MWScript's COC: a door marker or the cell's centre, never the
         // void) alternating with interiors, so each town's region weather is forced on arrival. Every name checked
         // against Morrowind.esm.
@@ -153,8 +133,6 @@ namespace omw3ds::benchmark
         };
         constexpr StageSet sSets[] = {
             { "Morrowind", sStages, int(std::size(sStages)) },
-            { "Tribunal", sTribunalStages, int(std::size(sTribunalStages)) },
-            { "Bloodmoon", sBloodmoonStages, int(std::size(sBloodmoonStages)) },
             { "Tour", sTourStages, int(std::size(sTourStages)) },
         };
         const StageSet* gSet = &sSets[0];

@@ -9,6 +9,9 @@
 /3dslogs/
 __pycache__/
 
+# The tester's own Morrowind data (a copy of the GOTY "Data Files" and Morrowind.ini, for language work later)
+/gamedata/
+
 # Local only: the tester's own setup (the ELF archive's upload to their drive), the design site, the agent settings
 /scripts/prune-elf-archive.ps1
 /site/

@@ -130,9 +130,6 @@ namespace Render3DS
     // PC-cooked texture pack (tools/cook_textures.py). Missing pack = every texture falls back to OSG's
     // loaders (DDS can't be displayed, see ImageManager).
     bool openTexturePack(const char* path);
-    // An expansion's pack (tools/cook_textures.py --addon: its BSA's textures only), after the main one: its textures
-    // override the main pack's. false when the file isn't there (the expansion isn't installed).
-    bool openAddonTexturePack(const char* path);
 
     // A texture from the pack as an osg::Image whose data is already in PICA format in linear memory.
     // nullptr if the pack has no texture for this normalized VFS path (extension ignored).

@@ -67,16 +67,12 @@ namespace Render3DS
         // Set for an image in VRAM: where its data is in the texture pack (reloadVramTextures).
         void setPackOffset(uint32_t offset) { mPackOffset = offset; }
         uint32_t packOffset() const { return mPackOffset; }
-        // Which texture pack holds it (0: the main one, an expansion's pack after it).
-        void setPackIndex(uint8_t index) { mPackIndex = index; }
-        uint8_t packIndex() const { return mPackIndex; }
 
     protected:
         ~CookedImage() override;
 
     private:
         uint32_t mPackOffset = 0;
-        uint8_t mPackIndex = 0;
         void* mGpuData;
         uint32_t mGpuSize;
         GPU_TEXCOLOR mGpuFormat;

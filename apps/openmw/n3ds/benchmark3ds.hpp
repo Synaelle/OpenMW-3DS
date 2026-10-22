@@ -11,12 +11,11 @@
 
 namespace omw3ds::benchmark
 {
-    // Which places: Morrowind's, or an expansion's (Mournhold, Solstheim: installed expansions only).
+    // Which places: Morrowind's towns, or the long tour. In the order of benchmark3ds.cpp's sSets. The expansions'
+    // sets went with their support in M20 (back with M11, git history).
     enum class Set
     {
         Morrowind,
-        Tribunal,
-        Bloodmoon,
         // The long tour (the tester, 21/10): ~20 minutes through 32 places of Vvardenfell, towns and interiors,
         // with 3 top-screen screenshots at each. Zeste only (an automated run's "benchmark:tour"): never on the
         // console's menu.

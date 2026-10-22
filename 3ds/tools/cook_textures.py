@@ -511,10 +511,6 @@ def main():
     parser.add_argument("--tex3ds", default=DEFAULT_TEX3DS)
     parser.add_argument("--jobs", type=int, default=os.cpu_count())
     parser.add_argument("--limit", type=int, default=0, help="cook only the first N textures (testing)")
-    parser.add_argument("--addon", action="store_true",
-                        help="an expansion's own pack (Tribunal, Bloodmoon): only the textures of --archives, no loose "
-                             "files, no UI atlas (it stays in the main pack); loaded after it, its textures "
-                             "override the main pack's")
     parser.add_argument("--atlas-preview", default="", help="also write the UI atlas as this PNG (top row first)")
     parser.add_argument("--layouts", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                           "packaging", "ui3ds", "mygui"),
@@ -527,11 +523,8 @@ def main():
     prefixes = tuple(normalize(p.strip()) for p in args.prefixes.split(",") if p.strip())
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     layouts = [folder for folder in args.layouts.split(",") if folder]
-    if args.addon:
-        sources = collect_sources(args.data, archives, prefixes, loose=False)
-    else:
-        sources = collect_sources(args.data, archives, prefixes, args.resources,
-                                  after=[os.path.dirname(folder) for folder in layouts])
+    sources = collect_sources(args.data, archives, prefixes, args.resources,
+                              after=[os.path.dirname(folder) for folder in layouts])
     referenced = referenced_textures([os.path.join(args.resources, "mygui")] + layouts
                                      + [os.path.join(repo, "openmw", "apps", "openmw", "mwgui")])
     referenced.update(key for key in sources if key.startswith(ATLAS_HALVED_PREFIX))
@@ -558,31 +551,26 @@ def main():
             if (i + 1) % 250 == 0:
                 print(f"  {i + 1}/{len(keys)}", flush=True)
 
-    if args.addon:
-        # An expansion's pack: its textures only. The interface atlas is the main pack's.
-        entries = [(fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags & ~FLAG_ATLAS, 0, 0)
-                   for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results]
-    else:
-        # The UI atlas: the candidate images packed into one page.
-        cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
-                 if texels is not None]
-        placements, turned = pack_atlas(cells)
-        cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
-        entries = []
-        for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
-            x, y = placements.get(key, (0, 0))
-            if key in turned:
-                flags |= FLAG_ATLAS_TRANSPOSED
-            entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
-        atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
-        entries.append(atlas_entry)
-        if args.atlas_preview:
-            Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
-        used = sum((t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2])
-                   * (t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3])
-                   for k, t in cells)
-        print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells)} images, "
-              f"{100 * used // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
+    # The UI atlas: the candidate images packed into one page.
+    cells = [(key, texels) for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results
+             if texels is not None]
+    placements, turned = pack_atlas(cells)
+    cells = [(key, np.ascontiguousarray(texels.transpose(1, 0, 2)) if key in turned else texels) for key, texels in cells]
+    entries = []
+    for key, name, data, w, h, src_w, src_h, fmt, levels, flags, texels in results:
+        x, y = placements.get(key, (0, 0))
+        if key in turned:
+            flags |= FLAG_ATLAS_TRANSPOSED
+        entries.append((fnv1a64(key), key, data, w, h, src_w, src_h, fmt, levels, flags, 0, x | (y << 16)))
+    atlas_entry, atlas_canvas = build_atlas(cells, placements, args.tex3ds)
+    entries.append(atlas_entry)
+    if args.atlas_preview:
+        Image.fromarray(atlas_canvas, "RGBA").save(args.atlas_preview)
+    used = sum((t.shape[1] + cell_gutters(k, t.shape[1], t.shape[0])[0] + cell_gutters(k, t.shape[1], t.shape[0])[2])
+               * (t.shape[0] + cell_gutters(k, t.shape[1], t.shape[0])[1] + cell_gutters(k, t.shape[1], t.shape[0])[3])
+               for k, t in cells)
+    print(f"  UI atlas: {ATLAS_WIDTH}x{ATLAS_HEIGHT} RGBA8, {len(cells)} images, "
+          f"{100 * used // (ATLAS_WIDTH * ATLAS_HEIGHT)}% used")
     entries.sort(key=lambda e: e[0])
     for a, b in zip(entries, entries[1:]):
         if a[0] == b[0]:
