@@ -28,8 +28,6 @@ namespace MWGui
         void setText(std::string_view str);
         std::string getText() const;
         void setButtons(ButtonList& buttons);
-        // A greyed-out choice (the class questions on the 3DS, not ported): skipped by the controller focus.
-        void setButtonEnabled(size_t index, bool enabled);
 
         void onOpen() override;
 

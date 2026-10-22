@@ -216,6 +216,8 @@ namespace Render3DS
     // Perf batch 4: a draw under the previous draw's state skips its state, textures and material
     // (sdmc:/openmw/no-samestate).
     bool sameStateSkip();
+    // M19: a local map tile's camera can go: its texture is drawn and copied out (or never will be).
+    bool mapTileReady(const osg::Texture* texture);
     // Every how many frames a skeleton this far from the camera gets its pose updated (1: every frame).
     inline int poseEvery(float distance)
     {

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The book window on the two 3DS screens (M19, approved mockup): one page at a time across the top screen at the
+     book font's own size (the stock book is scaled to 60% there, ~7 px text) on a page of the game's book texture;
+     the title, the page number and the buttons on the bottom one. The root spans the canvas (400x480) without a
+     frame. bookwindow.cpp's widgets are all here: its image buttons stay hidden (their keys and events still work),
+     the port's text buttons (*3DS) do the same. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="" layer="Windows" align="Left Top" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen: the left page of tx_menubook.dds (512x256: the page from its left edge to the spine) -->
+        <Widget type="ImageBox" skin="ImageBox" position="0 0 400 240" name="JImage">
+            <Property key="ImageTexture" value="textures\tx_menubook.dds"/>
+            <Property key="ImageCoord" value="40 0 216 256"/>
+            <Widget type="Widget" skin="" position="46 14 330 214" name="LeftPage"/>
+        </Widget>
+
+        <!-- Bottom screen (222 high: the button hints below) -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+            <Widget type="TextBox" skin="HeaderText" position="8 8 304 20" name="Title3DS">
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+            <Widget type="TextBox" skin="SandText" position="8 34 304 20" name="LeftPageNumber">
+                <Property key="TextAlign" value="Center"/>
+                <Property key="NeedMouse" value="false"/>
+            </Widget>
+
+            <Widget type="Button" skin="MW_Button" position="16 70 136 40" name="PrevPage3DS">
+                <Property key="Caption" value="#{OMW3DS:PreviousPage}"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="168 70 136 40" name="NextPage3DS">
+                <Property key="Caption" value="#{OMW3DS:NextPage}"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="16 130 136 40" name="Take3DS">
+                <Property key="Caption" value="#{Interface:Take}"/>
+            </Widget>
+            <Widget type="Button" skin="MW_Button" position="168 130 136 40" name="Close3DS">
+                <Property key="Caption" value="#{Interface:Close}"/>
+            </Widget>
+
+            <!-- bookwindow.cpp's own widgets, hidden: the second page and the image buttons -->
+            <Widget type="Widget" skin="" position="0 0 330 214" name="RightPage">
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="TextBox" skin="NormalText" position="0 0 1 1" name="RightPageNumber">
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="ImageButton" skin="ImageBox" position="0 0 64 32" name="TakeButton">
+                <Property key="ImageNormal" value="textures\tx_menubook_take_idle.dds"/>
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="ImageButton" skin="ImageBox" position="0 0 48 32" name="PrevPageBTN">
+                <Property key="ImageNormal" value="textures\tx_menubook_prev_idle.dds"/>
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="ImageButton" skin="ImageBox" position="0 0 48 32" name="NextPageBTN">
+                <Property key="ImageNormal" value="textures\tx_menubook_next_idle.dds"/>
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="ImageButton" skin="ImageBox" position="0 0 48 32" name="CloseButton">
+                <Property key="ImageNormal" value="textures\tx_menubook_close_idle.dds"/>
+                <Property key="Visible" value="false"/>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

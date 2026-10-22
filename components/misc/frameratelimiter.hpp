@@ -20,6 +20,15 @@ namespace Misc
 
         std::chrono::steady_clock::duration getLastFrameDuration() const { return mLastFrameDuration; }
 
+#ifdef OPENMW_PLATFORM_3DS
+        // How long limit(now) would sleep (the slow-frame log).
+        std::chrono::steady_clock::duration timeLeft3DS(std::chrono::steady_clock::time_point now) const
+        {
+            const auto left = mMaxFrameDuration - (now - mLastMeasurement);
+            return left > left.zero() ? left : left.zero();
+        }
+#endif
+
         void limit(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now())
         {
             const auto passed = now - mLastMeasurement;

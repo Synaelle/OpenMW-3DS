@@ -186,6 +186,15 @@ namespace MWGui
                 if (init)
                     current->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onButtonToggled);
             }
+#ifdef OPENMW_PLATFORM_3DS
+            // A level button (M19: [Camera] small details): Low, Medium, High; a touch or A goes to the next.
+            if (type == "Level3DS")
+            {
+                setLevelCaption3DS(current);
+                if (init)
+                    current->eventMouseButtonClick += MyGUI::newDelegate(this, &SettingsWindow::onLevelClicked3DS);
+            }
+#endif
             if (type == sliderType)
             {
                 MyGUI::ScrollBar* scroll = current->castType<MyGUI::ScrollBar>();
@@ -492,7 +501,11 @@ namespace MWGui
         }
 
         mControllerButtons.mA = "#{Interface:Select}";
+#ifdef OPENMW_PLATFORM_3DS
+        mControllerButtons.mB = "#{Interface:Back}"; // B leaves the window (M19: "B OK" read oddly)
+#else
         mControllerButtons.mB = "#{Interface:OK}";
+#endif
 #ifdef OPENMW_PLATFORM_3DS
         // M17: the D-pad's highlight instead of the circle pad's cursor; the controls list is the controller's.
         mControllerButtons.mDpad = "#{OMW3DS:Move}";
@@ -713,6 +726,31 @@ namespace MWGui
             return;
         }
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    void SettingsWindow::setLevelCaption3DS(MyGUI::Widget* button)
+    {
+        static constexpr std::string_view captions[] = { "#{OMW3DS:LevelLow}", "#{OMW3DS:LevelMedium}",
+            "#{OMW3DS:LevelHigh}" };
+        const int level = std::clamp(Settings::get<int>(getSettingCategory(button), getSettingName(button)).get(), 0, 2);
+        button->castType<MyGUI::Button>()->setCaptionWithReplacing(std::string(captions[level]));
+    }
+
+    void SettingsWindow::changeLevel3DS(MyGUI::Widget* button, int step)
+    {
+        auto& setting = Settings::get<int>(getSettingCategory(button), getSettingName(button));
+        const int level = std::clamp(setting.get(), 0, 2);
+        // A or a touch (step 0) goes round, Low after High; the D-pad stops at either end.
+        setting.set(step == 0 ? (level + 1) % 3 : std::clamp(level + step, 0, 2));
+        setLevelCaption3DS(button);
+        apply();
+    }
+
+    void SettingsWindow::onLevelClicked3DS(MyGUI::Widget* sender)
+    {
+        changeLevel3DS(sender, 0);
+    }
+#endif
 
     void SettingsWindow::onTextureFilteringChanged(MyGUI::ComboBox* /*sender*/, size_t pos)
     {
@@ -1277,7 +1315,7 @@ namespace MWGui
                     if (!child->getVisible())
                         continue;
                     const std::string_view type = child->getUserString("SettingType");
-                    if (type == "Slider" || type == "CheckButton")
+                    if (type == "Slider" || type == "CheckButton" || type == "Level3DS")
                         mFocusables3DS.push_back(child);
                     walk(child);
                 }
@@ -1298,7 +1336,8 @@ namespace MWGui
         MyGUI::Widget* focused = mFocusables3DS[mFocus3DS];
         // A frame around the option's line (its label and its control).
         MyGUI::Widget* line = focused;
-        if (focused->getUserString("SettingType") == "CheckButton" && focused->getParent() != nullptr)
+        const std::string_view focusedType = focused->getUserString("SettingType");
+        if ((focusedType == "CheckButton" || focusedType == "Level3DS") && focused->getParent() != nullptr)
             line = focused->getParent(); // the button and its label's box
         const MyGUI::IntCoord client = mFocusFrame3DS->getParent()->getAbsoluteCoord();
         const MyGUI::IntCoord at = line->getAbsoluteCoord();
@@ -1328,6 +1367,8 @@ namespace MWGui
         }
         else if (type == "CheckButton")
             onButtonToggled(focused);
+        else if (type == "Level3DS")
+            changeLevel3DS(focused, step);
     }
 #endif
 

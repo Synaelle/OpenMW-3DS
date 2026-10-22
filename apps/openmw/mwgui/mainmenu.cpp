@@ -9,6 +9,18 @@
 
 #ifdef OPENMW_PLATFORM_3DS
 #include "../n3ds/credits3ds.hpp"
+
+#include <format>
+
+#include <MyGUI_Button.h>
+#include <components/esm3/loadclas.hpp>
+#include <components/esm3/loadnpc.hpp>
+#include <components/esm3/loadrace.hpp>
+
+#include "../mwmechanics/creaturestats.hpp"
+#include "../mwworld/class.hpp"
+#include "../mwworld/datetimemanager.hpp"
+#include "../mwworld/esmstore.hpp"
 #endif
 
 #include <MyGUI_Gui.h>
@@ -307,6 +319,76 @@ namespace MWGui
         }
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    void MainMenu::updatePanel3DS(bool inGame)
+    {
+        if (mPanel3DS == nullptr)
+        {
+            mPanel3DS = mMainWidget->createWidget<MyGUI::Widget>(
+                "MW_Dialog", MyGUI::IntCoord(40, 240, 320, 222), MyGUI::Align::Default);
+            for (int i = 0; i < 4; ++i)
+            {
+                mPanelLines3DS[i] = mPanel3DS->createWidget<MyGUI::TextBox>(i == 0 ? "HeaderText" : "SandText",
+                    MyGUI::IntCoord(8, 8 + i * 22, 304, 20), MyGUI::Align::Default);
+                mPanelLines3DS[i]->setTextAlign(MyGUI::Align::Center);
+            }
+            const std::pair<const char*, const char*> buttons[]
+                = { { "savegame", "#{OMW3DS:MenuSave}" }, { "loadgame", "#{OMW3DS:MenuLoad}" },
+                      { "options", "#{OMW3DS:MenuOptions}" }, { "return", "#{OMW3DS:MenuReturn}" } };
+            for (int i = 0; i < 4; ++i)
+            {
+                MyGUI::Button* button = mPanel3DS->createWidget<MyGUI::Button>("MW_Button",
+                    MyGUI::IntCoord(i % 2 == 0 ? 18 : 166, 110 + (i / 2) * 50, 136, 38), MyGUI::Align::Default);
+                button->setCaptionWithReplacing(buttons[i].second);
+                button->setUserData(std::string(buttons[i].first));
+                button->eventMouseButtonClick += MyGUI::newDelegate(this, &MainMenu::onPanelButton3DS);
+                mPanelButtons3DS[buttons[i].first] = button;
+            }
+        }
+        mPanel3DS->setVisible(inGame);
+        if (!inGame)
+            return;
+
+        // The buttons the top menu offers now (saving can be forbidden, there may be no save to load).
+        for (const auto& [id, button] : mPanelButtons3DS)
+        {
+            const auto top = mButtons.find(id);
+            button->setVisible(top != mButtons.end() && top->second->getVisible());
+        }
+
+        const MWWorld::Ptr player = MWBase::Environment::get().getWorld()->getPlayerPtr();
+        const MWWorld::ESMStore& store = *MWBase::Environment::get().getESMStore();
+        const ESM::NPC* npc = player.get<ESM::NPC>()->mBase;
+        const ESM::Race* race = store.get<ESM::Race>().search(npc->mRace);
+        const ESM::Class* playerClass = store.get<ESM::Class>().search(npc->mClass);
+        const int level = player.getClass().getCreatureStats(player).getLevel();
+        mPanelLines3DS[0]->setCaption(npc->mName);
+        mPanelLines3DS[1]->setCaptionWithReplacing(std::format("#{{sLevel}} {} {} {}", level,
+            race ? race->mName : std::string(), playerClass ? playerClass->mName : std::string()));
+        mPanelLines3DS[2]->setCaption(std::string(MWBase::Environment::get().getWorld()->getCellName()));
+
+        // The date as the rest window writes it (waitdialog.cpp).
+        const MWWorld::DateTimeManager& timeManager = *MWBase::Environment::get().getWorld()->getTimeManager();
+        int hour = static_cast<int>(timeManager.getTimeStamp().getHour());
+        const bool pm = hour >= 12;
+        if (hour >= 13)
+            hour -= 12;
+        if (hour == 0)
+            hour = 12;
+        const ESM::EpochTimeStamp date = timeManager.getEpochTimeStamp();
+        mPanelLines3DS[3]->setCaptionWithReplacing(std::format("{} {} (#{{Calendar:day}} {}) {} {}", date.mDay,
+            timeManager.getMonthName(), timeManager.getTimeStamp().getDay(), hour,
+            pm ? "#{Calendar:pm}" : "#{Calendar:am}"));
+    }
+
+    void MainMenu::onPanelButton3DS(MyGUI::Widget* sender)
+    {
+        const auto top = mButtons.find(*sender->getUserData<std::string>());
+        if (top != mButtons.end())
+            onButtonClicked(top->second); // as the top menu's button
+    }
+#endif
+
     void MainMenu::onFrame(float)
     {
         if (mVideo)
@@ -431,6 +513,7 @@ namespace MWGui
             mButtonBox->setCoord((400 - maxwidth) / 2, (240 - curH) / 2, maxwidth, curH + 8);
             mVersionText->setCoord(0, 240 - 18, 400 - 4, 18);
         }
+        updatePanel3DS(state != MWBase::StateManager::State_NoGame);
         // M17: the button hints (B goes back to the game when there is one).
         mControllerButtons.mA = "#{Interface:Select}";
         mControllerButtons.mB = state == MWBase::StateManager::State_NoGame ? "" : "#{Interface:Back}";

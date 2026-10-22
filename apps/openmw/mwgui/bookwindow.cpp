@@ -1,5 +1,6 @@
 #include "bookwindow.hpp"
 
+#include <MyGUI_Button.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_TextBox.h>
 
@@ -70,6 +71,19 @@ namespace MWGui
         mControllerButtons.mR1 = "#{Interface:Next}";
         mControllerButtons.mB = "#{Interface:Close}";
 
+#ifdef OPENMW_PLATFORM_3DS
+        getWidget(mTitle3DS, "Title3DS");
+        getWidget(mPrev3DS, "PrevPage3DS");
+        getWidget(mNext3DS, "NextPage3DS");
+        getWidget(mTake3DS, "Take3DS");
+        getWidget(mClose3DS, "Close3DS");
+        mPrev3DS->eventMouseButtonClick += MyGUI::newDelegate(this, &BookWindow::onPrevPageButtonClicked);
+        mNext3DS->eventMouseButtonClick += MyGUI::newDelegate(this, &BookWindow::onNextPageButtonClicked);
+        mTake3DS->eventMouseButtonClick += MyGUI::newDelegate(this, &BookWindow::onTakeButtonClicked);
+        mClose3DS->eventMouseButtonClick += MyGUI::newDelegate(this, &BookWindow::onCloseButtonClicked);
+        mRightPage->setVisible(false);
+#endif
+
         center();
     }
 
@@ -109,6 +123,9 @@ namespace MWGui
         mPages = formatter.markupToWidget(mLeftPage, *text, shrinkTextAtLastTag);
         formatter.markupToWidget(mRightPage, *text, shrinkTextAtLastTag);
 
+#ifdef OPENMW_PLATFORM_3DS
+        mTitle3DS->setCaption(std::string(book.getClass().getName(book)));
+#endif
         updatePages();
 
         setTakeButtonShow(showTakeButton);
@@ -120,6 +137,10 @@ namespace MWGui
     {
         mTakeButtonShow = show;
         mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+#ifdef OPENMW_PLATFORM_3DS
+        mTake3DS->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
+#endif
     }
 
     void BookWindow::onKeyButtonPressed(MyGUI::Widget* /*sender*/, MyGUI::KeyCode key, MyGUI::Char character)
@@ -134,6 +155,10 @@ namespace MWGui
     {
         mTakeButtonAllowed = allowed;
         mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+#ifdef OPENMW_PLATFORM_3DS
+        mTake3DS->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
+#endif
     }
 
     void BookWindow::onCloseButtonClicked(MyGUI::Widget* /*sender*/)
@@ -163,6 +188,23 @@ namespace MWGui
 
     void BookWindow::updatePages()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // One page at a time: mCurrentPage is the page itself.
+        mLeftPageNumber->setCaptionWithReplacing("#{OMW3DS:Page} " + MyGUI::utility::toString(mCurrentPage + 1)
+            + " / " + MyGUI::utility::toString(std::max<size_t>(mPages.size(), 1)));
+        mNextPageButton->setVisible(mCurrentPage + 1 < mPages.size());
+        mPrevPageButton->setVisible(mCurrentPage != 0);
+        mPrev3DS->setVisible(mCurrentPage != 0);
+        mNext3DS->setVisible(mCurrentPage + 1 < mPages.size());
+        mPrevPageButton->setVisible(false);
+        mNextPageButton->setVisible(false);
+        if (mPages.empty())
+            return;
+        MyGUI::Widget* page = mLeftPage->getChildAt(0);
+        page->setCoord(page->getPosition().left, -mPages[mCurrentPage].first, page->getWidth(),
+            mPages[mCurrentPage].second);
+        return;
+#endif
         mLeftPageNumber->setCaption(MyGUI::utility::toString(mCurrentPage * 2 + 1));
         mRightPageNumber->setCaption(MyGUI::utility::toString(mCurrentPage * 2 + 2));
 
@@ -201,7 +243,12 @@ namespace MWGui
 
     void BookWindow::nextPage()
     {
-        if ((mCurrentPage + 1) * 2 < mPages.size())
+#ifdef OPENMW_PLATFORM_3DS
+        const size_t pagesShown = 1;
+#else
+        const size_t pagesShown = 2;
+#endif
+        if ((mCurrentPage + 1) * pagesShown < mPages.size())
         {
             MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("book page2"));
 
@@ -224,7 +271,11 @@ namespace MWGui
 
     ControllerButtons* BookWindow::getControllerButtons()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        if (mTake3DS->getVisible()) // the image button stays hidden there
+#else
         if (mTakeButton->getVisible())
+#endif
             mControllerButtons.mA = "#{Interface:Take}";
         else
             mControllerButtons.mA.clear();
@@ -235,7 +286,11 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
+#ifdef OPENMW_PLATFORM_3DS
+            if (mTake3DS->getVisible())
+#else
             if (mTakeButton->getVisible())
+#endif
                 onTakeButtonClicked(mTakeButton);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)

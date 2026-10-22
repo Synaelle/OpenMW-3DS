@@ -65,6 +65,9 @@ namespace MWLua
         // Returns true if the step finished a collection cycle. Touches the Lua state:
         // never run concurrently with anything else that does.
         bool gcStep(int steps);
+#ifdef OPENMW_PLATFORM_3DS
+        uint64_t getLuaMemoryUsage3DS() const { return mLua.getTotalMemoryUsage(); } // the slow-GC log (engine.cpp)
+#endif
 
         // \brief Executes latency-critical and scene graph related Lua logic.
         //

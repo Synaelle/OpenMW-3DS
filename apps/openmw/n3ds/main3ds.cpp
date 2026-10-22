@@ -10,6 +10,10 @@
 #include "frame3ds.hpp"
 #ifdef OPENMW_PLATFORM_3DS
 #include <openmw3ds_version.h>
+#include <unicode/udata.h>
+#include <unicode/utypes.h>
+
+#include "icudt73l_dat.h"
 #endif
 #include "sound3ds.hpp"
 
@@ -54,8 +58,8 @@ namespace
 
     // The start menu's choice (M15): Start boots the game's own main menu (a new game goes through character
     // creation); Debug's "Start (skip the intro)" keeps the test set-up of args.txt (--skip-menu --start <cell>
-    // --script-run test-start.txt: the test character with its gold, skills, axe and spells). Automated runs skip
-    // the intro.
+    // --script-run test-start.txt: the test character with its gold, skills, axe and spells), its "Start (with the
+    // intro)" is the game's own start with the debug tools on. Automated runs skip the intro.
     bool gSkipIntro = true;
     bool gBenchmark = false; // the start menu's third choice (benchmark3ds.hpp)
 #ifdef OPENMW3DS_DEBUG
@@ -339,6 +343,7 @@ namespace
     {
         Game, // the main menu, debug tools off
         DebugGame, // straight into the game with the test character (--skip-menu)
+        DebugIntro, // the game's own start (main menu, intro, character creation) with the debug tools on (M19)
         Benchmark,
         Quit,
     };
@@ -372,15 +377,19 @@ namespace
             std::string note;
             while (true)
             {
-                std::vector<menu::Item> items{ { "Start (skip the intro)" }, { "Benchmark" } };
-                if (!runs.mRuns.empty())
+                // M19 (the tester, test #104): a start with the intro too, to test the game's own beginning with the
+                // spike reports and the detailed logs on.
+                std::vector<menu::Item> items{ { "Start (skip the intro)" }, { "Start (with the intro)" },
+                    { "Benchmark" } };
+                // The test's runs to choose from: only when there is a choice (the tester, test #105).
+                if (runs.mRuns.size() > 1)
                     items.push_back({ "Test run: " + runs.mRuns[runs.mSelected].mLabel });
                 items.push_back({ "Back" });
                 const int option = menu::page("Debug", items, note, selected, true);
                 note.clear();
                 if (option < 0 || option == int(items.size()) - 1)
                     break;
-                if (option == 2)
+                if (option == 3)
                 {
                     runs.mSelected = (runs.mSelected + 1) % runs.mRuns.size();
                     continue;
@@ -391,6 +400,11 @@ namespace
                 {
                     chosenLine = "start: debug, skip the intro" + run;
                     return Start::DebugGame;
+                }
+                if (option == 1)
+                {
+                    chosenLine = "start: debug, with the intro" + run;
+                    return Start::DebugIntro;
                 }
                 // Benchmark: Morrowind's places, or an installed expansion's.
                 std::vector<menu::Item> sets{ { "Morrowind" } };
@@ -426,6 +440,9 @@ namespace
 int main(int, char**)
 {
     gfxInitDefault();
+    // ICU's data (M19): without it every message with a number lost it ("Your Long Blade skill increased to").
+    UErrorCode icuStatus = U_ZERO_ERROR;
+    udata_setCommonData(icudt73l_dat, &icuStatus); // logged once the log is up
     p3ds::InitOptions opts;
     opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
 #ifdef OPENMW3DS_DEBUG
@@ -462,7 +479,7 @@ int main(int, char**)
             gfxExit();
             return 0;
         }
-        gSkipIntro = start != Start::Game;
+        gSkipIntro = start != Start::Game && start != Start::DebugIntro;
         gBenchmark = start == Start::Benchmark;
         opts.debugMode = start != Start::Game;
         // A normal start runs without any test switch; a debug one with the chosen run's.
@@ -481,6 +498,7 @@ int main(int, char**)
     }
 #endif
     p3ds::init(opts);
+    P3DS_LOGI("ICU data (%lu KB): %s", (unsigned long)(icudt73l_dat_size / 1024), u_errorName(icuStatus));
 #ifdef OPENMW3DS_DEBUG
     if (!startLine.empty())
         P3DS_LOGI("%s, logs in logs/%s", startLine.c_str(), runLogs.c_str());

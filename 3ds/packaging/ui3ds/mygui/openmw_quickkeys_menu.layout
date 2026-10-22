@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The quick keys window on the two 3DS screens (M19, approved mockup): the instruction on the top screen, the ten
+     slots, the selected slot's name and the button on the bottom one. The root spans the canvas (400x480: the top
+     screen above, the bottom screen's 320x240 at 40,240) without a frame. The widget names are quickkeysmenu.cpp's;
+     NameLabel3DS is the port's (the slot the D-pad is on). -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="" layer="Modal" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen: the instruction, low on the screen over the world -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 168 320 64">
+            <Widget type="TextBox" skin="SandText" position="8 4 300 18">
+                <Property key="Caption" value="#{sQuickMenuTitle}"/>
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+            <Widget type="EditBox" skin="SandText" position="8 22 300 36" name="InstructionLabel">
+                <Property key="Caption" value="#{OMW3DS:QuickKeysHelp}"/>
+                <Property key="MultiLine" value="true"/>
+                <Property key="WordWrap" value="true"/>
+                <Property key="Static" value="true"/>
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+        </Widget>
+
+        <!-- Bottom screen -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+            <Widget type="TextBox" skin="HeaderText" position="8 4 300 18">
+                <Property key="Caption" value="#{sQuickMenuTitle}"/>
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+
+            <Widget type="Widget" skin="" position="4 28 312 126">
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 60 60" name="QuickKey1"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="63 0 60 60" name="QuickKey2"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="126 0 60 60" name="QuickKey3"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="189 0 60 60" name="QuickKey4"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="252 0 60 60" name="QuickKey5"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 66 60 60" name="QuickKey6"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="63 66 60 60" name="QuickKey7"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="126 66 60 60" name="QuickKey8"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="189 66 60 60" name="QuickKey9"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="252 66 60 60" name="QuickKey10"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="10 164 200 20" name="NameLabel3DS">
+                <Property key="TextAlign" value="Left VCenter"/>
+            </Widget>
+
+            <Widget type="AutoSizedButton" skin="MW_Button" name="OKButton" position="250 188 60 24" align="Right Bottom">
+                <Property key="ExpandDirection" value="Left"/>
+                <Property key="Caption" value="#{sClose}"/>
+            </Widget>
+        </Widget>
+
+    </Widget>
+</MyGUI>

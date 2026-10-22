@@ -57,6 +57,15 @@ namespace MWGui
         MyGUI::Widget* mRightPage;
 
         unsigned int mCurrentPage; // 0 is first page
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: one page at a time on the top screen; the bottom screen's title, page number and text buttons
+        // (packaging/ui3ds/mygui/openmw_book.layout). The image buttons stay hidden, these show instead.
+        MyGUI::TextBox* mTitle3DS = nullptr;
+        MyGUI::Button* mPrev3DS = nullptr;
+        MyGUI::Button* mNext3DS = nullptr;
+        MyGUI::Button* mTake3DS = nullptr;
+        MyGUI::Button* mClose3DS = nullptr;
+#endif
         Pages mPages;
 
         MWWorld::Ptr mBook;

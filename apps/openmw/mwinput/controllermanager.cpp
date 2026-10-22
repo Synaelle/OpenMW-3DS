@@ -259,8 +259,16 @@ namespace MWInput
                                  << (topWin != nullptr ? typeid(*topWin).name() : "none");
             }
 #endif
+#ifdef OPENMW_PLATFORM_3DS
+            // M19 (test #104): a stick back at rest still reaches the bindings. The interface swallowed it in windows
+            // without a stick cursor, and a camera turn the bindings had already received went on after the window
+            // closed, until the stick moved again. At rest is harmless to pass on.
+            if (consumed && std::abs(arg.value) >= 2000)
+                return;
+#else
             if (consumed)
                 return;
+#endif
         }
         else if (mBindingsManager->actionIsActive(A_TogglePOV)
             && (arg.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT || arg.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT))

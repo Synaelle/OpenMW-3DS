@@ -259,19 +259,88 @@ namespace Render3DS
             bool mInUse = false;
         } gRttReserve;
 
+        // M19: the local map's tiles (the minimap and the map window, black since M8): each drawn in turn into one
+        // reserved 128x128 VRAM target, then copied by the CPU into a texture of its own (RGB565 in linear memory,
+        // 32 KB) once the GPU is done. LocalMap keeps a tile's camera until mapTileReady (one tile at a time).
+        struct MapScratch
+        {
+            C3D_Tex mTex{};
+            C3D_RenderTarget* mTarget = nullptr;
+            const void* mBusy = nullptr; // the RttTarget drawn into it, copied out at the next beginFrame
+        } gMapScratch;
+        constexpr int kMapTileSize = 128; // [Map] local map resolution on the 3DS (settings-3ds.cfg)
+
         struct RttTarget : GpuObject
         {
             C3D_Tex* mTex = nullptr; // nullptr: no target (not drawn, not shown)
             C3D_RenderTarget* mTarget = nullptr;
             bool mDrawn = false; // drawn this frame: the CPU interface reads it once the GPU is done (next frame)
             bool mReady = false; // a finished image: until then the interface shows nothing (VRAM leftovers, #88)
+            bool mMapTile = false; // a local map tile: mTex is its own copy (gMapScratch)
+            bool mGaveUp = false; // a map tile that can't be drawn (no scratch, another size): LocalMap stops asking
+            int mBlankRetries = 0; // a map tile that came out all black, drawn again (the first frame after a load)
+            int mPrepareFrames = 0; // a map tile: frames spent preparing its objects before drawing it (prepareMapBin)
+            unsigned mPrepared = 0; // ... and how many objects and textures were prepared
             void release() override
             {
                 if (mTex == &gRttReserve.mTex)
                     gRttReserve.mInUse = false;
+                if (gMapScratch.mBusy == this)
+                    gMapScratch.mBusy = nullptr;
+                if (mMapTile && mTex != nullptr)
+                {
+                    C3D_TexDelete(mTex);
+                    delete mTex;
+                    mTex = nullptr;
+                }
             }
         };
         std::unordered_map<const osg::Texture*, RttTarget*> gRttTargets;
+
+        void bumpTexture(const C3D_Tex* tex);
+
+        // The scratch target's image (RGBA8, tiled: A, B, G, R) into the tile's own RGB565 texture, texel for texel
+        // (the same tiled order), once the GPU drew it (called at the next frame's start).
+        void copyMapTile(RttTarget& rtt)
+        {
+            if (gMapScratch.mBusy != &rtt)
+                return;
+            gMapScratch.mBusy = nullptr;
+            if (rtt.mTex == nullptr)
+            {
+                rtt.mTex = new C3D_Tex;
+                if (!C3D_TexInit(rtt.mTex, kMapTileSize, kMapTileSize, GPU_RGB565))
+                {
+                    delete rtt.mTex;
+                    rtt.mTex = nullptr;
+                    rtt.mGaveUp = true;
+                    P3DS_LOGW("render3ds: no linear memory for a local map tile");
+                    return;
+                }
+            }
+            GSPGPU_InvalidateDataCache(gMapScratch.mTex.data, gMapScratch.mTex.size);
+            const uint8_t* in = static_cast<const uint8_t*>(gMapScratch.mTex.data);
+            uint16_t* out = static_cast<uint16_t*>(rtt.mTex->data);
+            unsigned long brightness = 0; // all black: see below
+            // Texel for texel: the GPU drew the tile the way the interface reads it (OpenMW flips render-to-texture
+            // images in its widgets, the character preview's too).
+            for (int i = 0; i < kMapTileSize * kMapTileSize; ++i, in += 4)
+            {
+                out[i] = uint16_t((in[3] >> 3) << 11 | (in[2] >> 2) << 5 | (in[1] >> 3));
+                brightness += in[3] + in[2] + in[1];
+            }
+            // All black (the clear colour, nothing drawn): the first frame after a loading screen (the interior's tile
+            // at a game's start) doesn't reach the GPU. Drawn again, twice at most (a tile of an interior's padding is
+            // black for real).
+            if (brightness == 0 && rtt.mBlankRetries < 2)
+            {
+                ++rtt.mBlankRetries;
+                return;
+            }
+            GSPGPU_FlushDataCache(rtt.mTex->data, rtt.mTex->size);
+            bumpTexture(rtt.mTex);
+            rtt.mReady = true;
+        }
 
         // ------------------------------------------------------------------ geometry
 
@@ -2158,10 +2227,21 @@ namespace Render3DS
         // frame has begun.
         bool waitGpuAndBegin(unsigned timeoutMs)
         {
-            const u64 start = svcGetSystemTick();
+            // Only the time this thread spent waiting counts (M19, test #104): with the Rosalina menu open the whole
+            // game is paused but the clock runs on, and a wait that began before the menu found its 3 s gone on the
+            // way back: a GPU "hang" that wasn't, the GPU reset, a black screen for the rest of the run. A gap of
+            // more than 100 ms between two 1 ms sleeps is such a pause, not GPU time.
+            const u64 tick = CPU_TICKS_PER_MSEC;
+            u64 waited = 0;
+            u64 last = svcGetSystemTick();
             while (!C3D_FrameBegin(C3D_FRAME_NONBLOCK))
             {
-                if (svcGetSystemTick() - start > u64(timeoutMs) * CPU_TICKS_PER_MSEC)
+                const u64 now = svcGetSystemTick();
+                const u64 step = now - last;
+                last = now;
+                if (step < 100 * tick)
+                    waited += step;
+                if (waited > u64(timeoutMs) * tick)
                     return false;
                 svcSleepThread(1000000); // 1 ms
             }
@@ -3321,7 +3401,7 @@ namespace Render3DS
             // at ~25 pixels across); actors' parts are never culled this way.
             const float smallPixels = Settings::camera().smallFeaturePixels3DS();
             gSmallFeaturePixels = Settings::camera().mSmallFeatureCulling
-                ? std::max(0.f, smallCullBoost() && !Settings::camera().mFarSmallDetails3DS ? std::max(smallPixels, 10.f)
+                ? std::max(0.f, smallCullBoost() && Settings::camera().mSmallDetails3DS == 0 ? std::max(smallPixels, 10.f)
                                                                                            : smallPixels)
                 : 0.f;
 #ifdef OPENMW3DS_DEBUG
@@ -3338,7 +3418,12 @@ namespace Render3DS
 #endif
             // Textures the GPU drew into last frame (render-to-texture): finished now, the CPU interface reads them.
             for (auto& [owner, rtt] : gRttTargets)
-                if (rtt->mDrawn)
+                if (rtt->mDrawn && rtt->mMapTile)
+                {
+                    copyMapTile(*rtt);
+                    rtt->mDrawn = false;
+                }
+                else if (rtt->mDrawn)
                 {
                     // The CPU's cache may still hold the texture's previous pixels (the CPU interface read it last
                     // frame): the head turning left stale specks (test #87), as captureTarget's reads would.
@@ -5705,9 +5790,17 @@ namespace Render3DS
                 && (!gGuiOwnsBottom
                     || (gBottomHash != 0 && gSoftBottom.mValid && gSoftBottom.mPrevGeneration == gTextureGeneration));
             bool unchanged = false;
-            const uint64_t hash = prepareGuiDraws(reusable, unchanged);
+            // Test #105: 1.7 s in guiDraw as the rest window opened. Its two parts timed apart for the spike reports.
+            uint64_t hash;
+            {
+                p3ds::perf::Phase prepare("guiPrepare");
+                hash = prepareGuiDraws(reusable, unchanged);
+            }
             if (soft && !unchanged)
+            {
+                p3ds::perf::Phase cpu("guiSoft");
                 drawSoftGui();
+            }
             if (gGuiDraws.empty())
                 return;
 
@@ -5910,6 +6003,103 @@ namespace Render3DS
             rtt->mDrawn = true;
         }
 
+        // Test #105: a tile drawn at once prepared every object of the area the view hadn't drawn yet in that one
+        // frame (its vertices converted and uploaded; 725 draws on the Imperial Prison Ship): 1.6-3.7 s frozen on the
+        // console a few seconds after arriving. The tile's objects and textures are now prepared a few milliseconds
+        // per frame; the tile is drawn once nothing is left (false: time ran out, the walk resumes next frame, where
+        // what is done is only a lookup). Skinned meshes and particles are left to the draw (none on a map).
+        bool prepareMapBin(osgUtil::RenderBin* bin, uint64_t deadline, unsigned& prepared)
+        {
+            auto prepare = [&](osgUtil::RenderLeaf* leaf) {
+                const osg::Geometry* geometry = leaf->_drawable ? leaf->_drawable->asGeometry() : nullptr;
+                if (geometry == nullptr || leaf->_parent == nullptr)
+                    return true;
+                if (geometry->getUserData() == nullptr && gGeometries.find(geometry) == gGeometries.end())
+                {
+                    geometryFor(*geometry);
+                    ++prepared;
+                }
+                const ResolvedState& rs = resolve(leaf->_parent);
+                if (rs.mTexture.mValue != nullptr && gTextures.find(rs.mTexture.mValue) == gTextures.end()
+                    && gRttTargets.find(rs.mTexture.mValue) == gRttTargets.end())
+                {
+                    textureFor(*rs.mTexture.mValue);
+                    ++prepared;
+                }
+                return svcGetSystemTick() < deadline;
+            };
+            for (auto& child : bin->getRenderBinList())
+                if (!prepareMapBin(child.second.get(), deadline, prepared))
+                    return false;
+            for (osgUtil::RenderLeaf* leaf : bin->getRenderLeafList())
+                if (!prepare(leaf))
+                    return false;
+            for (osgUtil::StateGraph* sg : bin->getStateGraphList())
+                for (auto& leaf : sg->_leaves)
+                    if (!prepare(leaf.get()))
+                        return false;
+            return true;
+        }
+
+        // A local map tile's camera (LocalMapRenderToTexture, named "LocalMap" on the 3DS): drawn into the scratch
+        // target when it is free; copyMapTile takes the image out at the next frame's start.
+        void drawMapStage(osgUtil::RenderStage* stage)
+        {
+            osg::Camera* camera = stage->getCamera();
+            const auto& attachments = camera->getBufferAttachmentMap();
+            const auto color = attachments.find(osg::Camera::COLOR_BUFFER);
+            if (color == attachments.end() || color->second._texture == nullptr)
+                return;
+            osg::Texture* texture = color->second._texture.get();
+            if (!beginFrame()) // the frame first: see drawRttStage
+                return;
+            RttTarget*& rtt = gRttTargets[texture];
+            if (rtt == nullptr)
+            {
+                rtt = new RttTarget;
+                rtt->mOwner = texture;
+                rtt->mMapTile = true;
+                texture->addObserver(rtt);
+                const int w = texture->getTextureWidth(), h = texture->getTextureHeight();
+                if (gMapScratch.mTarget == nullptr || w != kMapTileSize || h != kMapTileSize)
+                {
+                    rtt->mGaveUp = true;
+                    P3DS_LOGW("render3ds: local map tile %dx%d not drawn (%s)", w, h,
+                        gMapScratch.mTarget == nullptr ? "no VRAM for its target" : "not 128x128");
+                }
+            }
+            if (rtt->mGaveUp || rtt->mReady || rtt->mDrawn || gMapScratch.mBusy != nullptr)
+                return;
+            // 6 ms of preparing per frame (about a fifth of a frame at 30 fps).
+            constexpr uint64_t kPrepareTicks = CPU_TICKS_PER_MSEC * 6;
+            ++rtt->mPrepareFrames;
+            if (!prepareMapBin(stage, svcGetSystemTick() + kPrepareTicks, rtt->mPrepared))
+                return;
+            C3D_RenderTargetClear(gMapScratch.mTarget, C3D_CLEAR_ALL, toRgba8(stage->getClearColor()), 0xFFFFFF);
+            gRotatedTarget = false;
+            gBound.mProjection = nullptr;
+            drawOn(gMapScratch.mTarget);
+            C3D_BindProgram(&gProgram);
+            setupAttributes();
+            const uint32_t drawsBefore = gStats.mDraws;
+            // Debug mode: what a tile costs (test #105, the stalls after arriving in a cell: its textures load here).
+            const size_t texturesBefore = gTextures.size();
+            const uint32_t bytesBefore = gStats.mUploadedBytes;
+            const uint64_t ticksBefore = svcGetSystemTick();
+            drawBin(stage);
+            if (p3ds::debugMode())
+                P3DS_LOGI("render3ds: local map tile drawn, %lu draws, %.0f ms, %lu new textures, %lu KB uploaded "
+                          "(%u objects and textures prepared before, over %d frames)",
+                    (unsigned long)(gStats.mDraws - drawsBefore),
+                    double(svcGetSystemTick() - ticksBefore) / CPU_TICKS_PER_MSEC,
+                    (unsigned long)(gTextures.size() - texturesBefore),
+                    (unsigned long)((gStats.mUploadedBytes - bytesBefore) / 1024), rtt->mPrepared, rtt->mPrepareFrames);
+            gRotatedTarget = true;
+            gBound.mProjection = nullptr; // the main stage sets its own (rotated) projection
+            rtt->mDrawn = true;
+            gMapScratch.mBusy = rtt;
+        }
+
         bool drawStageHook(osgUtil::RenderStage* stage, osg::RenderInfo& renderInfo, osgUtil::RenderLeaf*&)
         {
             if (!gActive)
@@ -5921,6 +6111,8 @@ namespace Render3DS
             {
                 if (!gFailure && stage->getCamera() != nullptr && stage->getCamera()->getName() == "CharacterPreview")
                     drawRttStage(stage);
+                else if (!gFailure && stage->getCamera() != nullptr && stage->getCamera()->getName() == "LocalMap")
+                    drawMapStage(stage);
                 return true;
             }
             if (!gFailure)
@@ -5988,6 +6180,12 @@ namespace Render3DS
                 = C3D_RenderTargetCreateFromTex(&gRttReserve.mTex, GPU_TEXFACE_2D, 0, GPU_RB_DEPTH24_STENCIL8);
         if (gRttReserve.mTarget == nullptr)
             P3DS_LOGW("render3ds: no VRAM for the character preview's target: the race window shows no head");
+        // The local map tiles' target (gMapScratch): 128 KB (color and depth).
+        if (C3D_TexInitVRAM(&gMapScratch.mTex, kMapTileSize, kMapTileSize, GPU_RGBA8))
+            gMapScratch.mTarget
+                = C3D_RenderTargetCreateFromTex(&gMapScratch.mTex, GPU_TEXFACE_2D, 0, GPU_RB_DEPTH24_STENCIL8);
+        if (gMapScratch.mTarget == nullptr)
+            P3DS_LOGW("render3ds: no VRAM for the local map's target: the minimap stays black");
         if (!C3D_TexInit(&gUnusedTex1, 8, 8, GPU_A8))
         {
             P3DS_LOGE("render3ds: no memory for the unit 1 placeholder texture");
@@ -6204,6 +6402,14 @@ namespace Render3DS
     {
         static const bool on = switchOn("sdmc:/openmw/no-flameloops");
         return on;
+    }
+
+    bool mapTileReady(const osg::Texture* texture)
+    {
+        if (gMapScratch.mTarget == nullptr)
+            return true; // never drawn: don't keep asking
+        const auto found = gRttTargets.find(texture);
+        return found != gRttTargets.end() && (found->second->mReady || found->second->mGaveUp);
     }
 
     bool sameStateSkip()

@@ -1,55 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- The save/load dialog on the top screen (M8, the tester's design): the character box (loading) and the
-     saves list on the left, the save's details on the right, the name box (saving: a touch opens
-     the system keyboard) and Delete/OK/Cancel along the bottom. The widget names are those of
-     savegamedialog.cpp. -->
+<!-- The save/load dialog on the two 3DS screens (M19, approved mockup): the selected save's details on the top
+     screen; the title, the character box (loading) or the name box (saving: a touch opens the system keyboard), the
+     saves and Delete/OK/Cancel on the bottom one. The root spans the canvas (400x480) without a frame. The widget
+     names are savegamedialog.cpp's; Title3DS is the port's. -->
 <MyGUI type="Layout">
-    <Widget type="Window" skin="MW_DialogNoTransp" layer="Modal" position="0 0 400 240" name="_Main">
-        <Widget type="ComboBox" skin="MW_ComboBox" position="8 6 204 22" name="SelectCharacter">
-            <Property key="Caption" value="#{OMWEngine:SelectCharacter}"/>
-            <Property key="ModeDrop" value="true"/>
-        </Widget>
-        <Widget type="ListBox" skin="MW_List" position="8 32 204 142" name="SaveList">
+    <Widget type="Window" skin="" layer="Modal" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen: the details. A save has no picture on the 3DS (StateManager::writeScreenshot is empty
+             there): the details take the panel, the place's name above the rest; shown with a save selected. -->
+        <Widget type="Widget" skin="MW_DialogNoTransp" position="40 24 320 192" name="Details3DS">
+            <Widget type="ImageBox" skin="ImageBox" position="0 0 1 1" name="Screenshot">
+                <Property key="Visible" value="false"/>
+            </Widget>
+            <Widget type="VBox" position="12 10 296 172">
+                <Property key="Spacing" value="6"/>
+                <Widget type="AutoSizedEditBox" skin="NormalText" name="CellName">
+                    <UserString key="HStretch" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="TextAlign" value="Left Top"/>
+                </Widget>
+                <Widget type="AutoSizedEditBox" skin="SandText" name="InfoText">
+                    <UserString key="HStretch" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="TextAlign" value="Left Top"/>
+                </Widget>
+                <Widget type="Spacer"/>
+            </Widget>
         </Widget>
 
-        <!-- A save has no picture on the 3DS (StateManager::writeScreenshot is empty there): the details take the
-             column, the place's name above the rest whatever its number of lines (M17: test #96's overlapped). -->
-        <Widget type="ImageBox" skin="ImageBox" position="0 0 1 1" name="Screenshot">
-            <Property key="Visible" value="false"/>
-        </Widget>
-        <Widget type="VBox" position="220 8 172 166">
-            <Property key="Spacing" value="4"/>
-            <Widget type="AutoSizedEditBox" skin="NormalText" name="CellName">
-                <UserString key="HStretch" value="true"/>
+        <!-- Bottom screen (222 high: the button hints below) -->
+        <Widget type="Widget" skin="MW_DialogNoTransp" position="40 240 320 222">
+            <Widget type="TextBox" skin="HeaderText" position="8 4 304 18" name="Title3DS">
+                <Property key="TextAlign" value="Center"/>
+            </Widget>
+            <Widget type="ComboBox" skin="MW_ComboBox" position="8 26 304 22" name="SelectCharacter">
+                <Property key="Caption" value="#{OMWEngine:SelectCharacter}"/>
+                <Property key="ModeDrop" value="true"/>
+            </Widget>
+            <Widget type="EditBox" skin="MW_TextEdit" position="8 26 304 22" name="SaveNameEdit">
                 <Property key="Static" value="true"/>
-                <Property key="MultiLine" value="true"/>
-                <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
             </Widget>
-            <Widget type="AutoSizedEditBox" skin="SandText" name="InfoText">
-                <UserString key="HStretch" value="true"/>
-                <Property key="Static" value="true"/>
-                <Property key="MultiLine" value="true"/>
-                <Property key="WordWrap" value="true"/>
-                <Property key="TextAlign" value="Left Top"/>
+            <Widget type="ListBox" skin="MW_List" position="8 52 304 134" name="SaveList">
             </Widget>
-            <Widget type="Spacer"/>
-        </Widget>
-
-        <Widget type="EditBox" skin="MW_TextEdit" position="8 180 384 22" name="SaveNameEdit">
-            <Property key="Static" value="true"/>
-        </Widget>
-        <Widget type="HBox" skin="" position="8 206 384 26">
-            <Widget type="AutoSizedButton" skin="MW_Button" name="DeleteButton">
-                <Property key="Caption" value="#{OMWEngine:DeleteGame}"/>
-            </Widget>
-            <Widget type="Spacer"/>
-            <Widget type="AutoSizedButton" skin="MW_Button" name="OkButton">
-                <Property key="Caption" value="#{Interface:OK}"/>
-            </Widget>
-            <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
-                <Property key="Caption" value="#{Interface:Cancel}"/>
+            <Widget type="HBox" skin="" position="8 190 304 26">
+                <Widget type="AutoSizedButton" skin="MW_Button" name="DeleteButton">
+                    <Property key="Caption" value="#{OMWEngine:DeleteGame}"/>
+                </Widget>
+                <Widget type="Spacer"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="OkButton">
+                    <Property key="Caption" value="#{Interface:OK}"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                    <Property key="Caption" value="#{Interface:Cancel}"/>
+                </Widget>
             </Widget>
         </Widget>
     </Widget>

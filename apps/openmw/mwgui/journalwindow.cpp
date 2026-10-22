@@ -107,6 +107,14 @@ namespace
 
             adviseButtonClick(ShowAllBTN, &JournalWindowImpl::notifyShowAll);
             adviseButtonClick(ShowActiveBTN, &JournalWindowImpl::notifyShowActive);
+#ifdef OPENMW_PLATFORM_3DS
+            // M19: the bottom screen's text buttons do what the (parked) image buttons do.
+            adviseButtonClick("Prev3DS", &JournalWindowImpl::notifyPrevPage);
+            adviseButtonClick("Next3DS", &JournalWindowImpl::notifyNextPage);
+            adviseButtonClick("Close3DS", &JournalWindowImpl::notifyClose);
+            adviseButtonClick("Journal3DS", &JournalWindowImpl::notifyJournal);
+            adviseButtonClick("Options3DS", &JournalWindowImpl::notifyOptions);
+#endif
 
             adviseKeyPress(OptionsBTN, &JournalWindowImpl::notifyKeyPress);
             adviseKeyPress(PrevPageBTN, &JournalWindowImpl::notifyKeyPress);
@@ -222,6 +230,9 @@ namespace
 
             // Latin = 26 (13 + 13)
             mIndexRowCount = 13;
+#ifdef OPENMW_PLATFORM_3DS
+            mIndexRowCount = 9; // M19: 9 + 9 + 8 on the bottom screen (journalbooks.cpp)
+#endif
             bool isRussian = (mEncoding == ToUTF8::WINDOWS_1251);
             if (isRussian) // Cyrillic is either (10 + 10 + 10) or (15 + 15)
                 mIndexRowCount = MWGui::getCyrillicIndexPageCount();
@@ -255,8 +266,10 @@ namespace
             {
                 size_t& page = mStates.top().mPage;
                 page = mStates.top().mBook->pageCount() - 1;
+#ifndef OPENMW_PLATFORM_3DS // one page at a time there: any page starts a view
                 if (page % 2)
                     --page;
+#endif
             }
             updateShowingPages();
 
@@ -314,6 +327,9 @@ namespace
             setVisible(RightTopicIndex, !mQuestMode);
             setVisible(ShowAllBTN, mQuestMode && !mAllQuests);
             setVisible(ShowActiveBTN, mQuestMode && mAllQuests);
+#ifdef OPENMW_PLATFORM_3DS
+            sync3DS();
+#endif
 
             // TODO: figure out how to make "options" page overlay book page
             //       correctly, so that text may show underneath
@@ -353,10 +369,25 @@ namespace
             updateCloseJournalButton();
         }
 
+#ifdef OPENMW_PLATFORM_3DS
+        // The text buttons show what the parked image buttons would.
+        void sync3DS()
+        {
+            for (auto [image, text] : { std::pair<std::string_view, std::string_view>{ PrevPageBTN, "Prev3DS" },
+                     { NextPageBTN, "Next3DS" }, { CloseBTN, "Close3DS" }, { JournalBTN, "Journal3DS" } })
+                setVisible(text, getWidget<MyGUI::Widget>(image)->getVisible() && !mOptionsMode);
+            setVisible("Options3DS", !mOptionsMode);
+            setVisible("BookPanel3DS", !mOptionsMode); // the options' parchment lets it show through
+        }
+#endif
+
         void updateCloseJournalButton()
         {
             setVisible(CloseBTN, mStates.size() < 2);
             setVisible(JournalBTN, mStates.size() >= 2);
+#ifdef OPENMW_PLATFORM_3DS
+            sync3DS();
+#endif
             MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
         }
 
@@ -382,7 +413,11 @@ namespace
             MyGUI::Widget* prevPageBtn = getWidget<MyGUI::Widget>(PrevPageBTN);
 
             MyGUI::Widget* focus = MyGUI::InputManager::getInstance().getKeyFocusWidget();
+#ifdef OPENMW_PLATFORM_3DS
+            bool nextPageVisible = relPages > 1; // one page shown
+#else
             bool nextPageVisible = relPages > 2;
+#endif
             nextPageBtn->setVisible(nextPageVisible);
             bool prevPageVisible = page > 0;
             prevPageBtn->setVisible(prevPageVisible);
@@ -408,6 +443,12 @@ namespace
 
             setText(PageOneNum, page + 1);
             setText(PageTwoNum, page + 2);
+#ifdef OPENMW_PLATFORM_3DS
+            if (relPages > 0)
+                getWidget<MyGUI::TextBox>(PageOneNum)->setCaption(
+                    MyGUI::utility::toString(page + 1) + " / " + MyGUI::utility::toString(page + relPages));
+            sync3DS();
+#endif
 
             MWBase::Environment::get().getWindowManager()->updateControllerButtonsOverlay();
         }
@@ -673,11 +714,16 @@ namespace
                 size_t& page = mStates.top().mPage;
                 std::shared_ptr<MWGui::TypesetBook> book = mStates.top().mBook;
 
-                if (page + 2 < book->pageCount())
+#ifdef OPENMW_PLATFORM_3DS
+                const size_t pagesShown = 1;
+#else
+                const size_t pagesShown = 2;
+#endif
+                if (page + pagesShown < book->pageCount())
                 {
                     MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("book page"));
 
-                    page += 2;
+                    page += pagesShown;
                     updateShowingPages();
                 }
             }
@@ -691,11 +737,16 @@ namespace
             {
                 size_t& page = mStates.top().mPage;
 
-                if (page >= 2)
+#ifdef OPENMW_PLATFORM_3DS
+                const size_t pagesShown = 1;
+#else
+                const size_t pagesShown = 2;
+#endif
+                if (page >= pagesShown)
                 {
                     MWBase::Environment::get().getWindowManager()->playSound(ESM::RefId::stringRefId("book page"));
 
-                    page -= 2;
+                    page -= pagesShown;
                     updateShowingPages();
                 }
             }

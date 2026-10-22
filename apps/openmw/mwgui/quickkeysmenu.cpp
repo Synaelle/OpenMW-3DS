@@ -5,6 +5,7 @@
 #include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_RenderManager.h>
+#include <MyGUI_TextBox.h>
 
 #include <components/esm3/esmwriter.hpp>
 #include <components/esm3/loadmgef.hpp>
@@ -44,8 +45,13 @@ namespace MWGui
         getWidget(mOkButton, "OKButton");
         getWidget(mInstructionLabel, "InstructionLabel");
 
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: the two-screen layout (packaging/ui3ds) fits the instruction as it is.
+        getWidget(mNameLabel3DS, "NameLabel3DS");
+#else
         mMainWidget->setSize(mMainWidget->getWidth(),
             mMainWidget->getHeight() + (mInstructionLabel->getTextSize().height - mInstructionLabel->getHeight()));
+#endif
 
         mOkButton->eventMouseButtonClick += MyGUI::newDelegate(this, &QuickKeysMenu::onOkButtonClicked);
         center();
@@ -62,7 +68,11 @@ namespace MWGui
         if (Settings::gui().mControllerMenus)
         {
             mControllerButtons.mA = "#{Interface:Select}";
+#ifdef OPENMW_PLATFORM_3DS
+            mControllerButtons.mB = "#{Interface:Back}"; // B leaves the window (M19: "B OK" read oddly)
+#else
             mControllerButtons.mB = "#{Interface:OK}";
+#endif
         }
     }
 
@@ -123,7 +133,27 @@ namespace MWGui
             for (size_t i = 0; i < mKey.size(); i++)
                 mKey[i].button->setControllerFocus(i == mControllerFocus);
         }
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    void QuickKeysMenu::updateName3DS()
+    {
+        if (mNameLabel3DS == nullptr || mControllerFocus >= mKey.size())
+            return;
+        const keyData& key = mKey[mControllerFocus];
+        std::string name = key.name;
+        if (key.type == ESM::QuickKeys::Type::HandToHand)
+            name = "#{sSkillHandtohand}";
+        else if (key.type == ESM::QuickKeys::Type::Unassigned)
+            name = "#{OMW3DS:QuickKeyEmpty}";
+        // Slot 10 is the "0" key.
+        const std::string number = key.index == 10 ? "0" : MyGUI::utility::toString(key.index);
+        mNameLabel3DS->setCaptionWithReplacing(number + ": " + name);
+    }
+#endif
 
     void QuickKeysMenu::onClose()
     {
@@ -189,6 +219,13 @@ namespace MWGui
         }
 
         mSelected = &mKey[index];
+#ifdef OPENMW_PLATFORM_3DS
+        // A tap moves the highlight and the name there too.
+        mControllerFocus = static_cast<size_t>(index);
+        for (size_t i = 0; i < mKey.size(); i++)
+            mKey[i].button->setControllerFocus(i == mControllerFocus);
+        updateName3DS();
+#endif
 
         // prevent reallocation of zero key from ESM::QuickKeys::Type::HandToHand
         if (mSelected->index == 10)
@@ -237,6 +274,9 @@ namespace MWGui
     {
         unassign(mSelected);
         mAssignDialog->setVisible(false);
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
     }
 
     void QuickKeysMenu::onCancelButtonClicked(MyGUI::Widget* /*sender*/)
@@ -261,6 +301,9 @@ namespace MWGui
 
         if (mItemSelectionDialog)
             mItemSelectionDialog->setVisible(false);
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
     }
 
     void QuickKeysMenu::onAssignItem(MWWorld::Ptr item)
@@ -300,6 +343,9 @@ namespace MWGui
 
         if (mMagicSelectionDialog)
             mMagicSelectionDialog->setVisible(false);
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
     }
 
     void QuickKeysMenu::onAssignMagic(const ESM::RefId& spellId)
@@ -338,6 +384,9 @@ namespace MWGui
 
         if (mMagicSelectionDialog)
             mMagicSelectionDialog->setVisible(false);
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
     }
 
     void QuickKeysMenu::onAssignMagicCancel()
@@ -494,6 +543,9 @@ namespace MWGui
 
         for (size_t i = 0; i < mKey.size(); i++)
             mKey[i].button->setControllerFocus(i == mControllerFocus);
+#ifdef OPENMW_PLATFORM_3DS
+        updateName3DS();
+#endif
 
         return true;
     }

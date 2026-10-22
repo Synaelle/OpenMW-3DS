@@ -396,7 +396,21 @@ bool OMW::Engine::frame(unsigned frameNumber, float frametime)
     // garbage through the frame tail and the framerate-limiter sleep.
     {
         OMW3DS_PHASE("luaGc");
+#ifdef OPENMW_PLATFORM_3DS
+        // Test #105: a 1.3 s luaGc phase right after the system keyboard. Whether the collector did that much work
+        // (the Lua memory falls) or the main thread didn't run meanwhile (it doesn't).
+        const auto gcStart = std::chrono::steady_clock::now();
+        const uint64_t luaBefore = mLuaManager->getLuaMemoryUsage3DS();
+#endif
         mLuaWorker->gc();
+#ifdef OPENMW_PLATFORM_3DS
+        const auto gcTime = std::chrono::steady_clock::now() - gcStart;
+        if (gcTime > std::chrono::milliseconds(200))
+            Log(Debug::Warning) << "slow Lua garbage collection step: "
+                                << std::chrono::duration_cast<std::chrono::milliseconds>(gcTime).count()
+                                << " ms, Lua memory " << luaBefore / 1024 << " KB -> "
+                                << mLuaManager->getLuaMemoryUsage3DS() / 1024 << " KB";
+#endif
     }
 
     return true;
@@ -1162,7 +1176,22 @@ void OMW::Engine::go()
 
         {
             OMW3DS_PHASE("limiter");
+#ifdef OPENMW_PLATFORM_3DS
+            // Test #105: 1.3 s in the limiter, which sleeps at most one frame: the main thread wasn't woken up
+            // (another thread or the system kept its core). The log says how long it asked for.
+            const auto limitStart = std::chrono::steady_clock::now();
+            const auto asked = frameRateLimiter.timeLeft3DS(limitStart);
+#endif
             frameRateLimiter.limit();
+#ifdef OPENMW_PLATFORM_3DS
+            const auto slept = std::chrono::steady_clock::now() - limitStart;
+            if (slept > std::chrono::milliseconds(200))
+                Log(Debug::Warning) << "frame limiter: asked to sleep "
+                                    << std::chrono::duration_cast<std::chrono::milliseconds>(asked).count()
+                                    << " ms, woke up after "
+                                    << std::chrono::duration_cast<std::chrono::milliseconds>(slept).count()
+                                    << " ms (the main thread wasn't running)";
+#endif
         }
     }
 

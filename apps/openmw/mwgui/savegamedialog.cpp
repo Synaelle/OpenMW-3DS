@@ -7,6 +7,7 @@
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_LanguageManager.h>
+#include <MyGUI_TextBox.h>
 #include <MyGUI_UString.h>
 
 #include <osg/Texture2D>
@@ -271,6 +272,12 @@ namespace MWGui
 
         mDeleteButton->setUserString("Hidden", load ? "false" : "true");
         mDeleteButton->setVisible(load);
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: the bottom screen's title (the two-screen layout, packaging/ui3ds).
+        MyGUI::TextBox* title = nullptr;
+        getWidget(title, "Title3DS");
+        title->setCaptionWithReplacing(load ? "#{OMW3DS:LoadGame}" : "#{OMW3DS:SaveGame}");
+#endif
 
         if (!load)
         {
@@ -437,6 +444,14 @@ namespace MWGui
     {
         mOkButton->setEnabled(pos != MyGUI::ITEM_NONE || mSaving);
         mDeleteButton->setEnabled(pos != MyGUI::ITEM_NONE);
+#ifdef OPENMW_PLATFORM_3DS
+        {
+            // M19: the top screen's details panel only with a save selected (no empty frame over the game).
+            MyGUI::Widget* details = nullptr;
+            getWidget(details, "Details3DS");
+            details->setVisible(pos != MyGUI::ITEM_NONE && mCurrentCharacter);
+        }
+#endif
 
         if (pos == MyGUI::ITEM_NONE || !mCurrentCharacter)
         {

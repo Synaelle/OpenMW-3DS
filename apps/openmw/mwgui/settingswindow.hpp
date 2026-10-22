@@ -138,6 +138,10 @@ namespace MWGui
         void collectFocusables3DS(bool keepFocus);
         void showFocus3DS();
         void useFocus3DS(int step);
+        // The level buttons (SettingType Level3DS, an int setting 0 Low, 1 Medium, 2 High).
+        void setLevelCaption3DS(MyGUI::Widget* button);
+        void changeLevel3DS(MyGUI::Widget* button, int step);
+        void onLevelClicked3DS(MyGUI::Widget* sender);
 #endif
         void renderScriptSettings();
 

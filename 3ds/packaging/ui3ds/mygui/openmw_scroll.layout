@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The scroll window on the two 3DS screens (M19, approved mockup, as the book without pages): the text on the
+     game's scroll texture across the top screen at the book font's own size (D-pad up/down scrolls it); the title
+     and the buttons on the bottom one. The root spans the canvas (400x480) without a frame. scrollwindow.cpp's image
+     buttons stay hidden; the port's text buttons (*3DS) do the same. -->
+<MyGUI type="Layout">
+
+<Widget type="Window" skin="" layer="Windows" position="0 0 400 480" name="_Main">
+
+    <!-- Top screen -->
+    <Widget type="ImageBox" skin="ImageBox" position="0 0 400 240" name="ScrollImage">
+        <Property key="ImageTexture" value="textures\scroll.dds"/>
+        <Widget type="ScrollView" skin="MW_ScrollView" position="44 42 318 170" name="TextView">
+            <Property key="CanvasSize" value="318 900"/>
+        </Widget>
+    </Widget>
+
+    <!-- Bottom screen (222 high: the button hints below) -->
+    <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+        <Widget type="TextBox" skin="HeaderText" position="8 8 304 20" name="Title3DS">
+            <Property key="TextAlign" value="Center"/>
+        </Widget>
+
+        <Widget type="Button" skin="MW_Button" position="16 50 136 40" name="Up3DS">
+            <Property key="Caption" value="#{OMW3DS:ScrollUp}"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="168 50 136 40" name="Down3DS">
+            <Property key="Caption" value="#{OMW3DS:ScrollDown}"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="16 130 136 40" name="Take3DS">
+            <Property key="Caption" value="#{Interface:Take}"/>
+        </Widget>
+        <Widget type="Button" skin="MW_Button" position="168 130 136 40" name="Close3DS">
+            <Property key="Caption" value="#{Interface:Close}"/>
+        </Widget>
+
+        <!-- scrollwindow.cpp's image buttons, hidden -->
+        <Widget type="ImageButton" skin="ImageBox" position="0 0 64 32" name="TakeButton">
+            <Property key="ImageNormal" value="textures\tx_menubook_take_idle.dds"/>
+            <Property key="Visible" value="false"/>
+        </Widget>
+        <Widget type="ImageButton" skin="ImageBox" position="0 0 64 32" name="CloseButton">
+            <Property key="ImageNormal" value="textures\tx_menubook_close_idle.dds"/>
+            <Property key="Visible" value="false"/>
+        </Widget>
+    </Widget>
+</Widget>
+
+</MyGUI>

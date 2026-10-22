@@ -83,6 +83,11 @@ namespace MWGui
 
         bool onControllerButtonEvent(const SDL_ControllerButtonEvent& arg) override;
         size_t mControllerFocus = 0;
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: under the slots, "N: name" of the slot the D-pad (or the last tap) is on.
+        MyGUI::TextBox* mNameLabel3DS = nullptr;
+        void updateName3DS();
+#endif
     };
 
     class QuickKeysMenuAssign : public WindowModal

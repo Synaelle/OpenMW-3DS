@@ -1437,7 +1437,7 @@ namespace MWRender
                 setViewDistance(Settings::camera().mViewingDistance);
             }
 #ifdef OPENMW_PLATFORM_3DS
-            else if (it->first == "Camera" && it->second == "far small details")
+            else if (it->first == "Camera" && it->second == "small details")
             {
                 mViewer->getCamera()->setSmallFeatureCullingPixelSize(Settings::camera().smallFeaturePixels3DS());
             }

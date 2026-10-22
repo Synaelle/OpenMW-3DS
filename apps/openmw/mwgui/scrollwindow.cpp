@@ -1,6 +1,8 @@
 #include "scrollwindow.hpp"
 
+#include <MyGUI_Button.h>
 #include <MyGUI_ScrollView.h>
+#include <MyGUI_TextBox.h>
 
 #include <components/esm3/loadbook.hpp>
 #include <components/esm4/loadbook.hpp>
@@ -43,6 +45,19 @@ namespace MWGui
         mControllerButtons.mB = "#{Interface:Close}";
         mControllerButtons.mDpad = "#{Interface:ScrollDown}";
 
+#ifdef OPENMW_PLATFORM_3DS
+        MyGUI::Button* button = nullptr;
+        getWidget(mTitle3DS, "Title3DS");
+        getWidget(mTake3DS, "Take3DS");
+        mTake3DS->eventMouseButtonClick += MyGUI::newDelegate(this, &ScrollWindow::onTakeButtonClicked);
+        getWidget(button, "Close3DS");
+        button->eventMouseButtonClick += MyGUI::newDelegate(this, &ScrollWindow::onCloseButtonClicked);
+        getWidget(button, "Up3DS");
+        button->eventMouseButtonClick += MyGUI::newDelegate(this, &ScrollWindow::onScrollButton3DS);
+        getWidget(button, "Down3DS");
+        button->eventMouseButtonClick += MyGUI::newDelegate(this, &ScrollWindow::onScrollButton3DS);
+#endif
+
         center();
     }
 
@@ -63,7 +78,14 @@ namespace MWGui
         bool shrinkTextAtLastTag = scroll.getType() == ESM::REC_BOOK;
 
         Formatting::BookFormatter formatter;
+#ifdef OPENMW_PLATFORM_3DS
+        // The 3DS layout's text area, less the scroll bar (the stock layout's 390 of 410).
+        formatter.markupToWidget(
+            mTextView, *text, mTextView->getWidth() - 20, mTextView->getHeight(), shrinkTextAtLastTag);
+        mTitle3DS->setCaption(std::string(scroll.getClass().getName(scroll)));
+#else
         formatter.markupToWidget(mTextView, *text, 390, mTextView->getHeight(), shrinkTextAtLastTag);
+#endif
         MyGUI::IntSize size = mTextView->getChildAt(0)->getSize();
 
         // Canvas size must be expressed with VScroll disabled, otherwise MyGUI would expand the scroll area when the
@@ -98,12 +120,30 @@ namespace MWGui
     {
         mTakeButtonShow = show;
         mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+#ifdef OPENMW_PLATFORM_3DS
+        mTake3DS->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
+#endif
     }
+
+#ifdef OPENMW_PLATFORM_3DS
+    void ScrollWindow::onScrollButton3DS(MyGUI::Widget* sender)
+    {
+        // As the D-pad does (onKeyButtonPressed): 40 px a press.
+        onKeyButtonPressed(sender,
+            sender->getName().find("Up3DS") != std::string::npos ? MyGUI::KeyCode::ArrowUp : MyGUI::KeyCode::ArrowDown,
+            0);
+    }
+#endif
 
     void ScrollWindow::setInventoryAllowed(bool allowed)
     {
         mTakeButtonAllowed = allowed;
         mTakeButton->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+#ifdef OPENMW_PLATFORM_3DS
+        mTake3DS->setVisible(mTakeButtonShow && mTakeButtonAllowed);
+        mTakeButton->setVisible(false);
+#endif
     }
 
     void ScrollWindow::onCloseButtonClicked(MyGUI::Widget* /*sender*/)
@@ -130,7 +170,11 @@ namespace MWGui
 
     ControllerButtons* ScrollWindow::getControllerButtons()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        if (mTake3DS->getVisible()) // the image button stays hidden there
+#else
         if (mTakeButton->getVisible())
+#endif
             mControllerButtons.mA = "#{Interface:Take}";
         else
             mControllerButtons.mA.clear();
@@ -141,7 +185,11 @@ namespace MWGui
     {
         if (arg.button == SDL_CONTROLLER_BUTTON_A)
         {
+#ifdef OPENMW_PLATFORM_3DS
+            if (mTake3DS->getVisible())
+#else
             if (mTakeButton->getVisible())
+#endif
                 onTakeButtonClicked(mTakeButton);
         }
         else if (arg.button == SDL_CONTROLLER_BUTTON_B)

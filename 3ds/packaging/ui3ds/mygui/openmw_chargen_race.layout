@@ -23,7 +23,7 @@
                 <Property key="TextAlign" value="Left Top"/>
             </Widget>
             <!-- Skill bonus sub-widgets will be placed here, no skin to make it invisible -->
-            <Widget type="Widget" skin="" position="200 26 192 204" name="SkillList"/>
+            <Widget type="Widget" skin="" position="200 26 184 204" name="SkillList"/> <!-- M19: 184 wide, the numbers off the frame -->
         </Widget>
 
         <!-- Bottom screen -->
@@ -34,11 +34,11 @@
             <Widget type="ListBox" skin="MW_List" position="8 24 140 112" name="RaceList">
             </Widget>
 
-            <Widget type="TextBox" skin="HeaderText" position="160 4 152 18" name="SpellPowerT" align="Left Top">
+            <Widget type="TextBox" skin="HeaderText" position="154 4 160 18" name="SpellPowerT" align="Left Top">
                 <Property key="TextAlign" value="Left Top"/>
             </Widget>
             <!-- Spell power sub-widgets will be placed here, no skin to make it invisible -->
-            <Widget type="Widget" skin="" position="160 24 152 112" name="SpellPowerList"/>
+            <Widget type="Widget" skin="" position="154 24 160 112" name="SpellPowerList"/> <!-- M19: 160 wide, "Weakness to Magicka" whole -->
 
             <!-- Rotation of head -->
             <Widget type="ScrollBar" skin="MW_HScroll" position="8 142 140 14" name="HeadRotate"/>

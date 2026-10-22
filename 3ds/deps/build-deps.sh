@@ -305,6 +305,22 @@ build_icu() {
     )
 }
 
+# The ICU data the game embeds (M19: it was built but never registered, so every message with a number lost it):
+# the filtered archive cut down to deps/icu/icu-keep.txt by the host icupkg, ~0.9 MB instead of 2.7.
+build_icudata() {
+    local v=73.2 tools="$BUILD/icu-host"
+    # The output keeps the archive's file name: icupkg names the package after it, and ICU looks items up as
+    # icudt73l/<item> (an icudt73l_en.dat held items nothing could find).
+    local in="$PREFIX/share/icu/$v/icudt73l.dat" out="$PREFIX/share/icu/$v/en/icudt73l.dat"
+    local remove="$BUILD/icu-remove.txt"
+    export PATH="$tools/lib:/ucrt64/bin:$PATH"
+    "$tools/bin/icupkg" -l "$in" | tr '\r' '\n' | grep . | grep -v -x -F -f <(grep -v '^#' "$DEPS/icu/icu-keep.txt" | grep .) > "$remove"
+    rm -f "$out"
+    mkdir -p "$(dirname "$out")"
+    "$tools/bin/icupkg" -r "$remove" "$in" "$out"
+    ls -l "$out"
+}
+
 # mpg123 with its integer decoder and ARM assembly synth (arm_nofpu): devkitPro's 3ds-mpg123 is the generic
 # floating-point decoder, ~16% of a core for one 44.1 kHz stereo stream in Azahar (M7).
 build_mpg123() {
@@ -342,7 +358,7 @@ build_citro3d() {
     cp "$SRC/citro3d/lib/libcitro3d.a" "$PREFIX/lib/libcitro3d.a"
 }
 
-ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu mpg123 citro3d)
+ALL_COMPONENTS=(compat sdl2 boost bullet bulletfloat stubgl osg mygui recast sqlite3 yamlcpp icu icudata mpg123 citro3d)
 
 # ---------------------------------------------------------------- driver
 components=("$@")

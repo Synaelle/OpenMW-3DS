@@ -9,6 +9,7 @@
 #include <platform3ds/screenshot.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/journal.hpp"
 #include "../mwbase/luamanager.hpp"
 #include "../mwbase/mechanicsmanager.hpp"
 #include "../mwbase/statemanager.hpp"
@@ -23,6 +24,7 @@
 #include "../mwworld/cell.hpp"
 #include "../mwworld/cellstore.hpp"
 #include "../mwworld/class.hpp"
+#include "../mwworld/containerstore.hpp"
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/globals.hpp"
 #include "../mwworld/manualref.hpp"
@@ -311,6 +313,18 @@ namespace omw3ds::debug
             // "use:F,TEXT" (any number): at frame F, activate the nearest object whose id contains TEXT
             std::vector<std::pair<unsigned, std::string>> mUses;
             std::vector<std::pair<unsigned, int>> mPicks; // "pick:F,N" (any number): touch menu option N at frame F
+            // "additem:F,ID,N" (any number): at frame F, N of the record ID into the player's inventory (M19: the
+            // alchemy and enchanting windows tested with ingredients, apparatus and soul gems)
+            struct AddItem
+            {
+                unsigned mAt = 0;
+                std::string mId;
+                int mCount = 1;
+            };
+            std::vector<AddItem> mAddItems;
+            // "journal:F,QUEST,N" (any number): at frame F, the quest's entry N into the journal (M19: the journal
+            // window tested with entries, quests and topics)
+            std::vector<AddItem> mJournal;
         };
         unsigned sLoadingTicks = 0; // since the last engine frame
 
@@ -361,6 +375,40 @@ namespace omw3ds::debug
                         while (*textEnd != '\0' && !std::isspace(static_cast<unsigned char>(*textEnd)))
                             ++textEnd;
                         result.mUses.emplace_back(at, std::string(text, textEnd));
+                    }
+                    for (const char* q = std::strstr(buf, "additem:"); q != nullptr;
+                         q = std::strstr(q + 8, "additem:"))
+                    {
+                        char* end = nullptr;
+                        Autorun::AddItem item;
+                        item.mAt = unsigned(std::strtoul(q + 8, &end, 10));
+                        if (*end != ',')
+                            continue;
+                        const char* id = end + 1;
+                        const char* idEnd = id;
+                        while (*idEnd != '\0' && *idEnd != ',' && !std::isspace(static_cast<unsigned char>(*idEnd)))
+                            ++idEnd;
+                        item.mId.assign(id, idEnd);
+                        if (*idEnd == ',')
+                            item.mCount = std::max(1, int(std::strtol(idEnd + 1, nullptr, 10)));
+                        result.mAddItems.push_back(item);
+                    }
+                    for (const char* q = std::strstr(buf, "journal:"); q != nullptr;
+                         q = std::strstr(q + 8, "journal:"))
+                    {
+                        char* end = nullptr;
+                        Autorun::AddItem entry;
+                        entry.mAt = unsigned(std::strtoul(q + 8, &end, 10));
+                        if (*end != ',')
+                            continue;
+                        const char* id = end + 1;
+                        const char* idEnd = id;
+                        while (*idEnd != '\0' && *idEnd != ',' && !std::isspace(static_cast<unsigned char>(*idEnd)))
+                            ++idEnd;
+                        entry.mId.assign(id, idEnd);
+                        if (*idEnd == ',')
+                            entry.mCount = int(std::strtol(idEnd + 1, nullptr, 10));
+                        result.mJournal.push_back(entry);
                     }
                     for (const char* q = std::strstr(buf, "pick:"); q != nullptr; q = std::strstr(q + 5, "pick:"))
                     {
@@ -744,6 +792,34 @@ namespace omw3ds::debug
         for (const auto& [at, text] : autorun.mUses)
             if (at == frame)
                 useNearest(text);
+        for (const Autorun::AddItem& entry : autorun.mJournal)
+            if (entry.mAt == frame)
+            {
+                try
+                {
+                    MWBase::Environment::get().getJournal()->addEntry(
+                        ESM::RefId::stringRefId(entry.mId), entry.mCount, MWMechanics::getPlayer());
+                    P3DS_LOGI("autorun: journal %s %d", entry.mId.c_str(), entry.mCount);
+                }
+                catch (const std::exception& e)
+                {
+                    P3DS_LOGW("autorun: no journal entry %s %d: %s", entry.mId.c_str(), entry.mCount, e.what());
+                }
+            }
+        for (const Autorun::AddItem& item : autorun.mAddItems)
+            if (item.mAt == frame)
+            {
+                const MWWorld::Ptr player = MWMechanics::getPlayer();
+                try
+                {
+                    player.getClass().getContainerStore(player).add(ESM::RefId::stringRefId(item.mId), item.mCount);
+                    P3DS_LOGI("autorun: %d %s added", item.mCount, item.mId.c_str());
+                }
+                catch (const std::exception& e)
+                {
+                    P3DS_LOGW("autorun: can't add %s: %s", item.mId.c_str(), e.what());
+                }
+            }
         for (const auto& [at, option] : autorun.mPicks)
             if (at == frame)
             {

@@ -526,9 +526,10 @@ namespace MWGui
         fit(376, 300, 3);
         if (mButtonBar->getHeight() > 232)
         {
+            // M19: still cut at the bottom (the Telepaths' last answer): wider and closer too.
             for (MyGUI::Button* button : mButtons)
                 button->setFontName("HintFont");
-            fit(376, 300, 3);
+            fit(376, 312, 2);
         }
         mMainWidget->setCoord(0, 0, 400, 480);
         frame->setCoord(0, 0, 400, 240);
@@ -540,15 +541,6 @@ namespace MWGui
     }
 
 #endif
-    void InfoBoxDialog::setButtonEnabled(size_t index, bool enabled)
-    {
-        if (index >= mButtons.size())
-            return;
-        mButtons[index]->setEnabled(enabled);
-        if (!enabled && index == mControllerFocus)
-            moveControllerFocus(1);
-    }
-
     void InfoBoxDialog::moveControllerFocus(int delta)
     {
         setControllerFocus(mButtons, mControllerFocus, false);
@@ -626,9 +618,6 @@ namespace MWGui
             MWBase::Environment::get().getWindowManager()->getGameSettingString("sClassChoiceMenu3", {}));
         buttons.emplace_back(MWBase::Environment::get().getWindowManager()->getGameSettingString("sBack", {}));
         setButtons(buttons);
-#ifdef OPENMW_PLATFORM_3DS
-        setButtonEnabled(0, false); // the class questions (M8): a later phase
-#endif
     }
 
 #ifdef OPENMW_PLATFORM_3DS

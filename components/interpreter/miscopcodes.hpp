@@ -2,6 +2,8 @@
 #define INTERPRETER_MISCOPCODES_H_INCLUDED
 
 #include <algorithm>
+#include <string_view>
+#include <utility>
 #include <format>
 #include <string>
 #include <vector>
@@ -130,6 +132,42 @@ namespace Interpreter
         return formattedMessage;
     }
 
+#ifdef OPENMW_PLATFORM_3DS
+    // The starting tutorial's messages (Morrowind.esm, the PC wording: "Right Clicking...", keys named after a
+    // keyboard the 3DS doesn't have, "None and None move forward...") replaced with the 3DS's (OMW3DS l10n). Its
+    // other wording (the Xbox function) names Xbox buttons.
+    inline std::string_view tutorialMessage3DS(std::string_view message)
+    {
+        static constexpr std::pair<std::string_view, std::string_view> messages[] = {
+            { "Right Clicking allows you to use your menus. When you are done with them, right click again to close "
+              "them.",
+                "#{OMW3DS:TutorialMenus}" },
+            { "Read your papers by pressing the ^ActionActivate while looking at them. Then select 'Take' to pick "
+              "them up.",
+                "#{OMW3DS:TutorialPapers}" },
+            { "Look up at the hatch and press ^ActionActivate to open it. ^ActionActivate activates objects and "
+              "people you are looking at.",
+                "#{OMW3DS:TutorialHatch}" },
+            { "Press ^ActionActivate to talk to the Captain. Select topics to ask about them. Don't try persuasion "
+              "on him. If you're not good at it, he will start to dislike you.",
+                "#{OMW3DS:TutorialCaptain}" },
+            { "Press ^ActionJournal to use your journal and review what you've been told. You should probably check "
+              "out Arrille's Tradehouse up on the left. You're on your own now. Good luck.",
+                "#{OMW3DS:TutorialJournal}" },
+            { "You should learn how to do combat. Pick up the dagger on the table by activating it with "
+              "^ActionActivate.",
+                "#{OMW3DS:TutorialDagger}" },
+            { "^ActionForward and ^ActionBack move forward and back. ^ActionSlideLeft and ^ActionSlideRight move "
+              "side to side, and the mouse looks around.",
+                "#{OMW3DS:TutorialMove}" },
+        };
+        for (const auto& [pc, port] : messages)
+            if (message == pc)
+                return port;
+        return message;
+    }
+#endif
+
     class OpMessageBox : public Opcode1
     {
     public:
@@ -139,6 +177,9 @@ namespace Interpreter
             int index = runtime[0].mInteger;
             runtime.pop();
             std::string_view message = runtime.getStringLiteral(index);
+#ifdef OPENMW_PLATFORM_3DS
+            message = tutorialMessage3DS(message);
+#endif
 
             // buttons
             std::vector<std::string> buttons;

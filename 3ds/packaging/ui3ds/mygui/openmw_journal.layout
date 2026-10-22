@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The journal on the two 3DS screens (M19, approved mockup): one page at a time across the top screen at the book
+     font's own size, on a page of the game's book texture; the page number and the buttons on the bottom one, and the
+     options (the bookmark: the topic index, the quests and topics lists and their buttons) over the bottom screen. The
+     root spans the canvas (400x480) without a frame. journalwindow.cpp's widgets are all here: the book's image
+     buttons are parked off the canvas (the code reads their visibility as its state), the port's text buttons (*3DS)
+     show it and do the same. -->
+<MyGUI type="Layout">
+
+  <Widget type="Window" skin="" layer="Windows" align="Left|Top" position="0 0 400 480" name="_Main">
+
+    <!-- Top screen: the left page of tx_menubook.dds -->
+    <Widget type="ImageBox" skin="ImageBox" position="0 0 400 240" name="JImage">
+      <Property key="ImageTexture" value="textures\tx_menubook.dds"/>
+      <Property key="ImageCoord" value="40 0 216 256"/>
+      <Widget type="BookPage" skin="MW_BookPage" position="46 14 330 214" name="LeftBookPage"/>
+    </Widget>
+
+    <!-- Bottom screen (222 high: the button hints below) -->
+    <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222" name="BookPanel3DS">
+      <Widget type="TextBox" skin="HeaderText" position="8 8 304 20">
+        <Property key="Caption" value="#{OMW3DS:Journal}"/>
+        <Property key="TextAlign" value="Center"/>
+      </Widget>
+      <Widget type="TextBox" skin="SandText" position="8 34 150 20">
+        <Property key="Caption" value="#{OMW3DS:Page}"/>
+        <Property key="TextAlign" value="Right"/>
+      </Widget>
+      <Widget type="TextBox" skin="SandText" position="164 34 60 20" name="PageOneNum">
+        <Property key="TextAlign" value="Left"/>
+      </Widget>
+
+      <Widget type="Button" skin="MW_Button" position="16 66 136 40" name="Prev3DS">
+        <Property key="Caption" value="#{OMW3DS:PreviousPage}"/>
+      </Widget>
+      <Widget type="Button" skin="MW_Button" position="168 66 136 40" name="Next3DS">
+        <Property key="Caption" value="#{OMW3DS:NextPage}"/>
+      </Widget>
+      <Widget type="Button" skin="MW_Button" position="16 126 136 40" name="Options3DS">
+        <Property key="Caption" value="#{OMW3DS:JournalOptions}"/>
+      </Widget>
+      <Widget type="Button" skin="MW_Button" position="168 126 136 40" name="Close3DS">
+        <Property key="Caption" value="#{Interface:Close}"/>
+      </Widget>
+      <Widget type="Button" skin="MW_Button" position="168 126 136 40" name="Journal3DS">
+        <Property key="Caption" value="#{OMW3DS:Journal}"/>
+      </Widget>
+    </Widget>
+
+    <!-- journalwindow.cpp's own widgets, off the canvas: the second page, its number and the image buttons -->
+    <Widget type="Widget" skin="" position="2000 0 400 400">
+      <Widget type="BookPage" skin="MW_BookPage" position="0 0 330 214" name="RightBookPage"/>
+      <Widget type="TextBox" skin="NormalText" position="0 220 32 16" name="PageTwoNum"/>
+      <Widget type="ImageButton" skin="ImageBox" position="0 240 64 32" name="OptionsBTN"/>
+      <Widget type="ImageButton" skin="ImageBox" position="0 280 48 32" name="PrevPageBTN">
+        <Property key="ImageNormal" value="textures\tx_menubook_prev_idle.dds"/>
+      </Widget>
+      <Widget type="ImageButton" skin="ImageBox" position="0 320 48 32" name="NextPageBTN">
+        <Property key="ImageNormal" value="textures\tx_menubook_next_idle.dds"/>
+      </Widget>
+      <Widget type="ImageButton" skin="ImageBox" position="100 240 48 32" name="CloseBTN">
+        <Property key="ImageNormal" value="textures\tx_menubook_close_idle.dds"/>
+      </Widget>
+      <Widget type="ImageButton" skin="ImageBox" position="100 280 64 32" name="JournalBTN">
+        <Property key="ImageNormal" value="textures\tx_menubook_journal_idle.dds"/>
+      </Widget>
+    </Widget>
+
+    <!-- The options over the bottom screen, as on PC the bookmark over the book's right page: the right page of
+         tx_menubook.dds under it, the bookmark (tx_menubook_bookmark.dds) at its own proportions, the index, the lists
+         and the buttons on its banner. -->
+    <Widget type="Widget" skin="" position="40 240 320 222" name="OptionsOverlay">
+      <Widget type="ImageBox" skin="ImageBox" position="0 0 320 222">
+        <Property key="ImageTexture" value="textures\tx_menubook.dds"/>
+        <Property key="ImageCoord" value="256 0 216 256"/>
+      </Widget>
+      <Widget type="ImageBox" skin="ImageBox" position="0 0 245 222">
+        <Property key="ImageTexture" value="textures\tx_menubook_bookmark.dds"/>
+
+        <!-- The index: three columns of nine letters (journalbooks.cpp on the 3DS) -->
+        <Widget type="BookPage" skin="MW_BookPage" position="6 8 50 180" name="LeftTopicIndex"/>
+        <Widget type="BookPage" skin="MW_BookPage" position="56 8 50 180" name="CenterTopicIndex"/>
+        <Widget type="BookPage" skin="MW_BookPage" position="106 8 50 180" name="RightTopicIndex"/>
+
+        <Widget type="ImageButton" skin="ImageBox" position="34 4 96 32" Align="Top|Left" name="ShowActiveBTN">
+          <Property key="TextureRect" value="0 0 96 32"/>
+        </Widget>
+        <Widget type="ImageButton" skin="ImageBox" position="46 4 72 32" Align="Top|Left" name="ShowAllBTN">
+          <Property key="TextureRect" value="0 0 72 32"/>
+        </Widget>
+
+        <Widget type="MWList" skin="MW_QuestList" position="6 36 152 148" name="TopicsList"/>
+        <Widget type="MWList" skin="MW_QuestList" position="6 36 152 148" name="QuestsList"/>
+
+        <!-- The code places Topics left and Quests right of Cancel, on its row -->
+        <Widget type="ImageButton" skin="ImageBox" position="6 188 56 32" Align="Top|Left" name="TopicsBTN">
+          <Property key="ImageHighlighted" value="textures\tx_menubook_topics_over.dds"/>
+          <Property key="ImageNormal" value="textures\tx_menubook_topics_idle.dds"/>
+          <Property key="ImagePushed" value="textures\tx_menubook_topics_pressed.dds"/>
+        </Widget>
+        <Widget type="ImageButton" skin="ImageBox" position="120 188 56 32" Align="Top|Left" name="QuestsBTN"/>
+        <Widget type="ImageButton" skin="ImageBox" position="70 188 56 32" Align="Top|Left" name="CancelBTN">
+          <Property key="ImageHighlighted" value="textures\tx_menubook_cancel_over.dds"/>
+          <Property key="ImageNormal" value="textures\tx_menubook_cancel_idle.dds"/>
+          <Property key="ImagePushed" value="textures\tx_menubook_cancel_pressed.dds"/>
+        </Widget>
+      </Widget>
+    </Widget>
+  </Widget>
+</MyGUI>

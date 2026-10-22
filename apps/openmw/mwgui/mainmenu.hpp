@@ -77,6 +77,15 @@ namespace MWGui
         void showBackground(bool show);
 
         void updateMenu();
+#ifdef OPENMW_PLATFORM_3DS
+        // M19 (the tester's choice, idea B): during a game the bottom screen shows the character (name, level, race,
+        // class, place, date) and touch buttons for Save, Load, Options and Return; the top screen keeps the menu.
+        MyGUI::Widget* mPanel3DS = nullptr;
+        MyGUI::TextBox* mPanelLines3DS[4] = {};
+        std::map<std::string, MyGUI::Button*, std::less<>> mPanelButtons3DS;
+        void updatePanel3DS(bool inGame);
+        void onPanelButton3DS(MyGUI::Widget* sender);
+#endif
 
         std::unique_ptr<SaveGameDialog> mSaveGameDialog;
     };

@@ -61,16 +61,17 @@
             </Widget>
             <Widget type="TabItem">
                 <Property key="Caption" value=" #{OMW3DS:Visuals} "/>
-                <!-- Small details drawn further away (3DS setting [Camera] far small details; off: the 3DS's small
-                     feature culling size, more frame rate in towns) -->
-                <Widget type="HBox" position="4 4 280 26">
-                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                <!-- How far small details stay drawn (3DS setting [Camera] small details: Low, Medium, High; the
+                     lower, the more frame rate in towns). The button cycles the levels (settingswindow.cpp). -->
+                <!-- A fixed width, so the label stays put whatever the level's word. -->
+                <Widget type="Widget" position="4 4 280 26">
+                    <Widget type="Button" skin="MW_Button" position="0 0 76 24" align="Left Top">
                         <UserString key="SettingCategory" value="Camera"/>
-                        <UserString key="SettingName" value="far small details"/>
-                        <UserString key="SettingType" value="CheckButton"/>
+                        <UserString key="SettingName" value="small details"/>
+                        <UserString key="SettingType" value="Level3DS"/>
                     </Widget>
-                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
-                        <Property key="Caption" value="#{OMW3DS:FarSmallDetails}"/>
+                    <Widget type="TextBox" skin="SandText" position="84 4 196 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:SmallDetails}"/>
                     </Widget>
                 </Widget>
             </Widget>

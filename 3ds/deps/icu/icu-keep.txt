@@ -1,0 +1,26 @@
+# The ICU data items the port ships (deps/build-deps.sh build_icudata): English and what number formatting needs
+# (OpenMW's l10n formats messages with numbers: "Your %s skill increased to %d."). Other languages come with the
+# languages feature (docs/PLANNED_FEATURES.md); the full filtered archive stays in the deps prefix.
+root.res
+en.res
+en_US.res
+en_US_POSIX.res
+en_001.res
+pool.res
+res_index.res
+metadata.res
+numberingSystems.res
+plurals.res
+pluralRanges.res
+supplementalData.res
+likelySubtags.res
+keyTypeData.res
+icuver.res
+icustd.res
+currencyNumericCodes.res
+curr/root.res
+curr/en.res
+curr/en_001.res
+curr/pool.res
+curr/res_index.res
+curr/supplementalData.res

@@ -231,12 +231,21 @@ namespace MWGui
 
     std::shared_ptr<BookTypesetter> JournalBooks::createLatinJournalIndex()
     {
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: the index on the bottom screen's bookmark, three columns of nine letters (journalwindow.cpp
+        // mIndexRowCount, packaging/ui3ds/mygui/openmw_journal.layout).
+        std::shared_ptr<BookTypesetter> typesetter = BookTypesetter::create(50, 180);
+        mIndexPagesCount = 3;
+        constexpr int kRows = 9;
+#else
         std::shared_ptr<BookTypesetter> typesetter = BookTypesetter::create(92, 260);
-
-        typesetter->setSectionAlignment(BookTypesetter::AlignCenter);
 
         // Latin journal index always has two columns for now.
         mIndexPagesCount = 2;
+        constexpr int kRows = 13;
+#endif
+
+        typesetter->setSectionAlignment(BookTypesetter::AlignCenter);
 
         char ch = 'A';
         std::string buffer;
@@ -252,7 +261,7 @@ namespace MWGui
             BookTypesetter::Style* style = typesetter->createHotStyle(body, textColours.journalTopic,
                 textColours.journalTopicOver, textColours.journalTopicPressed, Utf8Stream::UnicodeChar(ch));
 
-            if (i == 13)
+            if (i != 0 && i % kRows == 0)
                 typesetter->sectionBreak();
 
             typesetter->write(style, buffer);
@@ -314,7 +323,12 @@ namespace MWGui
     std::shared_ptr<BookTypesetter> JournalBooks::createTypesetter()
     {
         // TODO: determine page size from layout...
+#ifdef OPENMW_PLATFORM_3DS
+        // M19: one page across the top screen (packaging/ui3ds/mygui/openmw_journal.layout LeftBookPage).
+        return BookTypesetter::create(330, 214);
+#else
         return BookTypesetter::create(240, 320);
+#endif
     }
 
 }

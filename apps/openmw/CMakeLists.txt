@@ -225,7 +225,15 @@ target_link_libraries(openmw-lib
 if (OPENMW_PLATFORM_3DS)
     # Our mpg123 (deps/build-deps.sh: integer decoder, ARM synth), not devkitPro's floating-point 3ds-mpg123; its
     # header is found first too (.deps/3ds/include comes before the portlibs).
-    target_link_libraries(openmw-lib platform3ds
+    # ICU's data (English, deps/build-deps.sh build_icudata), embedded and registered at start-up (main3ds.cpp):
+    # ICU's own data library is a stub with archive packaging. 16-byte aligned, as udata_setCommonData needs.
+    set(OPENMW3DS_ICU_DATA "${OPENMW3DS_DEPS_PREFIX}/share/icu/73.2/en/icudt73l.dat")
+    if (NOT EXISTS "${OPENMW3DS_ICU_DATA}")
+        message(FATAL_ERROR "${OPENMW3DS_ICU_DATA} missing: run scripts/build-deps.ps1 icudata")
+    endif()
+    set(DKP_BIN2S_ALIGNMENT 16)
+    dkp_add_embedded_binary_library(openmw3ds_icudata "${OPENMW3DS_ICU_DATA}")
+    target_link_libraries(openmw-lib platform3ds openmw3ds_icudata
         ${OPENMW3DS_DEPS_PREFIX}/lib/libcompat3ds.a # POSIX stubs (fchown, geteuid)
         ${OPENMW3DS_DEPS_PREFIX}/lib/libmpg123.a
         bz2)                                       # needed by freetype

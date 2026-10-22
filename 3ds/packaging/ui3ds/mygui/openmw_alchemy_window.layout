@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The alchemy window on the two 3DS screens (M19, approved mockup, every part of OpenMW's kept): the apparatus, the
+     chosen ingredients and the created effects on the top screen; the name (a touch opens the system keyboard), the
+     ingredients to pick from, the filter and the count/Create/Cancel row on the bottom one. The controller works as
+     in OpenMW (B takes the last ingredient back, X creates, Y filters, L/R change the count). The root spans the
+     canvas (400x480) without a frame; the widget names are alchemywindow.cpp's. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="" layer="Windows" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen -->
+        <Widget type="Widget" skin="MW_Dialog" position="0 0 400 240">
+            <Widget type="TextBox" skin="SandText" position="10 6 220 20">
+                <Property key="Caption" value="#{sApparatus}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+            <Widget type="Widget" skin="" position="10 28 220 50">
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Apparatus1"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="56 0 50 50" name="Apparatus2"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="112 0 50 50" name="Apparatus3"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="168 0 50 50" name="Apparatus4"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="10 88 220 20">
+                <Property key="Caption" value="#{sIngredients}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+            <Widget type="Widget" skin="" position="10 110 220 50">
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="Ingredient1"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="56 0 50 50" name="Ingredient2"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="112 0 50 50" name="Ingredient3"/>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="168 0 50 50" name="Ingredient4"/>
+            </Widget>
+
+            <Widget type="TextBox" skin="SandText" position="236 6 156 20">
+                <Property key="Caption" value="#{sCreatedEffects}"/>
+                <Property key="TextAlign" value="Left"/>
+            </Widget>
+            <Widget type="Widget" skin="MW_Box" position="236 28 156 202">
+                <Widget type="Widget" skin="" position="4 4 148 194" name="CreatedEffects"/>
+            </Widget>
+        </Widget>
+
+        <!-- Bottom screen (222 high: the button hints below) -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+            <Widget type="TextBox" skin="SandText" position="8 6 52 22">
+                <Property key="Caption" value="#{sName}"/>
+                <Property key="TextAlign" value="Left VCenter"/>
+            </Widget>
+            <Widget type="EditBox" skin="MW_TextEdit" position="60 6 252 22" name="NameEdit"/>
+
+            <Widget type="ItemView" skin="MW_ItemView" position="8 32 304 108" name="ItemView"/>
+
+            <Widget type="HBox" skin="MW_Box" position="8 144 304 32">
+                <Property key="Padding" value="3"/>
+                <Property key="Spacing" value="6"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="FilterType">
+                    <Property key="Caption" value="#{sIngredients}"/>
+                </Widget>
+                <Widget type="ComboBox" skin="MW_ComboBox" position="0 0 0 24" name="FilterValue">
+                    <UserString key="HStretch" value="true"/>
+                    <Property key="ModeDrop" value="false"/>
+                    <!-- low on the screen: the list opens upwards, no taller than the room above it (it must not
+                         reach the top screen) -->
+                    <Property key="FlowDirection" value="BottomToTop"/>
+                    <Property key="MaxListLength" value="136"/>
+                </Widget>
+            </Widget>
+
+            <Widget type="HBox" skin="" position="8 182 304 28">
+                <Widget type="AutoSizedButton" skin="MW_Button" name="DecreaseButton">
+                    <Property key="Caption" value=" - "/>
+                    <Property key="NeedKey" value="false"/>
+                </Widget>
+                <Widget type="NumericEditBox" skin="MW_TextEdit" position="0 0 56 25" name="BrewCount">
+                    <Property key="TextAlign" value="Center"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="IncreaseButton">
+                    <Property key="Caption" value=" + "/>
+                    <Property key="NeedKey" value="false"/>
+                </Widget>
+                <Widget type="Spacer"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="CreateButton">
+                    <Property key="Caption" value="#{sCreate}"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                    <Property key="Caption" value="#{Interface:Cancel}"/>
+                </Widget>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

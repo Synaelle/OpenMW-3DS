@@ -509,7 +509,9 @@ namespace MWGui
 #endif
 
         auto alchemyWindow = std::make_unique<AlchemyWindow>();
-        trackWindow(alchemyWindow.get(), makeAlchemyWindowSettingValues());
+#ifndef OPENMW_PLATFORM_3DS
+        trackWindow(alchemyWindow.get(), makeAlchemyWindowSettingValues()); // 3DS (M19): its layout places it
+#endif
         mGuiModeStates[GM_Alchemy] = GuiModeState(alchemyWindow.get());
         mWindows.push_back(std::move(alchemyWindow));
 #ifdef OPENMW_PLATFORM_3DS
@@ -597,9 +599,9 @@ namespace MWGui
         // on the top screen with the mouse cursor, we will do something cleaner later"): their PC layouts, on the
         // Unported3DS layer, which scales a 600x400 view onto the top screen (openmw_layers.xml); the circle pad's
         // cursor and A click them. updateVisible() centres them there whenever they show.
-        // (M17: the level-up window and the spell shop have 3DS layouts now.)
-        for (GuiMode mode : { GM_MerchantRepair, GM_Rest, GM_Alchemy, GM_Repair, GM_Enchanting, GM_Recharge,
-                 GM_QuickKeysMenu, GM_Jail, GM_Companion })
+        // (M17: the level-up window and the spell shop have 3DS layouts now; M19: rest, quick keys, alchemy and
+        // enchanting.)
+        for (GuiMode mode : { GM_MerchantRepair, GM_Repair, GM_Recharge, GM_Jail, GM_Companion })
             for (WindowBase* window : mGuiModeStates[mode].mWindows)
                 if (window != mInventoryWindow)
                     MyGUI::LayerManager::getInstance().attachToLayerNode("Unported3DS", window->mMainWidget);

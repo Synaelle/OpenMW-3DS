@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- The enchanting window on the two 3DS screens (M19, approved mockup, every part of OpenMW's kept): the values
+     (enchantment, cast cost, charges, chance, price) on the top screen; the name (a touch opens the system keyboard),
+     the item and soul gem, the cast type, the available and the added effects and Buy/Cancel on the bottom one. The
+     controller works as in OpenMW (L item, R soul, Y type, X buy/create). The root spans the canvas (400x480) without
+     a frame; the widget names are enchantingdialog.cpp's. -->
+<MyGUI type="Layout">
+    <Widget type="Window" skin="" layer="Windows" position="0 0 400 480" name="_Main">
+
+        <!-- Top screen: the values -->
+        <Widget type="Widget" skin="MW_Dialog" position="60 30 280 180">
+            <Widget type="VBox" position="14 12 252 156">
+                <Property key="Spacing" value="6"/>
+                <Widget type="HBox">
+                    <UserString key="HStretch" value="true"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText">
+                        <Property key="Caption" value="#{sEnchantmentMenu3}:"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" name="Enchantment">
+                        <Property key="Caption" value="1"/>
+                        <Property key="TextAlign" value="Right VCenter"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox">
+                    <UserString key="HStretch" value="true"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText">
+                        <Property key="Caption" value="#{sCastCost}:"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" name="CastCost">
+                        <Property key="Caption" value="39"/>
+                        <Property key="TextAlign" value="Right VCenter"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox">
+                    <UserString key="HStretch" value="true"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText">
+                        <Property key="Caption" value="#{sCharges}"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" name="Charge">
+                        <Property key="Caption" value="39"/>
+                        <Property key="TextAlign" value="Right VCenter"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" name="ChanceLayout">
+                    <UserString key="HStretch" value="true"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText">
+                        <Property key="Caption" value="#{sEnchantmentMenu6}:"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" name="SuccessChance">
+                        <Property key="Caption" value="39"/>
+                        <Property key="TextAlign" value="Right VCenter"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox">
+                    <UserString key="HStretch" value="true"/>
+                    <Widget type="AutoSizedTextBox" skin="NormalText" name="PriceTextLabel">
+                        <Property key="Caption" value="#{sBarterDialog7}"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" name="PriceLabel">
+                        <Property key="Caption" value="0"/>
+                        <Property key="TextAlign" value="Right VCenter"/>
+                        <UserString key="HStretch" value="true"/>
+                    </Widget>
+                </Widget>
+            </Widget>
+        </Widget>
+
+        <!-- Bottom screen (222 high: the button hints below) -->
+        <Widget type="Widget" skin="MW_Dialog" position="40 240 320 222">
+            <Widget type="TextBox" skin="NormalText" position="8 4 50 22">
+                <Property key="Caption" value="#{sName}"/>
+                <Property key="TextAlign" value="Left VCenter"/>
+            </Widget>
+            <Widget type="EditBox" skin="MW_TextEdit" position="60 4 252 22" name="NameEdit"/>
+
+            <Widget type="HBox" position="8 30 304 50">
+                <Property key="Spacing" value="6"/>
+                <Widget type="AutoSizedTextBox" skin="NormalText">
+                    <Property key="Caption" value="#{sItem}"/>
+                </Widget>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="ItemBox"/>
+                <Widget type="AutoSizedTextBox" skin="NormalText">
+                    <Property key="Caption" value="#{sSoulGem}"/>
+                </Widget>
+                <Widget type="ItemWidget" skin="MW_ItemIconBox" position="0 0 50 50" name="SoulBox"/>
+                <Widget type="Spacer"/>
+            </Widget>
+
+            <Widget type="MWList" skin="MW_SimpleList" position="8 84 146 100" name="AvailableEffects"/>
+            <Widget type="Widget" skin="MW_Box" position="160 84 152 100">
+                <Widget type="ScrollView" skin="MW_ScrollViewH" position="4 4 144 92" name="UsedEffects">
+                    <Property key="CanvasAlign" value="Left Top"/>
+                </Widget>
+            </Widget>
+
+            <Widget type="HBox" position="8 190 304 26">
+                <Property key="Spacing" value="4"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="TypeButton">
+                    <Property key="Caption" value="Constant effect"/>
+                </Widget>
+                <Widget type="Spacer"/>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="BuyButton">
+                    <Property key="Caption" value="#{sBuy}"/>
+                </Widget>
+                <Widget type="AutoSizedButton" skin="MW_Button" name="CancelButton">
+                    <Property key="Caption" value="#{Interface:Cancel}"/>
+                </Widget>
+            </Widget>
+        </Widget>
+    </Widget>
+</MyGUI>

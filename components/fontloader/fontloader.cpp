@@ -408,6 +408,11 @@ namespace Gui
         std::unique_ptr<MyGUI::IDataStream> layersStream(dataManager->getData("openmw_layers.xml"));
         MyGUI::IntSize bookSize = getBookSize(layersStream.get());
         float bookScale = MyGUIPlatform::ScalingLayer::getScaleFactor(bookSize);
+#ifdef OPENMW_PLATFORM_3DS
+        // M19 (test #105: book text unreadable): books, scrolls and the journal are drawn at their size on the top
+        // screen now, not in the scaled JournalBooks layer (0.6): their font at its own size, not rendered at 60%.
+        bookScale = 1.f;
+#endif
         const VFS::Path::Normalized oldDataPath(dataManager->getResourcePath());
 
         struct SetOldResourcePath

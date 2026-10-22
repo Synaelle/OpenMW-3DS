@@ -9,12 +9,13 @@
         <Property key="Visible" value="false"/>
 
         <!-- Categories -->
-        <Widget type="HBox" position="4 4 372 22" align="Left Top HStretch" name="Categories">
+        <Widget type="HBox" position="4 4 386 22" align="Left Top HStretch" name="Categories"> <!-- M19: room for both shoulder icons -->
             <Property key="Spacing" value="4"/>
+            <!-- Shown from the start (M19): tradewindow.cpp shows it after the row is laid out, and the icon sat on the
+                 All tab. The 3DS always has the controller menus. -->
             <Widget type="ImageBox" skin="ImageBox" position="0 3 16 16" align="VCenter" name="BtnL1Image">
                 <Property key="Colour" value="#ccb589"/>
-                <Property key="Visible" value="false"/>
-                <UserString key="Hidden" value="true"/>
+                <UserString key="Hidden" value="false"/>
             </Widget>
             <Widget type="AutoSizedButton" skin="MW_Button" name="AllButton">
                 <Property key="Caption" value="#{sAllTab}"/>
@@ -36,10 +37,11 @@
                 <Property key="Caption" value="#{sMiscTab}"/>
                 <Property key="NeedKey" value="false"/>
             </Widget>
+            <!-- Shown from the start (M19): tradewindow.cpp shows it after the row is laid out, and the icon sat on the
+                 All tab. The 3DS always has the controller menus. -->
             <Widget type="ImageBox" skin="ImageBox" position="0 3 16 16" align="VCenter" name="BtnR1Image">
                 <Property key="Colour" value="#ccb589"/>
-                <Property key="Visible" value="false"/>
-                <UserString key="Hidden" value="true"/>
+                <UserString key="Hidden" value="false"/>
             </Widget>
             <!-- The search box: kept hidden (no keyboard while bartering) -->
             <Widget type="EditBox" skin="MW_TextBoxEditWithBorder" position="0 0 0 22" name="FilterEdit">
