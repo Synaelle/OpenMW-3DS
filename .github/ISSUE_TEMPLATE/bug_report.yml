@@ -1,0 +1,76 @@
+name: Bug report
+description: Something doesn't work as it should in the game or the setup app.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this! Please check the [known issues](https://github.com/Synaelle/OpenMW-N3DS/blob/main/KNOWN_ISSUES.md) first, your problem might already be there.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Tell us what went wrong, and what you expected instead.
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Where did it happen?
+      description: The place in the game, and the quest if it's about one.
+      placeholder: "Balmora, Mages Guild, during the quest ..."
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we make it happen again?
+      description: Step by step if you can. Leave it empty if you don't know.
+      placeholder: |
+        1. Go to ...
+        2. Talk to ...
+        3. ...
+
+  - type: dropdown
+    id: console
+    attributes:
+      label: Your console
+      options:
+        - New 3DS
+        - New 3DS XL
+        - New 2DS XL
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: The port's version
+      description: It's shown on the game's start menu.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        On your SD card, in `/openmw/logs`. Drag and drop `openmw3ds.log` and `openmw.log` here, and `openmw3ds-crash.log` if the game crashed.
+        If you started the game again after the problem, send `openmw3ds-1.log` and `openmw-1.log` instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot or photo
+      description: If you can, drag and drop a picture that shows the problem.
+
+  - type: textarea
+    id: save
+    attributes:
+      label: A save from just before it happens
+      description: If you can. Saves are in `/openmw/saves`, one folder per character. Put the save in a .zip file and drag and drop it here.
