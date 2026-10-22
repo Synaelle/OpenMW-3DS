@@ -3,7 +3,7 @@
 #   OpenMW-3DS-<version>-Linux.tar.gz    the same with the Linux AppImage (built in WSL with Docker)
 #   OpenMW-3DS-<version>-Python.zip      the Python backup of the setup, with the port's files and its README
 #   openmw3ds-<version>.cia              the CIA alone, for updating an installed copy
-#   SHA256SUMS
+#   (no checksum file: GitHub shows a SHA-256 for each download)
 #
 #   scripts\make-release.ps1 -Version 0.1.0 [-SkipBuild] [-SkipLinux]
 #
@@ -131,9 +131,4 @@ foreach ($s in 'stage-windows', 'stage-linux', 'stage-python') {
     if (Test-Path (Join-Path $Out $s)) { Remove-Item -Recurse -Force (Join-Path $Out $s) }
 }
 
-# Checksums, in the sha256sum format.
-$sums = Get-ChildItem $Out -File | Where-Object Name -ne 'SHA256SUMS' | Sort-Object Name | ForEach-Object {
-    "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-}
-[IO.File]::WriteAllLines((Join-Path $Out 'SHA256SUMS'), [string[]]$sums)
 Get-ChildItem $Out | Select-Object Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB, 1) } } | Format-Table -AutoSize
