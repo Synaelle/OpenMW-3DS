@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OpenMW for New 3DS setup
+Comment=Prepares the folder to copy to a New 3DS's SD card from a Morrowind installation
+Exec=openmw3ds-setup
+Icon=openmw3ds-setup
+Categories=Game;Utility;
+Terminal=false
