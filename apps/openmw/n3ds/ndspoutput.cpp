@@ -43,8 +43,9 @@ namespace MWSound
         constexpr float kLoudnessFPS = 20.f; // loudness values per second of audio, as openaloutput.cpp
         constexpr float kUnderwaterCutoffHz = 1200.f;
         // What an effect counts for in the sound buffer pool's cache limits ([Sound] buffer cache min/max), told
-        // before the file is read: a bit above Morrowind's average (84 KB). The real total is in the perf log.
-        constexpr size_t kEffectAccountedBytes = 128 * 1024;
+        // before the file is read. Measured: the effects a long run keeps average ~150 KB (test #112: 9.2 MB for the
+        // 64 that 128 KB each allowed), so the cache stays within its limit. The real total is in the perf log.
+        constexpr size_t kEffectAccountedBytes = 160 * 1024;
 
         u16 ndspFormat(int channels)
         {
