@@ -17,9 +17,6 @@ param(
     # Debug tools (bottom-screen debug display, autorun, detailed profiling) are on unless -NoDebug; chosen on
     # every configure like the Bullet precision (switching rebuilds everything).
     [switch]$NoDebug,
-    # Lumiere, the port's own interface (deprecated 18/10/2026): compiled in only with -Lumiere, chosen on every
-    # configure like the others.
-    [switch]$Lumiere,
     [string]$Msys2Root = 'C:\msys64'
 )
 $ErrorActionPreference = 'Stop'
@@ -37,7 +34,6 @@ if (-not $BulletDouble -and -not (Test-Path (Join-Path $RepoRoot '.deps\3ds-bull
 }
 $bulletDoubleFlag = if ($BulletDouble) { 'ON' } else { 'OFF' }
 $debugFlag = if ($NoDebug) { 'OFF' } else { 'ON' }
-$lumiereFlag = if ($Lumiere) { 'ON' } else { 'OFF' }
 if ($Clean -and (Test-Path $Build)) { Remove-Item -Recurse -Force $Build }
 New-Item -ItemType Directory -Force $Build | Out-Null
 
@@ -59,7 +55,7 @@ gen=''
 [ -f build.ninja ] || gen='-G Ninja'
 cmake `$gen -C '$src/cmake/openmw-3ds-cache.cmake' -DCMAKE_TOOLCHAIN_FILE=`$DEVKITPRO/cmake/3DS.cmake \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags' '-DCMAKE_C_FLAGS_RELWITHDEBINFO=$flags' \
-  -DOPENMW3DS_BULLET_DOUBLE=$bulletDoubleFlag -DOPENMW3DS_DEBUG=$debugFlag -DOPENMW3DS_LUMIERE=$lumiereFlag \
+  -DOPENMW3DS_BULLET_DOUBLE=$bulletDoubleFlag -DOPENMW3DS_DEBUG=$debugFlag \
   '$src/openmw' > /dev/null
 cmake --build . --target $Target
 "@

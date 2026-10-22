@@ -88,37 +88,6 @@ namespace Render3DS
 
     // Who draws the bottom screen: MyGUI through the GPU (true) or the CPU text display (false: the debug display,
     // the M6 text menus). Switching to the GPU redraws it at the next frame.
-#ifdef OPENMW3DS_LUMIERE
-    // Deprecated 18/10/2026, compiled only with OPENMW3DS_LUMIERE (see backend.cpp).
-    // The port's own interface (backend.cpp, namespace lumiere): everything drawn from one texture, one draw per
-    // screen; the game side is n3ds/hud3ds.cpp. Coordinates are canvas pixels (the top screen 400x240 at the
-    // top, the bottom screen's 320x240 under it at x 40..360, y 240..480). A screen's vertices are rebuilt only
-    // between begin() and the next begin(); the bottom screen is redrawn only when they changed.
-    namespace Lumiere
-    {
-        struct Rgba
-        {
-            uint8_t r, g, b, a;
-        };
-        enum Screen
-        {
-            Top,
-            Bottom
-        };
-        bool enabled(); // sdmc:/openmw/lumiere: the port's interface instead of MyGUI's
-        bool active(); // enabled and the atlas loaded
-        void begin(Screen screen);
-        void image(Screen screen, std::string_view key, float x, float y, float w, float h, Rgba colour);
-        void imageRotated(Screen screen, std::string_view key, float cx, float cy, float w, float h, float radians, Rgba colour);
-        void rect(Screen screen, float x, float y, float w, float h, Rgba colour);
-        float text(Screen screen, int font, float x, float y, std::string_view s, Rgba colour);
-        float textWidth(int font, std::string_view s);
-        void frame(Screen screen, float x, float y, float w, float h, const char* style);
-        // key: the icon's normalized path without its extension ("icons/w/tx_axe_steel"); 16 or 32 px cooked icons
-        void icon(Screen screen, std::string_view key, float x, float y, float size);
-        void releaseIcons();
-    }
-#endif // OPENMW3DS_LUMIERE
 
     void setGuiOwnsBottomScreen(bool owns);
     bool guiOwnsBottomScreen();

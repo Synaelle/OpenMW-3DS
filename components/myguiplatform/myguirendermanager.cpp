@@ -603,10 +603,6 @@ namespace MyGUIPlatform
         // MyGUI isn't drawn yet on the 3DS: building its batches cost ~2.6 ms of cull per frame on hardware.
         if (!Render3DS::drawsGui())
             return;
-#ifdef OPENMW3DS_LUMIERE
-        if (Render3DS::Lumiere::active()) // the port's own interface (deprecated): nothing MyGUI lays out shows
-            return;
-#endif
         p3ds::perf::Phase phase("guiCull"); // MyGUI layout -> batches, in the cull traversal
         // M10: nothing to lay out again when no layer is out of date (MyGUI marks a layer when a widget moves,
         // shows, hides or changes its text, colour or image): last frame's batches still describe the interface,
