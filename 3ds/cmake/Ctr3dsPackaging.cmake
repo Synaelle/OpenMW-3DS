@@ -14,10 +14,19 @@ set(OMW3DS_PACKAGING_DIR "${_omw3ds_root}/packaging")
 #     [SYSTEM_MODE_EXT 124MB|178MB])
 # Produces <target>.3dsx always and <target>.cia when makerom/bannertool are available.
 function(omw3ds_package target)
-    cmake_parse_arguments(PARSE_ARGV 1 P "" "TITLE;DESCRIPTION;AUTHOR;PRODUCT_CODE;UNIQUE_ID;SYSTEM_MODE_EXT" "")
+    cmake_parse_arguments(PARSE_ARGV 1 P "" "TITLE;DESCRIPTION;AUTHOR;PRODUCT_CODE;UNIQUE_ID;SYSTEM_MODE_EXT;VERSION" "")
     if(NOT P_SYSTEM_MODE_EXT)
         set(P_SYSTEM_MODE_EXT 178MB)
     endif()
+    # The title's version (FBI and the system's data management show it): major.minor.micro packed as the 3DS does,
+    # major << 10 | minor << 4 | micro. A test build (0.1.0-dev113) gets the version it leads to (0.1.0).
+    set(title_version 0)
+    set(title_version_text "0.0.0")
+    if(P_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        math(EXPR title_version "(${CMAKE_MATCH_1} << 10) | (${CMAKE_MATCH_2} << 4) | ${CMAKE_MATCH_3}")
+        set(title_version_text "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+    endif()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     set(icon_png "${OMW3DS_PACKAGING_DIR}/icon.png")
     set(smdh "${CMAKE_CURRENT_BINARY_DIR}/${target}.smdh")
@@ -57,9 +66,12 @@ function(omw3ds_package target)
                 -elf "$<TARGET_FILE:${target}>" -rsf "${OMW3DS_PACKAGING_DIR}/app.rsf"
                 -icon "${cia_smdh}" -banner "${banner}"
                 "-DAPP_TITLE=${P_TITLE}" "-DAPP_PRODUCT_CODE=${P_PRODUCT_CODE}"
-                "-DAPP_UNIQUE_ID=${P_UNIQUE_ID}" "-DAPP_SYSTEM_MODE_EXT=${P_SYSTEM_MODE_EXT}"
+                "-DAPP_UNIQUE_ID=${P_UNIQUE_ID}" "-DAPP_SYSTEM_MODE_EXT=${P_SYSTEM_MODE_EXT}" -ver ${title_version}
+        # makerom v0.19.0 drops -ver's minor number (1.1.0 comes out 1.0.0): the version written again after it.
+        COMMAND "${Python3_EXECUTABLE}" "${_omw3ds_root}/tools/set_cia_version.py" "${cia}" "${title_version_text}"
         DEPENDS ${target} "${cia_smdh}" "${banner}" "${OMW3DS_PACKAGING_DIR}/app.rsf"
-        COMMENT "Building CIA ${target}.cia (${P_SYSTEM_MODE_EXT})" VERBATIM)
+            "${_omw3ds_root}/tools/set_cia_version.py"
+        COMMENT "Building CIA ${target}.cia (${P_SYSTEM_MODE_EXT}, version ${title_version_text})" VERBATIM)
     # Same exheader as the .cia, but bootable directly by emulators (Azahar honours its memory mode),
     # so emulator runs exercise exactly what the .cia requests.
     set(cxi "${CMAKE_CURRENT_BINARY_DIR}/${target}.cxi")

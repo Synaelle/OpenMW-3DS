@@ -29,6 +29,11 @@ if (OPENMW_PLATFORM_3DS)
             set(OPENMW3DS_VERSION "0.1.0-dev${CMAKE_MATCH_1}")
         endif()
     endif()
+    # A release build (scripts/make-release.ps1) names its version: 0.1.0, no test number.
+    set(OPENMW3DS_RELEASE_VERSION "" CACHE STRING "The release's version (empty: 0.1.0-dev<test>)")
+    if (OPENMW3DS_RELEASE_VERSION)
+        set(OPENMW3DS_VERSION "${OPENMW3DS_RELEASE_VERSION}")
+    endif()
     message(STATUS "OpenMW 3DS version ${OPENMW3DS_VERSION}")
     # In a generated header (rewritten only when the version changes), not a compile definition: a new test number
     # then rebuilds the few files that show it, not all ~860.

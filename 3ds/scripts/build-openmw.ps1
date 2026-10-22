@@ -14,6 +14,8 @@ param(
     # Debug tools (bottom-screen debug display, autorun, detailed profiling) are on unless -NoDebug. Chosen on
     # every configure like the Bullet precision (switching rebuilds everything).
     [switch]$NoDebug,
+    # A release's version (scripts\make-release.ps1): shown instead of 0.1.0-dev<test>. Empty: the test's.
+    [string]$Version = '',
     [string]$Msys2Root = 'C:\msys64'
 )
 $ErrorActionPreference = 'Stop'
@@ -51,7 +53,7 @@ gen=''
 [ -f build.ninja ] || gen='-G Ninja'
 cmake `$gen -C '$src/cmake/openmw-3ds-cache.cmake' -DCMAKE_TOOLCHAIN_FILE=`$DEVKITPRO/cmake/3DS.cmake \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=$flags' '-DCMAKE_C_FLAGS_RELWITHDEBINFO=$flags' \
-  -DOPENMW3DS_DEBUG=$debugFlag \
+  -DOPENMW3DS_DEBUG=$debugFlag '-DOPENMW3DS_RELEASE_VERSION=$Version' \
   '$src/openmw' > /dev/null
 cmake --build . --target $Target
 "@

@@ -177,10 +177,11 @@ if(BUILD_OPENMW)
         omw3ds_package(openmw
             TITLE "OpenMW"
             DESCRIPTION "OpenMW engine port for New 3DS" # no game name in the title metadata (the tester, 20/10)
-            AUTHOR "OpenMW 3DS port"
+            AUTHOR "Synaelle" # the tester (the port's author), 22/10/2026
             PRODUCT_CODE "CTR-P-OMW3"
             UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp
-            SYSTEM_MODE_EXT 178MB)
+            SYSTEM_MODE_EXT 178MB
+            VERSION "${OPENMW3DS_VERSION}")
         # Scripted input for automated emulator runs (n3ds/hidinject.cpp, debug tools).
         if (OPENMW3DS_DEBUG)
             target_link_options(openmw PRIVATE
