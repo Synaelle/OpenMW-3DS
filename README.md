@@ -35,7 +35,6 @@ that recreates it.
 
 ## What to expect
 
-The game runs Morrowind with the circle pad for movement, the touch screen for menus and the top screen for the world.
 Tribunal and Bloodmoon aren't supported yet, and there are no shadows, water reflections or distant land, which the
 3DS can't afford. Loading a new place takes a few seconds. Everything we know about is in
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
