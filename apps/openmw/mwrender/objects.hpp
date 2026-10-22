@@ -2,6 +2,7 @@
 #define GAME_RENDER_OBJECTS_H
 
 #include <map>
+#include <memory>
 #include <string>
 #ifdef OPENMW_PLATFORM_3DS
 #include <utility>
@@ -38,7 +39,7 @@ namespace MWRender
 
     class Objects
     {
-        using PtrAnimationMap = std::map<const MWWorld::LiveCellRefBase*, osg::ref_ptr<Animation>>;
+        using PtrAnimationMap = std::map<const MWWorld::LiveCellRefBase*, std::unique_ptr<Animation>>;
 
         typedef std::map<const MWWorld::CellStore*, osg::ref_ptr<osg::Group>> CellMap;
         CellMap mCellSceneNodes;

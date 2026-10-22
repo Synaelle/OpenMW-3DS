@@ -4,21 +4,23 @@
 #include "mode.hpp"
 #include "windowpinnablebase.hpp"
 
-#include "../mwrender/characterpreview.hpp"
 #include "../mwworld/ptr.hpp"
 
 #include <components/misc/notnullptr.hpp>
 
 #include "../n3ds/menufriend.hpp"
+#include <osg/Vec2i>
 
 namespace osg
 {
     class Group;
 }
 
-namespace Resource
+#include <memory>
+
+namespace MWRender
 {
-    class ResourceSystem;
+    class InventoryPreview;
 }
 
 namespace MWGui
@@ -40,8 +42,8 @@ namespace MWGui
         OMW3DS_MENU_FRIEND
         OMW3DS_HUD_FRIEND
     public:
-        explicit InventoryWindow(DragAndDrop& dragAndDrop, ItemTransfer& itemTransfer, osg::Group* parent,
-            Resource::ResourceSystem* resourceSystem);
+        explicit InventoryWindow(DragAndDrop& dragAndDrop, ItemTransfer& itemTransfer);
+        ~InventoryWindow() override;
 
         void onOpen() override;
 

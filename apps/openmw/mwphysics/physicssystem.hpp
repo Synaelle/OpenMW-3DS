@@ -13,20 +13,14 @@
 
 #include <osg/BoundingBox>
 #include <osg/Quat>
-#include <osg/Timer>
 
+#include <components/misc/framestats.hpp>
 #include <components/vfs/pathutil.hpp>
 
 #include "../mwworld/ptr.hpp"
 
 #include "collisiontype.hpp"
 #include "raycasting.hpp"
-
-namespace osg
-{
-    class Object;
-    class Stats;
-}
 
 namespace Resource
 {
@@ -195,8 +189,8 @@ namespace MWPhysics
         bool toggleCollisionMode();
 
         /// Determine new position based on all queued movements, then clear the list.
-        void stepSimulation(
-            float dt, bool skipSimulation, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats);
+        void stepSimulation(float dt, bool skipSimulation, Misc::FrameClock::time_point statsEpoch,
+            unsigned int frameNumber, Misc::FrameStats& stats);
 
         /// Apply new positions to actors
         void moveActors();
@@ -239,6 +233,9 @@ namespace MWPhysics
         /// @note The collision shape's origin is in its center, so the position returned can be described as center of
         /// the actor collision box in world space.
         osg::Vec3f getCollisionObjectPosition(const MWWorld::ConstPtr& actor) const;
+
+        /// Get the configured duration of a single physics step in seconds.
+        float getPhysicsDt() const { return mPhysicsDt; }
 
         /// Get bounding box in world space of the given object.
         osg::BoundingBox getBoundingBox(const MWWorld::ConstPtr& object) const;
@@ -283,7 +280,7 @@ namespace MWPhysics
         bool isAreaOccupiedByOtherActor(
             const MWWorld::LiveCellRefBase* actor, const osg::Vec3f& position, float radius) const;
 
-        void reportStats(unsigned int frameNumber, osg::Stats& stats) const;
+        void reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const;
         void reportCollision(const btVector3& position, const btVector3& normal);
 
         float mPhysicsDt;

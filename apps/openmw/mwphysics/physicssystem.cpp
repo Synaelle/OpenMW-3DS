@@ -5,9 +5,6 @@
 #include <memory>
 #include <vector>
 
-#include <osg/Stats>
-#include <osg/Timer>
-
 #include <BulletCollision/BroadphaseCollision/btDbvtBroadphase.h>
 #include <BulletCollision/CollisionDispatch/btCollisionObject.h>
 #include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
@@ -695,8 +692,8 @@ namespace MWPhysics
         }
     }
 
-    void PhysicsSystem::stepSimulation(
-        float dt, bool skipSimulation, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
+    void PhysicsSystem::stepSimulation(float dt, bool skipSimulation, Misc::FrameClock::time_point statsEpoch,
+        unsigned int frameNumber, Misc::FrameStats& stats)
     {
         for (auto& [animatedObject, changed] : mAnimatedObjects)
         {
@@ -729,7 +726,7 @@ namespace MWPhysics
             std::vector<Simulation>& simulations = mSimulations[mSimulationsCounter++ % mSimulations.size()];
             prepareSimulation(mTimeAccum >= mPhysicsDt, simulations);
             // modifies mTimeAccum
-            mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, frameStart, frameNumber, stats);
+            mTaskScheduler->applyQueuedMovements(mTimeAccum, simulations, statsEpoch, frameNumber, stats);
         }
     }
 
@@ -866,7 +863,7 @@ namespace MWPhysics
         return callback.getResult();
     }
 
-    void PhysicsSystem::reportStats(unsigned int frameNumber, osg::Stats& stats) const
+    void PhysicsSystem::reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const
     {
         stats.setAttribute(frameNumber, "Physics Actors", static_cast<double>(mActors.size()));
         stats.setAttribute(frameNumber, "Physics Objects", static_cast<double>(mObjects.size()));

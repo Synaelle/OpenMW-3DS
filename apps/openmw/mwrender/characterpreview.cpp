@@ -13,6 +13,7 @@
 
 #include <components/debug/debuglog.hpp>
 #include <components/fallback/fallback.hpp>
+#include <components/myguiplatform/myguitexture.hpp>
 #include <components/resource/resourcesystem.hpp>
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/depth.hpp>
@@ -266,7 +267,7 @@ namespace MWRender
         dummyTexture->setShadowCompareFunc(osg::Texture::ShadowCompareFunc::ALWAYS);
         stateset->setTextureAttribute(7, dummyTexture, osg::StateAttribute::ON);
 
-        osg::ref_ptr<SceneUtil::Light> light = new SceneUtil::Light;
+        auto light = std::make_shared<SceneUtil::Light>();
         float diffuseR = Fallback::Map::getFloat("Inventory_DirectionalDiffuseR");
         float diffuseG = Fallback::Map::getFloat("Inventory_DirectionalDiffuseG");
         float diffuseB = Fallback::Map::getFloat("Inventory_DirectionalDiffuseB");
@@ -285,7 +286,7 @@ namespace MWRender
         light->setConstantAttenuation(1.f);
         light->setLinearAttenuation(0.f);
         light->setQuadraticAttenuation(0.f);
-        lightManager->setSunlight(light);
+        lightManager->setSunlight(std::move(light));
 
         mRTTNode->addChild(lightManager);
 
@@ -326,16 +327,17 @@ namespace MWRender
         setBlendMode();
     }
 
-    osg::ref_ptr<osg::Texture2D> CharacterPreview::getTexture()
+    std::unique_ptr<MyGUI::ITexture> CharacterPreview::makeGuiTexture()
     {
-        return static_cast<osg::Texture2D*>(mRTTNode->getColorTexture(nullptr));
+        return std::make_unique<MyGUIPlatform::OSGTexture>(
+            static_cast<osg::Texture2D*>(mRTTNode->getColorTexture(nullptr)), mTextureStateSet);
     }
 
     void CharacterPreview::rebuild()
     {
         mAnimation = nullptr;
 
-        mAnimation = new NpcAnimation(mCharacter, mNode, mResourceSystem, true,
+        mAnimation = std::make_unique<NpcAnimation>(mCharacter, mNode, mResourceSystem, true,
             (renderHeadOnly() ? NpcAnimation::VM_HeadOnly : NpcAnimation::VM_Normal));
 
         onSetup();

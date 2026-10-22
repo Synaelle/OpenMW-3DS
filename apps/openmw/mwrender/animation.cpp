@@ -108,27 +108,17 @@ namespace
     class DayNightCallback : public SceneUtil::NodeCallback<DayNightCallback, osg::Switch*>
     {
     public:
-        DayNightCallback()
-            : mCurrentState(0)
-        {
-        }
-
         void operator()(osg::Switch* node, osg::NodeVisitor* nv)
         {
             unsigned int state = MWBase::Environment::get().getWorld()->getNightDayMode();
             const unsigned int newState = node->getNumChildren() > state ? state : 0;
 
-            if (newState != mCurrentState)
-            {
-                mCurrentState = newState;
-                node->setSingleChildOn(mCurrentState);
-            }
+            const osg::Switch::ValueList& values = node->getValueList();
+            if (newState >= values.size() || !values[newState] || std::count(values.begin(), values.end(), true) != 1)
+                node->setSingleChildOn(newState);
 
             traverse(node, nv);
         }
-
-    private:
-        unsigned int mCurrentState;
     };
 
     class AddSwitchCallbacksVisitor : public osg::NodeVisitor
@@ -1873,6 +1863,22 @@ namespace MWRender
             return found->second;
     }
 
+    std::optional<osg::Matrixf> Animation::getNodeWorldTransform(std::string_view name) const
+    {
+        const osg::Node* node = getNode(name);
+        if (node == nullptr)
+            return std::nullopt;
+        // Never empty: a node without parents still yields the path to itself
+        return osg::computeLocalToWorld(node->getParentalNodePaths()[0]);
+    }
+
+    std::optional<osg::Matrixf> Animation::getHeadWorldTransform() const
+    {
+        if (std::optional<osg::Matrixf> transform = getNodeWorldTransform("Head"))
+            return transform;
+        return getNodeWorldTransform("Bip01 Head");
+    }
+
     void Animation::setAlpha(float actorFade, float alpha)
     {
         if ((alpha == mAlpha && actorFade == mActorFade) || !mObjectRoot)
@@ -1925,10 +1931,10 @@ namespace MWRender
                     mGlowLight = nullptr;
                 }
 
-                osg::ref_ptr<SceneUtil::Light> light(new SceneUtil::Light);
-                light->setDiffuse(osg::Vec4f(0, 0, 0, 0));
-                light->setSpecular(osg::Vec4f(0, 0, 0, 0));
-                light->setAmbient(osg::Vec4f(1.5f, 1.5f, 1.5f, 1.f));
+                SceneUtil::Light light;
+                light.setDiffuse(osg::Vec4f(0, 0, 0, 0));
+                light.setSpecular(osg::Vec4f(0, 0, 0, 0));
+                light.setAmbient(osg::Vec4f(1.5f, 1.5f, 1.5f, 1.f));
 
                 bool isExterior = mPtr.isInCell() && mPtr.getCell()->getCell()->isExterior();
                 SceneUtil::configureLight(light, radius, isExterior);

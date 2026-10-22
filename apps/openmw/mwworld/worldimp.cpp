@@ -11,9 +11,7 @@
 #include <charconv>
 #include <vector>
 
-#include <osg/ComputeBoundsVisitor>
 #include <osg/Group>
-#include <osg/Timer>
 
 #include <MyGUI_TextIterator.h>
 
@@ -89,6 +87,7 @@
 #include "../mwrender/npcanimation.hpp"
 #include "../mwrender/postprocessor.hpp"
 #include "../mwrender/renderingmanager.hpp"
+#include "../mwrender/sky.hpp"
 #include "../mwrender/vismask.hpp"
 
 #include "../mwscript/globalscripts.hpp"
@@ -137,6 +136,17 @@ namespace MWWorld
                 { Globals::sCrimeGoldTurnIn, ESM::Variant(0) },
                 { Globals::sPCHasTurnIn, ESM::Variant(0) },
             };
+        }
+
+        // Estimate an actor's velocity from its last physics step
+        osg::Vec3f getActorVelocity(const MWPhysics::PhysicsSystem& physics, const ConstPtr& actor)
+        {
+            const MWPhysics::Actor* physicsActor = physics.getActor(actor);
+            if (physicsActor == nullptr)
+                return osg::Vec3f();
+
+            const osg::Vec3f displacement = physicsActor->getPosition() - physicsActor->getPreviousPosition();
+            return displacement / physics.getPhysicsDt();
         }
     }
 
@@ -974,19 +984,9 @@ namespace MWWorld
 
     osg::Matrixf World::getActorHeadTransform(const MWWorld::ConstPtr& actor) const
     {
-        const MWRender::Animation* anim = mRendering->getAnimation(actor);
-        if (anim)
-        {
-            const osg::Node* node = anim->getNode("Head");
-            if (!node)
-                node = anim->getNode("Bip01 Head");
-            if (node)
-            {
-                osg::NodePathList nodepaths = node->getParentalNodePaths();
-                if (!nodepaths.empty())
-                    return osg::computeLocalToWorld(nodepaths[0]);
-            }
-        }
+        if (const MWRender::Animation* anim = mRendering->getAnimation(actor))
+            if (std::optional<osg::Matrixf> transform = anim->getHeadWorldTransform())
+                return *transform;
         return osg::Matrixf::translate(actor.getRefData().getPosition().asVec3());
     }
 
@@ -1413,11 +1413,12 @@ namespace MWWorld
         mPhysics->updateAnimatedCollisionShape(ptr);
     }
 
-    void World::doPhysics(float duration, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
+    void World::doPhysics(
+        float duration, Misc::FrameClock::time_point statsEpoch, unsigned int frameNumber, Misc::FrameStats& stats)
     {
         processDoors(duration);
         mProjectileManager->update(duration);
-        mPhysics->stepSimulation(duration, mDiscardMovements, frameStart, frameNumber, stats);
+        mPhysics->stepSimulation(duration, mDiscardMovements, statsEpoch, frameNumber, stats);
         mProjectileManager->processHits();
         mDiscardMovements = false;
         mPhysics->moveActors();
@@ -1639,12 +1640,12 @@ namespace MWWorld
         }
     }
 
-    void World::updatePhysics(
-        float duration, bool paused, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats)
+    void World::updatePhysics(float duration, bool paused, Misc::FrameClock::time_point statsEpoch,
+        unsigned int frameNumber, Misc::FrameStats& stats)
     {
         if (!paused)
         {
-            doPhysics(duration, frameStart, frameNumber, stats);
+            doPhysics(duration, statsEpoch, frameNumber, stats);
         }
         else
         {
@@ -1727,13 +1728,8 @@ namespace MWWorld
             if (!object.isEmpty())
             {
                 osg::BoundingBox bb = mPhysics->getBoundingBox(object);
-                if (!bb.valid() && object.getRefData().getBaseNode())
-                {
-                    osg::ComputeBoundsVisitor computeBoundsVisitor;
-                    computeBoundsVisitor.setTraversalMask(~(MWRender::Mask_ParticleSystem | MWRender::Mask_Effect));
-                    object.getRefData().getBaseNode()->accept(computeBoundsVisitor);
-                    bb = computeBoundsVisitor.getBoundingBox();
-                }
+                if (!bb.valid())
+                    bb = mRendering->getObjectBounds(object, MWRender::Mask_ParticleSystem | MWRender::Mask_Effect);
                 const osg::Vec2f pos = mRendering->getScreenCoords(bb);
                 MWBase::Environment::get().getWindowManager()->setFocusObjectScreenCoords(pos.x(), pos.y());
             }
@@ -1830,10 +1826,13 @@ namespace MWWorld
 
     int World::getCurrentWeatherScriptId() const
     {
-        return mWeatherManager->getWeather().mScriptId;
+        const MWWorld::Weather* weather = getCurrentWeather();
+        if (weather != nullptr)
+            return weather->mScriptId;
+        return -1;
     }
 
-    const MWWorld::Weather& World::getCurrentWeather() const
+    const MWWorld::Weather* World::getCurrentWeather() const
     {
         return mWeatherManager->getWeather();
     }
@@ -2049,10 +2048,7 @@ namespace MWWorld
         if (!object.getClass().isActor() && adjustPos && object.getRefData().getBaseNode())
         {
             // Adjust position so the location we wanted ends up in the middle of the object bounding box
-            osg::ComputeBoundsVisitor computeBounds;
-            computeBounds.setTraversalMask(~MWRender::Mask_ParticleSystem);
-            object.getRefData().getBaseNode()->accept(computeBounds);
-            osg::BoundingBox bounds = computeBounds.getBoundingBox();
+            osg::BoundingBox bounds = mRendering->getObjectBounds(object, MWRender::Mask_ParticleSystem);
             if (bounds.valid())
             {
                 ESM::Position pos = object.getRefData().getPosition();
@@ -2518,9 +2514,8 @@ namespace MWWorld
     osg::Vec3f World::getStormDirection() const
     {
         if (isCellExterior() || isCellQuasiExterior())
-            return mWeatherManager->getStormDirection();
-        else
-            return osg::Vec3f(0, 1, 0);
+            return mRendering->getSkyManager()->getStormParticleDirection();
+        return Weather::defaultDirection();
     }
 
     struct GetContainersOwnedByVisitor
@@ -3018,6 +3013,21 @@ namespace MWWorld
         MWMechanics::CastSpell cast(actor, target, false, scriptedSpell);
         cast.mHitPosition = hitPosition;
 
+        // AI casters aim their magic bolts at their combat target, leading if it's moving
+        if (!casterIsPlayer)
+        {
+            MWWorld::Ptr boltTarget;
+            if (scriptedSpell)
+                boltTarget = target;
+            else
+                stats.getAiSequence().getCombatTarget(boltTarget);
+
+            // We need to check that we have a target, that it is an actor with physics to prevent aiming at (0, 0, 0)
+            if (!boltTarget.isEmpty() && boltTarget.getClass().isActor() && mPhysics->getActor(boltTarget) != nullptr)
+                cast.mMovingTarget = MWMechanics::MovingTarget{ mPhysics->getCollisionObjectPosition(boltTarget),
+                    getActorVelocity(*mPhysics, boltTarget) };
+        }
+
         if (!selectedSpell.empty())
         {
             const ESM::Spell* spell = mStore.get<ESM::Spell>().find(selectedSpell);
@@ -3073,10 +3083,11 @@ namespace MWWorld
             actor, projectile, worldPos, orient, bow, speed, attackStrength, attackWindUp);
     }
 
-    void World::launchMagicBolt(
-        const ESM::RefId& spellId, const MWWorld::Ptr& caster, const osg::Vec3f& fallbackDirection, ESM::RefNum item)
+    void World::launchMagicBolt(const ESM::RefId& spellId, const MWWorld::Ptr& caster,
+        const osg::Vec3f& fallbackDirection, ESM::RefNum item,
+        const std::optional<MWMechanics::MovingTarget>& movingTarget)
     {
-        mProjectileManager->launchMagicBolt(spellId, caster, fallbackDirection, item);
+        mProjectileManager->launchMagicBolt(spellId, caster, fallbackDirection, item, movingTarget);
     }
 
     void World::updateProjectilesCasters()
@@ -3831,7 +3842,7 @@ namespace MWWorld
         return mPhysics->isAreaOccupiedByOtherActor(actor.mRef, position, 2 * maxHalfExtent);
     }
 
-    void World::reportStats(unsigned int frameNumber, osg::Stats& stats) const
+    void World::reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const
     {
         DetourNavigator::reportStats(mNavigator->getStats(), frameNumber, stats);
         mPhysics->reportStats(frameNumber, stats);

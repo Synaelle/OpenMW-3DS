@@ -331,9 +331,9 @@ namespace MWRender
         mSun = std::make_unique<Sun>(mEarlyRenderBinRoot, *mSceneManager);
         mSun->setSunglare(mSunglareEnabled);
         mMasser = std::make_unique<Moon>(
-            mEarlyRenderBinRoot, *mSceneManager, Fallback::Map::getFloat("Moons_Masser_Size") / 125, Moon::Type_Masser);
+            mEarlyRenderBinRoot, *mSceneManager, Fallback::Map::getFloat("Moons_Masser_Size") / 115, Moon::Type_Masser);
         mSecunda = std::make_unique<Moon>(mEarlyRenderBinRoot, *mSceneManager,
-            Fallback::Map::getFloat("Moons_Secunda_Size") / 125, Moon::Type_Secunda);
+            Fallback::Map::getFloat("Moons_Secunda_Size") / 115, Moon::Type_Secunda);
 
         mCloudNode = new osg::Group;
         mEarlyRenderBinRoot->addChild(mCloudNode);
@@ -657,6 +657,7 @@ namespace MWRender
 
     void SkyManager::setWeather(const WeatherResult& weather)
     {
+        mStormParticleDirection = weather.mStormParticleDirection;
         if (!mCreated)
             return;
 
@@ -898,11 +899,6 @@ namespace MWRender
             return;
 
         mSun->setVisible(false);
-    }
-
-    void SkyManager::setStormParticleDirection(const osg::Vec3f& direction)
-    {
-        mStormParticleDirection = direction;
     }
 
     void SkyManager::setSunDirection(const osg::Vec3f& direction)

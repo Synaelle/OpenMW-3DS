@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <map>
+#include <optional>
 #include <set>
 #include <span>
 #include <string_view>
@@ -18,6 +19,8 @@
 #include "../mwworld/ptr.hpp"
 #include "../mwworld/spellcaststate.hpp"
 
+#include "../mwmechanics/movingtarget.hpp"
+
 #include "../mwrender/rendermode.hpp"
 
 namespace osg
@@ -26,7 +29,11 @@ namespace osg
     class Vec4f;
     class Matrixf;
     class Quat;
-    class Stats;
+}
+
+namespace Misc
+{
+    class FrameStats;
 }
 
 namespace Loading
@@ -223,7 +230,7 @@ namespace MWBase
 
         virtual int getCurrentWeatherScriptId() const = 0;
 
-        virtual const MWWorld::Weather& getCurrentWeather() const = 0;
+        virtual const MWWorld::Weather* getCurrentWeather() const = 0;
 
         virtual int getNextWeatherScriptId() const = 0;
 
@@ -478,7 +485,8 @@ namespace MWBase
         virtual void castSpell(const MWWorld::Ptr& actor, bool scriptedSpell = false) = 0;
 
         virtual void launchMagicBolt(const ESM::RefId& spellId, const MWWorld::Ptr& caster,
-            const osg::Vec3f& fallbackDirection, ESM::RefNum item)
+            const osg::Vec3f& fallbackDirection, ESM::RefNum item,
+            const std::optional<MWMechanics::MovingTarget>& movingTarget)
             = 0;
         virtual void launchProjectile(MWWorld::Ptr& actor, MWWorld::Ptr& projectile, const osg::Vec3f& worldPos,
             const osg::Quat& orient, MWWorld::Ptr& bow, float speed, float attackStrength, float attackWindUp)
@@ -595,7 +603,7 @@ namespace MWBase
 
         virtual bool isAreaOccupiedByOtherActor(const MWWorld::ConstPtr& actor, const osg::Vec3f& position) const = 0;
 
-        virtual void reportStats(unsigned int frameNumber, osg::Stats& stats) const = 0;
+        virtual void reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const = 0;
 
         virtual std::vector<MWWorld::Ptr> getAll(const ESM::RefId& id) = 0;
 

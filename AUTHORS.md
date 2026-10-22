@@ -138,6 +138,7 @@ Programmers
     Julien Voisin (jvoisin/ap0)
     Karl-Felix Glatzer (k1ll)
     Kevin Poitra (PuppyKevin)
+    Kirill Blagodarov (blagish)
     Koncord
     Kurnevsky Evgeny (kurnevsky)
     Lars Söderberg (Lazaroth)
@@ -146,12 +147,14 @@ Programmers
     Leon Krieg (lkrieg)
     Leon Saunders (emoose)
     logzero
+    Logan Sterling (solidest-snake)
     lohikaarme
     Lordrea
     Łukasz Gołębiewski (lukago)
     Lukasz Gromanowski (lgro)
     Mads Sandvei (Foal)
     Maksim Eremenko (Max Yari)
+    Malte Hammar (Eb-dur)
     Marc Bouvier (CramitDeFrog)
     Marcin Hulist (Gohan)
     Mark Siewert (mark76)

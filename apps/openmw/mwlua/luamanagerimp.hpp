@@ -5,8 +5,6 @@
 #include <map>
 #include <set>
 
-#include <osg/Stats>
-
 #include <components/lua/inputactions.hpp>
 #include <components/lua/luastate.hpp>
 #include <components/lua/scripttracker.hpp>
@@ -25,6 +23,11 @@
 #include "menuscripts.hpp"
 #include "object.hpp"
 #include "objectlists.hpp"
+
+namespace Misc
+{
+    class FrameStats;
+}
 
 namespace MWLua
 {
@@ -128,8 +131,8 @@ namespace MWLua
         void onDialogueResponse(
             const MWWorld::Ptr& actor, const ESM::DialInfo& info, const ESM::Dialogue& record) override;
         void applyMagicEffects(ESM::RefId id, const MWWorld::Ptr& caster, ESM::RefNum item, const MWWorld::Ptr& target,
-            const std::vector<int>& effects, bool ignoreReflect, bool ignoreSpellAbsorption, bool stackable,
-            bool isReflect) override;
+            const std::vector<ESM::IndexedENAMstruct>& effects, bool ignoreReflect, bool ignoreSpellAbsorption,
+            bool stackable, bool isReflect) override;
         void magicProjectileHit(ESM::RefId spellId, const MWWorld::Ptr& caster, ESM::RefNum item,
             const MWWorld::Ptr& victim, const osg::Vec3f& position, const osg::Vec3f& normal) override;
 
@@ -192,7 +195,7 @@ namespace MWLua
 
         bool isProcessingInputEvents() const { return mProcessingInputEvents; }
 
-        void reportStats(unsigned int frameNumber, osg::Stats& stats) const;
+        void reportStats(unsigned int frameNumber, Misc::FrameStats& stats) const;
         std::string formatResourceUsageStats() const override;
 
         LuaUtil::InputAction::Registry& inputActions() { return mInputActions; }

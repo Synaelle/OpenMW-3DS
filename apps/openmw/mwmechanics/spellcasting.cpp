@@ -137,7 +137,7 @@ namespace MWMechanics
             fallbackDirection = (mTarget.getRefData().getPosition().asVec3() + offset)
                 - (mCaster.getRefData().getPosition().asVec3());
 
-        MWBase::Environment::get().getWorld()->launchMagicBolt(mId, mCaster, fallbackDirection, mItem);
+        MWBase::Environment::get().getWorld()->launchMagicBolt(mId, mCaster, fallbackDirection, mItem, mMovingTarget);
     }
 
     void CastSpell::inflict(
@@ -176,7 +176,7 @@ namespace MWMechanics
             return;
         }
 
-        std::vector<int> indexes;
+        std::vector<ESM::IndexedENAMstruct> toApply;
 
         for (auto& enam : effects.mList)
         {
@@ -193,10 +193,10 @@ namespace MWMechanics
                 && (mCaster.isEmpty() || !mCaster.getClass().isActor()))
                 continue;
 
-            indexes.push_back(enam.mIndex);
+            toApply.push_back(enam);
         }
 
-        MWBase::Environment::get().getLuaManager()->applyMagicEffects(mId, mCaster, mItem, target, indexes,
+        MWBase::Environment::get().getLuaManager()->applyMagicEffects(mId, mCaster, mItem, target, toApply,
             mScriptedSpell, false, mFlags & ESM::ActiveSpells::Flag_Stackable, false);
 
         if (!exploded)
@@ -395,7 +395,7 @@ namespace MWMechanics
             ESM::ActiveSpells::Flag_Temporary | ESM::ActiveSpells::Flag_Stackable);
         mSourceName = ingredient->mName;
 
-        std::optional<ESM::EffectList> effect = rollIngredientEffect(mCaster, ingredient, 0);
+        std::optional<ESM::EffectList> effect = rollIngredientEffect(mCaster, ingredient);
 
         if (effect)
         {

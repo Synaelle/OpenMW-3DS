@@ -19,6 +19,7 @@
 #include <components/esm/records.hpp>
 #include <components/l10n/manager.hpp>
 #include <components/misc/resourcehelpers.hpp>
+#include <components/resource/resourcesystem.hpp>
 #include <components/settings/values.hpp>
 #include <components/widgets/box.hpp>
 

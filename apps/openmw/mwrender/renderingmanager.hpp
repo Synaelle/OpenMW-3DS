@@ -108,6 +108,9 @@ namespace MWRender
     class ObjectPaging;
     class Groundcover;
     class PostProcessor;
+    class InventoryPreview;
+    class RaceSelectionPreview;
+    class LocalMap;
 
     class RenderingManager : public MWRender::RenderingInterface
     {
@@ -123,6 +126,10 @@ namespace MWRender
         MWRender::Objects& getObjects() override;
 
         Resource::ResourceSystem* getResourceSystem();
+
+        std::unique_ptr<InventoryPreview> createInventoryPreview(const MWWorld::Ptr& character);
+        std::unique_ptr<RaceSelectionPreview> createRaceSelectionPreview();
+        std::unique_ptr<LocalMap> createLocalMap();
 
         const std::shared_ptr<SceneUtil::WorkQueue>& getWorkQueue() const;
         Terrain::World* getTerrain();
@@ -190,6 +197,10 @@ namespace MWRender
 
         /// Get normalized screen coordinates of the bounding box's summit, where (0,0) is the top left corner
         osg::Vec2f getScreenCoords(const osg::BoundingBox& bb);
+
+        /// Get the bounding box of the object's scene graph, leaving out nodes in ignoreMask. Invalid if the object
+        /// is not in the scene.
+        osg::BoundingBox getObjectBounds(const MWWorld::Ptr& ptr, unsigned int ignoreMask) const;
 
         void setSkyEnabled(bool enabled);
 
@@ -320,7 +331,7 @@ namespace MWRender
 
         std::shared_ptr<SceneUtil::WorkQueue> mWorkQueue;
 
-        osg::ref_ptr<SceneUtil::Light> mSunLight;
+        std::shared_ptr<SceneUtil::Light> mSunLight;
 
         DetourNavigator::Navigator& mNavigator;
         std::unique_ptr<NavMesh> mNavMesh;
@@ -341,7 +352,7 @@ namespace MWRender
         std::unique_ptr<EffectManager> mEffectManager;
         std::unique_ptr<SceneUtil::ShadowManager> mShadowManager;
         osg::ref_ptr<PostProcessor> mPostProcessor;
-        osg::ref_ptr<NpcAnimation> mPlayerAnimation;
+        std::unique_ptr<NpcAnimation> mPlayerAnimation;
         osg::ref_ptr<SceneUtil::PositionAttitudeTransform> mPlayerNode;
         std::unique_ptr<Camera> mCamera;
         osg::ref_ptr<Debug::DebugDrawer> mDebugDraw;
