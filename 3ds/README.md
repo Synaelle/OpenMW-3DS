@@ -1,23 +1,54 @@
-# OpenMW for New 3DS
+<h1 align="center">OpenMW port for the (New) 3DS</h1>
 
-**New 3DS / New 2DS only.**
+<p align="center">
+  <a href="QA.md">Q/A</a> ·
+  <a href="BUG_REPORT.md">Bug report</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-An unofficial port of [OpenMW](https://openmw.org), the open-source engine for The Elder Scrolls III: Morrowind, to
-the New Nintendo 3DS. It contains no game content: you need your own legally owned copy of Morrowind.
+Play The Elder Scrolls III: Morrowind on your New 3DS, through [OpenMW](https://openmw.org), the open source engine
+that recreates it.
 
-Under development: not released yet. The roadmap is [LIMITATIONS.md](LIMITATIONS.md), the development log
-[PORTING_NOTES.md](PORTING_NOTES.md), the release plan [docs/RELEASE.md](docs/RELEASE.md).
+> [!CAUTION]
+> No assets from the game are provided here. You need your own legally owned copy of Morrowind for PC (Steam, GOG or
+> the disc), and the setup app turns its files into what the 3DS needs. This is an unofficial fan project, not
+> affiliated with or endorsed by Bethesda Softworks, ZeniMax Media or Nintendo.
+
+> [!WARNING]
+> The port is experimental, but the main quest should be completable from start to finish. Some side quests may have
+> issues. If you run into one, please [report it](BUG_REPORT.md).
+
+## What you need
+
+* A New 3DS, New 3DS XL or New 2DS XL with custom firmware. A port for the original 3DS and 2DS is in the works.
+* Morrowind for PC, the English version (other languages are coming soon).
+* A computer running Windows or Linux for the setup app.
+
+## Getting started
+
+1. Download the [latest release](https://github.com/Synaelle/OpenMW-N3DS/releases/latest) and run the setup app. It
+   finds your Morrowind and prepares everything.
+2. Copy the folder it makes to your SD card.
+3. Install the CIA with [FBI](https://github.com/Steveice10/FBI/releases/latest) or
+   [Cement](https://github.com/Synaelle/cement/releases/latest) and start OpenMW. The first launch takes a while.
+
+## What to expect
+
+The game runs Morrowind with the circle pad for movement, the touch screen for menus and the top screen for the world.
+Tribunal and Bloodmoon aren't supported yet, and there are no shadows, water reflections or distant land, which the
+3DS can't afford. Loading a new place takes a few seconds. Everything we know about is in
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 
-- [OpenMW](https://openmw.org), by the OpenMW team and contributors: the engine this port is built on (GPL-3.0).
-- [MW3DS](https://github.com/3ds-conspiracy/mw3ds), by 3ds-conspiracy: another Morrowind engine for the 3DS,
-  written from scratch (GPL-3.0). Parts of this port's work on the console (performance, sound, controls) take
-  inspiration from it.
-- The libraries, fonts and tools listed in [packaging/ui3ds/credits3ds.txt](packaging/ui3ds/credits3ds.txt), the
-  credits shown in the game.
+This port stands on the work of many people. See [CREDITS.md](CREDITS.md).
 
 ## License
 
-GNU General Public License v3.0, as OpenMW. The Elder Scrolls III: Morrowind is © Bethesda Softworks LLC, a ZeniMax
-Media company; this project is not affiliated with or endorsed by Bethesda Softworks, ZeniMax Media or Nintendo.
+GNU General Public License v3.0, like OpenMW. The Elder Scrolls III: Morrowind is © Bethesda Softworks LLC, a ZeniMax
+Media company.
