@@ -89,7 +89,8 @@ namespace
                 // benchmark takes it round from there. Nothing is saved. A fixed random seed: the same AI and weather
                 // rolls each run (frame times still differ, so NPCs can still drift apart a little).
                 args = { "openmw", "--skip-menu", "--start", "Seyda Neen", "--random-seed", "1" };
-                P3DS_LOGI("benchmark: about 5 minutes, then the game quits");
+                P3DS_LOGI("benchmark: %s, then the game quits",
+                    gBenchmarkSet == omw3ds::benchmark::Set::Endurance ? "about 30 minutes" : "about 5 minutes");
             }
             else if (!gSkipIntro)
             {
@@ -391,7 +392,7 @@ namespace
                 // One "Start game", then whether to skip the intro (the tester, test #107): skipping is the test
                 // set-up of args.txt (the test character), not skipping the game's own beginning with the debug tools
                 // on (test #104).
-                std::vector<menu::Item> items{ { "Start game" }, { "Benchmark" } };
+                std::vector<menu::Item> items{ { "Start game" }, { "Benchmark" }, { "Endurance (30 min)" } };
                 // The test's runs to choose from: only when there is a choice (the tester, test #105).
                 if (runs.mRuns.size() > 1)
                     items.push_back({ "Test run: " + runs.mRuns[runs.mSelected].mLabel });
@@ -400,7 +401,7 @@ namespace
                 note.clear();
                 if (option < 0 || option == int(items.size()) - 1)
                     break;
-                if (option == 2)
+                if (items[option].mLabel.rfind("Test run", 0) == 0)
                 {
                     runs.mSelected = (runs.mSelected + 1) % runs.mRuns.size();
                     continue;
@@ -422,9 +423,18 @@ namespace
                     chosenLine = "start: debug, with the intro" + run;
                     return Start::DebugIntro;
                 }
-                // Benchmark: Morrowind's places (about 5 minutes, then the game quits).
-                gBenchmarkSet = omw3ds::benchmark::Set::Morrowind;
-                chosenLine = "start: benchmark, Morrowind" + run;
+                // Benchmark: Morrowind's places (about 5 minutes), or the endurance run (32 places twice, about 30
+                // minutes, to catch running out of memory), then the game quits.
+                if (option == 2)
+                {
+                    gBenchmarkSet = omw3ds::benchmark::Set::Endurance;
+                    chosenLine = "start: benchmark, endurance" + run;
+                }
+                else
+                {
+                    gBenchmarkSet = omw3ds::benchmark::Set::Morrowind;
+                    chosenLine = "start: benchmark, Morrowind" + run;
+                }
                 return Start::Benchmark;
             }
 #endif
@@ -452,6 +462,7 @@ int main(int, char**)
         const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         gBenchmark = text.find("benchmark") != std::string::npos;
         gBenchmarkSet = text.find("benchmark:tour") != std::string::npos ? omw3ds::benchmark::Set::Tour
+            : text.find("benchmark:endurance") != std::string::npos      ? omw3ds::benchmark::Set::Endurance
                                                                           : omw3ds::benchmark::Set::Morrowind;
         if (const size_t at = text.find("benchmark@"); at != std::string::npos)
             gBenchmarkFirst = std::max(0, std::atoi(text.c_str() + at + 10) - 1);

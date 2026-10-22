@@ -20,6 +20,10 @@ namespace omw3ds::benchmark
         // with 3 top-screen screenshots at each. Zeste only (an automated run's "benchmark:tour"): never on the
         // console's menu.
         Tour,
+        // The endurance run (the tester, 22/10: ~30 minutes, many places, to catch running out of memory): the
+        // tour's places twice round, shorter stops, no screenshot (they would weigh on the frame times). The second
+        // lap revisits every place, so memory that grows between the laps is a leak. On the console's Debug menu.
+        Endurance,
     };
     // Before OpenMW starts (main3ds.cpp). Results go to benchmark-<set>.txt in the run's log folder. firstStage:
     // where to start (an automated run's "benchmark@N", N from 1: profiling one place in Zeste).

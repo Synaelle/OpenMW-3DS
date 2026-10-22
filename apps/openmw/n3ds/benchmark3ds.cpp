@@ -92,7 +92,9 @@ namespace omw3ds::benchmark
         // against Morrowind.esm.
         constexpr Stage sTourStages[] = {
             { "Seyda Neen", nullptr, {}, 0.f, Clear, 9.f, "Seyda Neen" },
-            { "Census and Excise Office", "Seyda Neen, Census and Excise Office", {}, 0.f, -1, 9.f },
+            // Not the Census and Excise Office: its first door destination is outside the room's walls, so the
+            // player fell into the void again and again there (the tester, test #113).
+            { "Arrille's Tradehouse", "Seyda Neen, Arrille's Tradehouse", {}, 0.f, -1, 9.f },
             { "Balmora", nullptr, {}, 0.f, Clear, 12.f, "Balmora" },
             { "Balmora, Eight Plates", "Balmora, Eight Plates", {}, 0.f, -1, 12.f },
             { "Pelagiad", nullptr, {}, 0.f, Rain, 18.f, "Pelagiad" },
@@ -130,23 +132,33 @@ namespace omw3ds::benchmark
             const char* mName;
             const Stage* mStages;
             int mCount;
+            int mLaps; // times round the places
+            double mSettle; // seconds after arriving: weather particles, actors appearing
+            double mMeasure; // seconds measured, while the camera turns once round
+            bool mScreenshots; // 3 top-screen screenshots per place (Zeste only: they weigh on the frame times)
         };
+        // In the order of benchmark3ds.hpp's Set. The endurance run: 32 places x 2 laps x ~30 s with the loads,
+        // about 30-35 minutes on the console.
         constexpr StageSet sSets[] = {
-            { "Morrowind", sStages, int(std::size(sStages)) },
-            { "Tour", sTourStages, int(std::size(sTourStages)) },
+            { "Morrowind", sStages, int(std::size(sStages)), 1, 6.0, 30.0, false },
+            { "Tour", sTourStages, int(std::size(sTourStages)), 1, 6.0, 30.0, true },
+            { "Endurance", sTourStages, int(std::size(sTourStages)), 2, 5.0, 20.0, false },
         };
         const StageSet* gSet = &sSets[0];
 
         constexpr double kStartDelay = 3.0; // seconds of play before the first stage
-        constexpr double kSettle = 6.0; // after arriving: weather particles, actors appearing
-        constexpr double kMeasure = 30.0; // the camera turns once round meanwhile
+
+        int stageCount()
+        {
+            return gSet->mCount * gSet->mLaps;
+        }
 
         struct Result
         {
             double mLoadMs = 0;
             std::vector<float> mFrameMs;
             double mDraws = 0, mGpuMs = 0;
-            float mHeapMB = 0;
+            float mHeapMB = 0, mArenaMB = 0, mLinearFreeMB = 0;
         };
 
         bool gEnabled = false;
@@ -172,7 +184,7 @@ namespace omw3ds::benchmark
 
         void startStage(int index)
         {
-            const Stage& stage = gSet->mStages[index];
+            const Stage& stage = gSet->mStages[index % gSet->mCount];
             MWBase::World& w = world();
             w.setGlobalFloat(MWWorld::Globals::sGameHour, stage.mHour);
             ESM::Position pos{};
@@ -202,7 +214,7 @@ namespace omw3ds::benchmark
                 MWWorld::ActionTeleport(refId, pos, false).execute(w.getPlayerPtr());
             else
                 P3DS_LOGW("benchmark: no cell %s", stage.mInterior);
-            P3DS_LOGI("benchmark: stage %d/%d, %s, %s, %02.0f:00", index + 1, gSet->mCount, stage.mLabel,
+            P3DS_LOGI("benchmark: stage %d/%d, %s, %s, %02.0f:00", index + 1, stageCount(), stage.mLabel,
                 weatherName(stage.mWeather), double(stage.mHour));
             gResults.emplace_back();
             gStageTime = 0;
@@ -222,7 +234,7 @@ namespace omw3ds::benchmark
 
         std::string line(int index, const Result& r)
         {
-            const Stage& stage = gSet->mStages[index];
+            const Stage& stage = gSet->mStages[index % gSet->mCount];
             std::vector<float> sorted = r.mFrameMs;
             std::sort(sorted.begin(), sorted.end());
             const size_t n = sorted.size();
@@ -232,10 +244,12 @@ namespace omw3ds::benchmark
             const double avg = n ? sum / n : 0;
             const float low1 = n ? sorted[std::min(n - 1, n * 99 / 100)] : 0; // the 1% slowest frames start here
             const float worst = n ? sorted.back() : 0;
-            char buf[256];
-            std::snprintf(buf, sizeof(buf), "%-2d %-30s %-9s %5.0f %8.0f %7.1f %7.1f %8.1f %8.1f %6.0f %7.1f %7.1f", index + 1,
+            char buf[288];
+            std::snprintf(buf, sizeof(buf),
+                "%-3d %-30s %-9s %5.0f %8.0f %7.1f %7.1f %8.1f %8.1f %6.0f %7.1f %7.1f %8.1f %9.1f", index + 1,
                 stage.mLabel, weatherName(stage.mWeather), double(stage.mHour), r.mLoadMs, avg > 0 ? 1000.0 / avg : 0.0,
-                avg, double(low1), double(worst), n ? r.mDraws / n : 0.0, n ? r.mGpuMs / n : 0.0, double(r.mHeapMB));
+                avg, double(low1), double(worst), n ? r.mDraws / n : 0.0, n ? r.mGpuMs / n : 0.0, double(r.mHeapMB),
+                double(r.mArenaMB), double(r.mLinearFreeMB));
             return buf;
         }
 
@@ -243,15 +257,20 @@ namespace omw3ds::benchmark
         {
             gDone = true;
             const std::string header
-                = "#  place                          weather    hour  load ms  avg fps  avg ms  1% low ms  worst ms"
-                  "  draws  PICA ms heap MB";
+                = "#   place                          weather    hour  load ms  avg fps  avg ms  1% low ms  worst ms"
+                  "  draws  PICA ms heap MB arena MB linear MB";
             std::string file = std::string("benchmark-") + gSet->mName + ".txt";
             std::transform(file.begin(), file.end(), file.begin(), [](unsigned char c) { return std::tolower(c); });
             const std::string path = std::string(p3ds::logDir()) + "/" + file;
             std::ofstream out(path);
-            out << "OpenMW 3DS benchmark, " << gSet->mName << ": " << gSet->mCount << " places, " << kMeasure
-                << " s measured at each while the camera turns once round (after " << kSettle
-                << " s to settle). Frame times in ms; 1% low = the frame time the slowest 1% of frames reach.\n\n"
+            out << "OpenMW 3DS benchmark, " << gSet->mName << ": " << gSet->mCount << " places";
+            if (gSet->mLaps > 1)
+                out << ", " << gSet->mLaps << " laps";
+            out << ", " << gSet->mMeasure << " s measured at each while the camera turns once round (after "
+                << gSet->mSettle
+                << " s to settle). Frame times in ms; 1% low = the frame time the slowest 1% of frames reach. heap:"
+                   " in use after the place; arena: what the heap has taken from the system; linear: GPU memory"
+                   " free.\n\n"
                 << header << "\n";
             P3DS_LOGI("benchmark: done");
             P3DS_LOGI("benchmark: %s", header.c_str());
@@ -260,6 +279,28 @@ namespace omw3ds::benchmark
                 const std::string text = line(int(i), gResults[i]);
                 out << text << "\n";
                 P3DS_LOGI("benchmark: %s", text.c_str());
+            }
+            // Each place against itself one lap later: memory still in use when the same place is shown again.
+            if (gSet->mLaps > 1 && int(gResults.size()) == stageCount())
+            {
+                float sum = 0, most = 0;
+                int worst = 0;
+                for (int i = 0; i < gSet->mCount; ++i)
+                {
+                    const float grew = gResults[i + gSet->mCount * (gSet->mLaps - 1)].mHeapMB - gResults[i].mHeapMB;
+                    sum += grew;
+                    if (grew > most)
+                    {
+                        most = grew;
+                        worst = i;
+                    }
+                }
+                char buf[192];
+                std::snprintf(buf, sizeof(buf),
+                    "heap, last lap against the first, place by place: %+.1f MB on average, most %+.1f MB (%s)",
+                    double(sum / gSet->mCount), double(most), gSet->mStages[worst].mLabel);
+                out << "\n" << buf << "\n";
+                P3DS_LOGI("benchmark: %s", buf);
             }
             P3DS_LOGI("benchmark: results in %s; quitting", path.c_str());
             MWBase::Environment::get().getStateManager()->requestQuit();
@@ -270,7 +311,7 @@ namespace omw3ds::benchmark
     {
         gEnabled = true;
         gSet = &sSets[static_cast<int>(set)];
-        gFirstStage = std::clamp(firstStage, 0, gSet->mCount - 1);
+        gFirstStage = std::clamp(firstStage, 0, stageCount() - 1);
     }
 
     bool enabled()
@@ -315,7 +356,7 @@ namespace omw3ds::benchmark
         gStageTime += dt;
         if (!gMeasuring)
         {
-            if (gStageTime >= kSettle)
+            if (gStageTime >= gSet->mSettle)
             {
                 gMeasuring = true;
                 gStageTime = 0;
@@ -323,10 +364,10 @@ namespace omw3ds::benchmark
             return;
         }
         // The tour (Zeste only): the top screen at a quarter, a half and three quarters of the turn.
-        if (gSet->mStages == sTourStages)
+        if (gSet->mScreenshots)
             for (int shot = 0; shot < 3; ++shot)
             {
-                const double at = kMeasure * (0.25 + 0.25 * shot);
+                const double at = gSet->mMeasure * (0.25 + 0.25 * shot);
                 if (gStageTime >= at && gStageTime - dt < at)
                 {
                     char path[160];
@@ -338,12 +379,15 @@ namespace omw3ds::benchmark
         const Render3DS::FrameStats& stats = Render3DS::getLastFrameStats();
         result.mDraws += stats.mDraws;
         result.mGpuMs += stats.mGpuMs;
-        setYaw(gStartYaw + float(osg::PI * 2.0 * std::min(1.0, gStageTime / kMeasure)));
-        if (gStageTime < kMeasure)
+        setYaw(gStartYaw + float(osg::PI * 2.0 * std::min(1.0, gStageTime / gSet->mMeasure)));
+        if (gStageTime < gSet->mMeasure)
             return;
-        result.mHeapMB = p3ds::mem::toMB(p3ds::mem::queryExact().heapUsed);
+        const p3ds::mem::Stats mem = p3ds::mem::queryExact(); // a heap walk: after the measured frames
+        result.mHeapMB = p3ds::mem::toMB(mem.heapUsed);
+        result.mArenaMB = p3ds::mem::toMB(mem.heapArena);
+        result.mLinearFreeMB = p3ds::mem::toMB(mem.linearFree);
         P3DS_LOGI("benchmark: %s", line(gStage, result).c_str());
-        if (++gStage < gSet->mCount)
+        if (++gStage < stageCount())
             startStage(gStage);
         else
             finish();
