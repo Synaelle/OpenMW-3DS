@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace p3ds::menuart
 {
@@ -122,13 +123,22 @@ namespace p3ds::menuart
         constexpr int kTopWidth = 400;
         constexpr int kTopMargin = 16;
         int gSpinX = 0, gSpinY = 0; // the emblem's top-left on the top screen (topLoading)
+        // The indicator's area (columns gSpinX..399, rows gSpinY..239) composed off screen, in the framebuffer's
+        // layout, then copied over in one go: clearing and redrawing in the shown buffer flashed the word (the
+        // tester, test #112). Allocated by topLoading, freed by topLoadingEnd.
+        std::vector<uint8_t> gSpinArea;
 
-        inline uint8_t* topPixel(uint8_t* fb, int x, int y)
+        // A rotated BGR8 surface (as the top screen's framebuffer): columns from x0, each `rows` rows high ending
+        // at the screen's bottom row, stored from the bottom up.
+        struct Surface
         {
-            return fb + (x * kHeight + (kHeight - 1 - y)) * 3; // BGR8, rotated as the bottom screen
-        }
+            uint8_t* mBase;
+            int mX0;
+            int mRows;
+            uint8_t* pixel(int x, int y) const { return mBase + ((x - mX0) * mRows + (kHeight - 1 - y)) * 3; }
+        };
 
-        void topGlyphs(uint8_t* fb, int x, int y, const char* str, Font font, const uint8_t rgb[3])
+        void topGlyphs(const Surface& out, int x, int y, const char* str, Font font, const uint8_t rgb[3])
         {
             const MenuGlyph* table = glyphs(font);
             const uint8_t* alpha = coverage(font);
@@ -143,9 +153,9 @@ namespace p3ds::menuart
                     {
                         const unsigned a = alpha[g.mOffset + gy * g.mWidth + gx];
                         const int px = x + g.mLeft + gx, py = y + g.mTop + gy;
-                        if (a == 0 || px < 0 || px >= kTopWidth || py < 0 || py >= kHeight)
+                        if (a == 0 || px < out.mX0 || px >= kTopWidth || py < kHeight - out.mRows || py >= kHeight)
                             continue;
-                        uint8_t* p = topPixel(fb, px, py);
+                        uint8_t* p = out.pixel(px, py);
                         for (int k = 0; k < 3; ++k) // BGR
                             p[k] = uint8_t((p[k] * (255 - a) + rgb[2 - k] * a) / 255);
                     }
@@ -168,28 +178,32 @@ namespace p3ds::menuart
     void topSpin(int frame)
     {
         // "[emblem] Loading" at the bottom right, the word centred on the emblem's height. Drawn whole each time
-        // (area cleared, frame, word): the renderer's start-up, between two frames, clears the screen.
+        // (the renderer's start-up, between two frames, clears the screen), composed off screen first.
         static constexpr const char* kWord = "Loading";
         static constexpr uint8_t kWordRgb[3] = { 214, 208, 196 }; // colour::title
         const int textW = textWidth(kWord, Font::Text);
         const int textX = kTopWidth - kTopMargin - textW;
         gSpinX = textX - 10 - kSpinSize;
         gSpinY = kHeight - kTopMargin - kSpinSize;
-        uint8_t* fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, nullptr, nullptr);
-        const int areaW = kTopWidth - gSpinX;
-        for (int x = gSpinX; x < kTopWidth; ++x)
-            std::memset(topPixel(fb, x, kHeight - 1), 0, kSpinSize * 3 + kTopMargin * 3); // rows gSpinY..239
-        const uint8_t* src = kSpin + ((frame % kSpinFrames + kSpinFrames) % kSpinFrames) * kSpinSize * kSpinSize * 3;
-        // Screen row y is column index 239 - y: the frame's rows gSpinY .. gSpinY + size - 1 start at 240 - gSpinY - size.
+        const int areaW = kTopWidth - gSpinX, rows = kHeight - gSpinY;
+        gSpinArea.assign(size_t(areaW) * rows * 3, 0);
+        const Surface area{ gSpinArea.data(), gSpinX, rows };
+        // The turn's direction is in the frames (tools/make_menu_spin.py: right to left, in perspective).
+        const int index = (frame % kSpinFrames + kSpinFrames) % kSpinFrames;
+        const uint8_t* src = kSpin + index * kSpinSize * kSpinSize * 3;
+        // The frame's rows gSpinY .. gSpinY + size - 1, bottom up: from index rows - (rows - size) = the margin's.
         for (int x = 0; x < kSpinSize; ++x)
-            std::memcpy(fb + ((gSpinX + x) * kHeight + (kHeight - gSpinY - kSpinSize)) * 3, src + x * kSpinSize * 3,
-                kSpinSize * 3);
-        topGlyphs(fb, textX, gSpinY + (kSpinSize - lineHeight(Font::Text)) / 2, kWord, Font::Text, kWordRgb);
-        GSPGPU_FlushDataCache(topPixel(fb, gSpinX, kHeight - 1), areaW * kHeight * 3);
+            std::memcpy(area.pixel(gSpinX + x, gSpinY + kSpinSize - 1), src + x * kSpinSize * 3, kSpinSize * 3);
+        topGlyphs(area, textX, gSpinY + (kSpinSize - lineHeight(Font::Text)) / 2, kWord, Font::Text, kWordRgb);
+        uint8_t* fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, nullptr, nullptr);
+        for (int x = 0; x < areaW; ++x)
+            std::memcpy(fb + (gSpinX + x) * kHeight * 3, gSpinArea.data() + x * rows * 3, rows * 3);
+        GSPGPU_FlushDataCache(fb + gSpinX * kHeight * 3, areaW * kHeight * 3);
     }
 
     void topLoadingEnd()
     {
+        std::vector<uint8_t>().swap(gSpinArea);
         gfxSetDoubleBuffering(GFX_TOP, true);
     }
 

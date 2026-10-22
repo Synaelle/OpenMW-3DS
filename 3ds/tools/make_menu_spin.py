@@ -2,13 +2,14 @@
 """Renders the loading screen's spinning emblem (test #108, the tester: "[logo] Loading" at the bottom right of the
 top screen, a few frames turning by 45 degrees, not smooth): the HOME Menu icon's moon-and-star emblem
 (packaging/source/morrowind_emblem.png) at SIZE pixels, turned about its vertical axis like a coin, FRAMES frames
-from 0 to 315 degrees, blended over black, into platform3ds/src/menuspin.inc (committed; run again
+from 0 to 315 degrees, blended over black, into platform3ds/src/menuspin.inc (committed: run again
 only when the emblem, the size or the background changes):
 
     python tools/make_menu_spin.py [--preview strip.png]
 
-A frame is the emblem squeezed to |cos(angle)| of its width, its back (90 to 270 degrees) mirrored and darker, and a
-thin dark gold edge when it is side on. Stored as the top screen's framebuffer holds pixels (BGR8, rotated: column
+A frame is the emblem turned about its vertical axis in perspective (the far edge smaller, so the turn has a
+direction: right to left, the tester, test #112, where a plain squeeze looked the same either way), its back (90 to 270
+degrees) mirrored and darker, and a thin dark gold edge when it is side on. Stored as the top screen's framebuffer holds pixels (BGR8, rotated: column
 by column, each column from the bottom of the screen to the top), frame after frame.
 """
 
@@ -16,6 +17,7 @@ import argparse
 import math
 import os
 
+import numpy as np
 from PIL import Image, ImageEnhance
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,22 +27,36 @@ SIZE = 48
 FRAMES = 8
 BACKGROUND = (0, 0, 0)  # the top screen's black while loading (the renderer's start-up clears it: menuart.cpp)
 EDGE = (110, 92, 58)  # the coin's edge, side on: a dark gold
+DISTANCE = 3.0  # the viewer's distance, in half-widths of the emblem: how strong the perspective is
+SUPERSAMPLE = 4
 
 
 def frame(emblem, angle):
     canvas = Image.new("RGBA", (SIZE, SIZE), BACKGROUND + (255,))
-    c = math.cos(math.radians(angle))
-    width = round(SIZE * abs(c))
-    if width < 3:
+    a = math.radians(angle)
+    c, s = math.cos(a), math.sin(a)
+    if abs(c) < 0.06:
         edge = Image.new("RGBA", (3, SIZE - 8), EDGE + (255,))
         canvas.alpha_composite(edge, ((SIZE - 3) // 2, 4))
         return canvas.convert("RGB")
-    face = emblem.resize((width, SIZE), Image.LANCZOS)
-    if c < 0:  # its back: mirrored, darker
-        face = face.transpose(Image.FLIP_LEFT_RIGHT)
-    rgb = ImageEnhance.Brightness(face.convert("RGB")).enhance((0.55 if c < 0 else 1.0) * (0.7 + 0.3 * abs(c)))
-    face = Image.merge("RGBA", (*rgb.split(), face.getchannel("A")))
-    canvas.alpha_composite(face, ((SIZE - width) // 2, 0))
+    # A point x (-1..1 across the emblem) turns to x cos a, depth x sin a (positive: nearer), and is seen at
+    # u = x cos a * D / (D - x sin a). Each output pixel samples the emblem at the x that lands there.
+    n = SIZE * SUPERSAMPLE
+    src = np.asarray(emblem.resize((n, n), Image.LANCZOS)).astype(np.float32)
+    u = (np.arange(n) + 0.5) / n * 2 - 1
+    v = (np.arange(n) + 0.5) / n * 2 - 1
+    uu, vv = np.meshgrid(u, v)
+    x = uu * DISTANCE / (DISTANCE * c + uu * s)
+    scale = DISTANCE / (DISTANCE - x * s)
+    y = vv / scale
+    inside = (np.abs(x) <= 1) & (np.abs(y) <= 1) & (scale > 0)
+    sx = np.clip(((x + 1) / 2 * n).astype(int), 0, n - 1)
+    sy = np.clip(((y + 1) / 2 * n).astype(int), 0, n - 1)
+    out = np.where(inside[..., None], src[sy, sx], 0)
+    shade = (0.55 if c < 0 else 1.0) * (0.7 + 0.3 * abs(c))  # its back darker, and darker as it turns away
+    out[..., :3] *= shade
+    face = Image.fromarray(out.clip(0, 255).astype(np.uint8), "RGBA").resize((SIZE, SIZE), Image.LANCZOS)
+    canvas.alpha_composite(face)
     return canvas.convert("RGB")
 
 
