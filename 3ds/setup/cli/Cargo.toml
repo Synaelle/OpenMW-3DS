@@ -1,0 +1,13 @@
+[package]
+name = "openmw3ds-setup-cli"
+description = "The setup app's command-line tool: the same preparation as the window, for scripts and testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openmw3ds-setup-cli"
+path = "src/main.rs"
+
+[dependencies]
+openmw3ds-setup-core = { path = "../core" }

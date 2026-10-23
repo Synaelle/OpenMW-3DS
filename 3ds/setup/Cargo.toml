@@ -1,0 +1,22 @@
+# The setup app for OpenMW for New 3DS: prepares the folder players copy to their 3DS's SD card from their own
+# Morrowind installation. The preparation (core, no interface), the command-line tool and the window (Tauri).
+
+[workspace]
+resolver = "3"
+members = ["core", "cli", "app"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[profile.release]
+# The cooker is most of the preparation's time: keep it fast, the program small.
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+# The texture cooker in a debug build would take minutes: optimise the core even there.
+[profile.dev.package.openmw3ds-setup-core]
+opt-level = 3
