@@ -10,8 +10,8 @@ The New 3DS, New 3DS XL and New 2DS XL, with custom firmware. A port for the ori
 <details>
 <summary><b>Which Morrowind do I need?</b></summary>
 
-Morrowind for PC, the English version, from Steam, GOG or the disc. Other languages are coming soon. The setup app
-checks your copy before it starts.
+Morrowind for PC, in English, French or German, from Steam, GOG or the disc. Other languages will get support later.
+The setup app checks your copy before it starts.
 
 </details>
 
