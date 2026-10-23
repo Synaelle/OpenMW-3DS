@@ -1,6 +1,6 @@
 # Known issues
 
-What we already know about in 0.1.1. No need to report these.
+What we already know about in 0.2.0. No need to report these.
 
 * **Loading takes a few seconds** when you go through a door, travel or walk into a new area.
 * **The game sometimes freezes for a second or two**, now and then.
@@ -12,6 +12,10 @@ What we already know about in 0.1.1. No need to report these.
 * **The journal's Quests list is empty.** Morrowind alone has no quest names, it comes with Tribunal, OpenMW on PC does the same. Journal
   entries and topics work.
 * **Books have more pages** than on PC, so the text can be read on the top screen.
+* **Taking a screenshot can freeze the game** for a few seconds.
+* **The minimap and the full map are experimental** (Options, Experimental tab): they may cause short freezes.
+* **The macOS setup app is experimental.** It hasn't been tried on a Mac yet: if it doesn't work, use the Python
+  setup.
 
 ## Not in this version
 
