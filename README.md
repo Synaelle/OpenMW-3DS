@@ -41,6 +41,32 @@ Tribunal and Bloodmoon aren't supported yet, and there are no shadows, water ref
 3DS can't afford. Loading a new place takes a few seconds. Everything we know about is in
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
+## Building
+
+The port builds on Windows, in PowerShell, from the repository's root. Everything specific to the 3DS is in the `3ds`
+folder, OpenMW's own code is at the root.
+
+1. Install the tools (MSYS2, devkitPro's 3DS toolchain and libraries, makerom and bannertool) and the Python
+   packages the tools use. It's safe to run again.
+   ```powershell
+   3ds\scripts\bootstrap.ps1
+   ```
+2. Build OpenMW's dependencies for the 3DS (OpenSceneGraph, Bullet, Boost, ICU, SQLite...). This takes a while the
+   first time.
+   ```powershell
+   3ds\scripts\build-deps.ps1
+   ```
+3. Build the game. The CIA ends up in `3ds\build\openmw\apps\openmw\openmw.cia`.
+   ```powershell
+   3ds\scripts\build-openmw.ps1
+   ```
+   This is a test build, with debug tools. Add `-NoDebug` for a build like the releases.
+
+To build a full release (the CIA, the Windows setup app and the packages), run
+`3ds\scripts\make-release.ps1 -Version x.y.z`. With `-Draft` it also makes the draft release on GitHub, where the
+macOS and Linux setup apps get built. The setup app (Rust and Tauri) has its own instructions in
+[3ds/setup](3ds/setup/README.md).
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

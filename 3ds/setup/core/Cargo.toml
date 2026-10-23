@@ -1,0 +1,21 @@
+[package]
+name = "openmw3ds-setup-core"
+description = "The setup app's preparation: the Morrowind folder's checks, openmw.cfg, the sound archive, the texture cooker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "setup_core"
+
+[dependencies]
+dunce = "1"
+dirs = "6"
+fs4 = "0.13"
+png = "0.17"
+image = { version = "0.25", default-features = false, features = ["tga", "bmp", "jpeg"] }
+ureq = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"

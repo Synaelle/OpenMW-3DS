@@ -64,11 +64,32 @@ def check_morrowind(morrowind):
     if not problems:
         language = esm_language(os.path.join(data_files, "Morrowind.esm"))
         if not language:
-            problems.append("This Morrowind's language isn't recognised: this version needs the English game.")
-        elif language != "English":
-            problems.append(f"This Morrowind is in {language}: this version needs the English game. Other "
-                            "languages come in a later version.")
+            problems.append("This Morrowind's language isn't recognised: this version supports the English, French "
+                            "and German games.")
+        elif language not in LOCALES:
+            problems.append(f"This Morrowind is in {language}: this version supports the English, French and German "
+                            f"games. {language} will be supported in a later version.")
     return problems
+
+
+# The interface language for each edition this version supports (the others later: Polish and Russian need other
+# encodings).
+LOCALES = {"English": "en", "French": "fr", "German": "de"}
+
+
+def set_preferred_locales(settings_path, locales):
+    """Sets [General] preferred locales in a settings.cfg, keeping the rest (and replacing an earlier run's)."""
+    lines = []
+    if os.path.exists(settings_path):
+        with open(settings_path, encoding="utf-8") as f:
+            lines = [l.rstrip("\r\n") for l in f if not l.startswith("preferred locales")]
+    setting = f"preferred locales = {locales}"
+    if "[General]" in lines:
+        lines.insert(lines.index("[General]") + 1, setting)
+    else:
+        lines += ["", "[General]", setting]
+    with open(settings_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def esm_language(esm):
@@ -737,6 +758,9 @@ def main():
         step("Copying the port's files")
         shutil.copytree(args.port, args.output, dirs_exist_ok=True)
     step("Reading Morrowind.ini")
+    # The language of OpenMW's and the port's own texts: the edition's, then English for any text not translated.
+    locale = LOCALES[esm_language(os.path.join(args.morrowind, "Data Files", "Morrowind.esm"))]
+    set_preferred_locales(os.path.join(openmw, "config", "settings.cfg"), "en" if locale == "en" else f"{locale},en")
     write_config(args.morrowind, openmw)
     step("Packing the sounds")
     pack_sounds(data_files, os.path.join(openmw, "data", "sound3ds.bsa"))

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenMW for New 3DS setup</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>OpenMW for New 3DS setup</h1>
+        <p id="newer" class="notice" hidden>
+          <span id="newer-text"></span>
+          <a href="#" id="newer-link">Download it</a>
+        </p>
+      </header>
+
+      <section id="ready" class="view">
+        <div class="field">
+          <label for="morrowind">Morrowind folder</label>
+          <div class="row">
+            <input id="morrowind" type="text" spellcheck="false" autocomplete="off" />
+            <button id="morrowind-browse" type="button">Browse</button>
+          </div>
+          <p id="morrowind-status" class="status"></p>
+        </div>
+
+        <div class="field">
+          <label for="output">Output folder</label>
+          <div class="row">
+            <input id="output" type="text" spellcheck="false" autocomplete="off" />
+            <button id="output-browse" type="button">Browse</button>
+          </div>
+          <p id="output-status" class="status"></p>
+        </div>
+
+        <div class="actions">
+          <p id="notice" class="status problem"></p>
+          <button id="prepare" type="button" class="primary">Prepare</button>
+        </div>
+      </section>
+
+      <section id="working" class="view" hidden>
+        <p id="step" class="step">Starting</p>
+        <div class="bar"><div id="bar-fill"></div></div>
+        <div class="actions">
+          <span></span>
+          <button id="cancel" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <section id="done" class="view" hidden>
+        <div class="done-layout">
+          <div>
+            <p class="label">Ready in</p>
+            <p id="done-output" class="path"></p>
+            <p id="done-kept" class="status"></p>
+            <ol class="steps">
+              <li><span id="done-copy"></span> <span id="done-size"></span></li>
+              <li>
+                Install the CIA: scan the code with <a href="#" data-url="https://github.com/Steveice10/FBI/releases/latest">FBI</a>
+                (Remote Install, then Scan QR Code), or install <code>cias/openmw3ds.cia</code> with FBI or
+                <a href="#" data-url="https://github.com/Synaelle/cement/releases/latest">Cement</a>.
+              </li>
+              <li>Start OpenMW. The first launch takes a while.</li>
+            </ol>
+            <p id="sd-status" class="status"></p>
+          </div>
+          <figure id="qr" hidden>
+            <div id="qr-code"></div>
+            <figcaption>Scan with FBI</figcaption>
+          </figure>
+        </div>
+        <div class="actions">
+          <button id="check-sd" type="button">Check my SD card</button>
+          <span class="spacer"></span>
+          <button id="open-folder" type="button">Open folder</button>
+          <button id="close" type="button" class="primary">Close</button>
+        </div>
+      </section>
+
+      <section id="failed" class="view" hidden>
+        <p class="problem">The folder couldn't be prepared.</p>
+        <p id="error" class="error"></p>
+        <p id="failed-log" class="status"></p>
+        <div class="actions">
+          <span></span>
+          <button id="back" type="button">Back</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
