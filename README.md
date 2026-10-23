@@ -21,16 +21,19 @@
 ## What you need
 
 * A New 3DS, New 3DS XL or New 2DS XL with custom firmware. A port for the original 3DS and 2DS is in the works.
-* Morrowind for PC, the English version (other languages are coming soon).
-* A computer running Windows or Linux for the setup app.
+* Morrowind for PC, in English, French or German (other languages will get support later).
+* A computer running Windows, macOS or Linux for the setup app.
 
 ## Getting started
 
 1. Download the [latest release](https://github.com/Synaelle/OpenMW-3DS/releases/latest) and run the setup app. It
    finds your Morrowind and prepares everything.
 2. Copy the folder it makes to your SD card.
-3. Install the CIA with [FBI](https://github.com/Steveice10/FBI/releases/latest) or
-   [Cement](https://github.com/Synaelle/cement/releases/latest) and start OpenMW. The first launch takes a while.
+3. Install the CIA: scan the code the setup app shows with [FBI](https://github.com/Steveice10/FBI/releases/latest),
+   or install it with FBI or [Cement](https://github.com/Synaelle/cement/releases/latest). Then start OpenMW. The
+   first launch takes a while.
+
+To update, run the new version's setup app: it only prepares what changed.
 
 ## What to expect
 
