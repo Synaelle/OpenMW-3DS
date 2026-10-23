@@ -1,0 +1,105 @@
+name: Setup app
+
+# Builds the setup app for macOS (one app for Intel and Apple Silicon) and Linux (an AppImage), with the port's
+# files from a release inside, and attaches them to that release. 3ds/scripts/make-release.ps1 -Draft starts it once
+# the draft release has its files (port-<version>.zip among them). It can also be run by hand: Actions, Setup app,
+# Run workflow, with the release's tag. Without a tag it only checks that the apps build (no port's files inside,
+# nothing attached).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release's tag (it must have port-<tag>.zip), empty to check the builds only"
+        required: false
+        default: ""
+      upload:
+        description: Attach the builds to the release
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS
+            runner: macos-14
+          - platform: Linux
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ inputs.tag || 'check' }}
+      CONFIG: ${{ inputs.tag && '--config tauri.release.conf.json' || '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Only the setup app's folder: the rest is OpenMW and the 3DS port (the port's files come from the release).
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: 3ds/setup
+
+      - name: Linux libraries
+        if: matrix.platform == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev patchelf file
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 3ds/setup
+
+      - name: The port's files
+        if: inputs.tag
+        working-directory: 3ds/setup/app
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "port-$TAG.zip"
+          mkdir port
+          cd port && cmake -E tar xf "../port-$TAG.zip"
+          test -f cias/openmw3ds.cia
+
+      - name: Build (macOS)
+        if: matrix.platform == 'macOS'
+        working-directory: 3ds/setup/app
+        run: npx --yes @tauri-apps/cli@2.12.4 build --target universal-apple-darwin --bundles app $CONFIG
+
+      - name: Build (Linux)
+        if: matrix.platform == 'Linux'
+        working-directory: 3ds/setup/app
+        run: npx --yes @tauri-apps/cli@2.12.4 build --bundles appimage $CONFIG
+
+      - name: Package
+        working-directory: 3ds/setup
+        run: |
+          folder="OpenMW-3DS-Setup-$TAG"
+          mkdir -p "stage/$folder" dist
+          sed "s/{VERSION}/$TAG/g" "packaging/README-${{ matrix.platform }}.txt" > "stage/$folder/README.txt"
+          if [ "${{ matrix.platform }}" = macOS ]; then
+            cp -R "target/universal-apple-darwin/release/bundle/macos/OpenMW 3DS Setup.app" "stage/$folder/"
+            # ditto keeps the app's permissions and signature.
+            (cd stage && ditto -c -k --keepParent "$folder" "../dist/OpenMW-3DS-$TAG-macOS.zip")
+          else
+            cp target/release/bundle/appimage/*.AppImage "stage/$folder/OpenMW-3DS-Setup-x86_64.AppImage"
+            chmod +x "stage/$folder/OpenMW-3DS-Setup-x86_64.AppImage"
+            # A tar keeps the AppImage executable.
+            tar -C stage -czf "dist/OpenMW-3DS-$TAG-Linux.tar.gz" "$folder"
+          fi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-${{ matrix.platform }}
+          path: 3ds/setup/dist/*
+
+      - name: Attach to the release
+        if: inputs.tag && inputs.upload
+        working-directory: 3ds/setup
+        run: gh release upload "$TAG" dist/* --repo "${{ github.repository }}" --clobber
