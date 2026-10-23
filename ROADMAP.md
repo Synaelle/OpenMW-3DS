@@ -1,15 +1,8 @@
 # Roadmap
 
-## v0.2.0
-
-* Languages support
-* Smoother install and update process
-* Setup app for macOS
-* Local map and full map
-* Google Forms for bug report
-
 ## v0.3.0
 
+* Google Forms for bug report
 * UI polishing
 * Tribunal and Bloodmoon
 * Project Atlas and MOP integration
