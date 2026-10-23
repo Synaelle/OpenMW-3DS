@@ -78,6 +78,9 @@ namespace MWLua
             { MWGui::GM_LoadingWallpaper, "LoadingWallpaper" },
             { MWGui::GM_Jail, "Jail" },
             { MWGui::GM_QuickKeysMenu, "QuickKeysMenu" },
+#ifdef OPENMW_PLATFORM_3DS
+            { MWGui::GM_Map3DS, "Map3DS" },
+#endif
         };
 
         const auto nameToMode = [] {

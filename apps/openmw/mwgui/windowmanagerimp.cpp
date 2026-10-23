@@ -370,7 +370,9 @@ namespace MWGui
         p3ds::memprobe::stage("initUI: map");
 #endif
         mMap->renderGlobalMap();
-        trackWindow(mMap, makeMapWindowSettingValues());
+#ifndef OPENMW_PLATFORM_3DS
+        trackWindow(mMap, makeMapWindowSettingValues()); // 3DS: its layout places it, the bottom screen
+#endif
 
         auto statsWindow = std::make_unique<StatsWindow>(mDragAndDrop.get());
         mStatsWindow = statsWindow.get();
@@ -534,6 +536,9 @@ namespace MWGui
         p3ds::memprobe::stage("initUI: quickKeysMenu");
 #endif
         mGuiModeStates[GM_QuickKeysMenu] = GuiModeState(mQuickKeysMenu);
+#ifdef OPENMW_PLATFORM_3DS
+        mGuiModeStates[GM_Map3DS] = GuiModeState(mMap); // the minimap's tap (n3ds/hud3ds.cpp)
+#endif
 
         auto levelupDialog = std::make_unique<LevelupDialog>();
         mGuiModeStates[GM_Levelup] = GuiModeState(levelupDialog.get());
@@ -845,7 +850,7 @@ namespace MWGui
 
         // Icons of forced hidden windows are displayed
 #ifdef OPENMW_PLATFORM_3DS
-        setMinimapVisibility(false); // 0.1.0: no minimap (updateMap)
+        setMinimapVisibility(Settings::map().mMinimap3DS && (mAllowed & GW_Map)); // Options > Experimental
 #else
         setMinimapVisibility((mAllowed & GW_Map) && (!mMap->pinned() || (mForceHidden & GW_Map)));
 #endif
@@ -878,7 +883,11 @@ namespace MWGui
         }
         else if (getMode() != GM_Inventory)
         {
+#ifdef OPENMW_PLATFORM_3DS
+            mMap->setVisible(getMode() == GM_Map3DS);
+#else
             mMap->setVisible(false);
+#endif
             mStatsWindow->setVisible(false);
             mSpellWindow->setVisible(false);
             mHud->setDrowningBarVisible(false);
@@ -1071,9 +1080,10 @@ namespace MWGui
         if (!mLocalMapRender)
             return;
 #ifdef OPENMW_PLATFORM_3DS
-    // 0.1.0: no minimap (test #106, the tester: the flashing meshes and interface follow the local map's drawing,
-    // off until that is fixed). LocalMap::requestMap draws no tile either.
-        return;
+        // No map turned on (Options > Experimental, off by default until the flashing of test #106 is fixed): nothing
+        // to follow. LocalMap::requestMap draws no tile either.
+        if (!Settings::map().mMinimap3DS && !Settings::map().mFullMap3DS)
+            return;
 #endif
 
         MWWorld::ConstPtr player = MWMechanics::getPlayer();

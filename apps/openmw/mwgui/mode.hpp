@@ -45,7 +45,11 @@ namespace MWGui
         GM_LoadingWallpaper,
         GM_Jail,
 
-        GM_QuickKeysMenu
+        GM_QuickKeysMenu,
+#ifdef OPENMW_PLATFORM_3DS
+        // The full map on the bottom screen, opened by tapping the minimap (Options > Experimental): the game pauses.
+        GM_Map3DS,
+#endif
     };
 
     // Windows shown in inventory mode

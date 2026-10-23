@@ -13,7 +13,7 @@
         </Widget>
         <Widget type="TabControl" skin="TabControl" position="4 4 292 158" name="SettingsTab" align="Left Top">
             <Widget type="TabItem">
-                <Property key="Caption" value=" #{OMWEngine:Preferences} "/>
+                <Property key="Caption" value="#{OMWEngine:Preferences}"/>
                 <Widget type="TextBox" skin="NormalText" position="4 4 284 18" align="Left Top" name="DifficultyText">
                     <Property key="Caption" value="#{OMWEngine:Difficulty}"/>
                 </Widget>
@@ -61,7 +61,7 @@
                 </Widget>
             </Widget>
             <Widget type="TabItem">
-                <Property key="Caption" value=" #{OMW3DS:Visuals} "/>
+                <Property key="Caption" value="#{OMW3DS:Visuals}"/>
                 <!-- How far small details stay drawn (3DS setting [Camera] small details: Low, Medium, High; the
                      lower, the more frame rate in towns). The button cycles the levels (settingswindow.cpp). -->
                 <!-- A fixed width, so the label stays put whatever the level's word. -->
@@ -77,7 +77,7 @@
                 </Widget>
             </Widget>
             <Widget type="TabItem">
-                <Property key="Caption" value=" #{OMWEngine:Audio} "/>
+                <Property key="Caption" value="#{OMWEngine:Audio}"/>
                 <Widget type="TextBox" skin="NormalText" position="4 4 100 18" align="Left Top">
                     <Property key="Caption" value="#{OMWEngine:AudioMaster}"/>
                 </Widget>
@@ -137,6 +137,37 @@
                     <UserString key="SettingCategory" value="Sound"/>
                     <UserString key="SettingName" value="music volume"/>
                     <UserString key="SettingValueType" value="Float"/>
+                </Widget>
+            </Widget>
+            <!-- Features not finished yet, off by default (the tester, 22/10/2026): the minimap and the full map. -->
+            <Widget type="TabItem">
+                <Property key="Caption" value="#{OMW3DS:Experimental}"/>
+                <Widget type="HBox" position="4 4 280 26">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="Map"/>
+                        <UserString key="SettingName" value="minimap"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:Minimap}"/>
+                    </Widget>
+                </Widget>
+                <Widget type="HBox" position="4 32 280 26">
+                    <Widget type="AutoSizedButton" skin="MW_Button" position="0 0 24 24" align="Left Top">
+                        <UserString key="SettingCategory" value="Map"/>
+                        <UserString key="SettingName" value="full map"/>
+                        <UserString key="SettingType" value="CheckButton"/>
+                    </Widget>
+                    <Widget type="AutoSizedTextBox" skin="SandText" position="28 4 95 16" align="Left Top">
+                        <Property key="Caption" value="#{OMW3DS:FullMap}"/>
+                    </Widget>
+                </Widget>
+                <Widget type="EditBox" skin="SandText" position="4 60 280 64" align="Left Top">
+                    <Property key="Caption" value="#{OMW3DS:ExperimentalNote}"/>
+                    <Property key="MultiLine" value="true"/>
+                    <Property key="WordWrap" value="true"/>
+                    <Property key="Static" value="true"/>
+                    <Property key="NeedMouse" value="false"/>
                 </Widget>
             </Widget>
         </Widget>

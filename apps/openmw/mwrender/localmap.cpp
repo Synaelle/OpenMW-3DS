@@ -186,7 +186,10 @@ namespace MWRender
     void LocalMap::requestMap(const MWWorld::CellStore* cell)
     {
 #ifdef OPENMW_PLATFORM_3DS
-        return; // 0.1.0: no minimap, no tile drawn (WindowManager::updateMap)
+        // No tile drawn unless a map is turned on (Options > Experimental, off by default: the flashing and the short
+        // freezes of test #106 follow the tiles' drawing).
+        if (!Settings::map().mMinimap3DS && !Settings::map().mFullMap3DS)
+            return;
 #endif
         if (!cell->isExterior())
         {

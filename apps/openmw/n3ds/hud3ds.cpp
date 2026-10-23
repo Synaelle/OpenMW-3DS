@@ -891,7 +891,12 @@ namespace omw3ds
                 { "FatigueFrame", [](MyGUI::Widget*) { openTab(Tab::Stats); } },
                 { "WeapBox", [](MyGUI::Widget*) { openTab(Tab::Items); } },
                 { "SpellBox", [](MyGUI::Widget*) { openTab(Tab::Magic); } },
-                { "MiniMapButton", nullptr }, // the minimap is off in 0.1.0 (its touch: the Map tab, later)
+                // The full map on the bottom screen, the game paused (Options > Experimental, its switch).
+                { "MiniMapButton",
+                    [](MyGUI::Widget*) {
+                        if (Settings::map().mFullMap3DS)
+                            windows().pushGuiMode(MWGui::GM_Map3DS);
+                    } },
                 { "Screenshot3DS", [](MyGUI::Widget*) { requestPlayerScreenshot3DS(); } },
             };
             for (const auto& [name, handler] : touches)

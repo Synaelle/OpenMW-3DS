@@ -801,7 +801,9 @@ namespace MWGui
         mEditNoteDialog.eventOkClicked += MyGUI::newDelegate(this, &MapWindow::onNoteEditOk);
         mEditNoteDialog.eventDeleteClicked += MyGUI::newDelegate(this, &MapWindow::onNoteEditDelete);
 
+#ifndef OPENMW_PLATFORM_3DS // the 3DS keeps its layout's place, the bottom screen (no trackWindow either)
         setCoord(500, 0, 320, 300);
+#endif
 
         getWidget(mLocalMap, "LocalMap");
         getWidget(mGlobalMap, "GlobalMap");
@@ -840,7 +842,10 @@ namespace MWGui
         getWidget(mEventBoxLocal, "EventBoxLocal");
         mEventBoxLocal->eventMouseDrag += MyGUI::newDelegate(this, &MapWindow::onMouseDrag);
         mEventBoxLocal->eventMouseButtonPressed += MyGUI::newDelegate(this, &MapWindow::onDragStart);
+#ifndef OPENMW_PLATFORM_3DS
+        // No map notes on the 3DS: a double tap while panning with the stylus would open the note editor.
         mEventBoxLocal->eventMouseButtonDoubleClick += MyGUI::newDelegate(this, &MapWindow::onMapDoubleClicked);
+#endif
         if (allowZooming)
             mEventBoxLocal->eventMouseWheel += MyGUI::newDelegate(this, &MapWindow::onMapZoomed);
 
@@ -849,6 +854,9 @@ namespace MWGui
         mGlobalMap->setVisible(global);
         mLocalMap->setVisible(!global);
 
+#ifdef OPENMW_PLATFORM_3DS
+        setPinButtonVisible(false); // the bottom screen's full map (GM_Map3DS), never pinned
+#endif
         if (Settings::gui().mControllerMenus)
         {
             mControllerButtons.mB = "#{Interface:Back}";
@@ -1389,7 +1397,9 @@ namespace MWGui
     {
         marker->eventMouseDrag += MyGUI::newDelegate(this, &MapWindow::onMouseDrag);
         marker->eventMouseButtonPressed += MyGUI::newDelegate(this, &MapWindow::onDragStart);
+#ifndef OPENMW_PLATFORM_3DS
         marker->eventMouseButtonDoubleClick += MyGUI::newDelegate(this, &MapWindow::onCustomMarkerDoubleClicked);
+#endif
         if (Settings::map().mAllowZooming)
             marker->eventMouseWheel += MyGUI::newDelegate(this, &MapWindow::onMapZoomed);
     }

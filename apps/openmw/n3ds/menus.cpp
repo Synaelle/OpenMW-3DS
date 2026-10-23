@@ -753,6 +753,8 @@ namespace omw3ds
                     return;
                 case MWGui::GM_Journal: // MyGUI's journal, a book on the top screen (the books' layer), with the cursor
                     return;
+                case MWGui::GM_Map3DS: // MyGUI's map window on the bottom screen (the minimap's tap)
+                    return;
                 case MWGui::GM_MainMenu: // M8: MyGUI's main menu on the two screens (mainmenu.cpp)
                 case MWGui::GM_Name: // M8: the system keyboard (textinput.cpp)
                 case MWGui::GM_Race: // M8 phase 2: the character creation windows, MyGUI's on the two screens
@@ -881,6 +883,8 @@ namespace omw3ds
                 return "enchanting";
             case MWGui::GM_Jail:
                 return "jail";
+            case MWGui::GM_Map3DS:
+                return "map";
             case MWGui::GM_None:
                 return "message";
             default:

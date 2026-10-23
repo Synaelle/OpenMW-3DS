@@ -550,6 +550,26 @@ namespace MWGui
     void HUD::setMinimapVisible(bool visible)
     {
         mMinimapBox->setVisible(visible);
+#ifdef OPENMW_PLATFORM_3DS
+        // The screenshot button and the debug frame rate sit in the minimap's corner while it's off (0.1.0's
+        // layout). While it's shown they make a column between the bars and the minimap (the tester, test #114: not
+        // in the middle of the panel), the bars 34 pixels shorter to make room.
+        MyGUI::Widget* screenshot = getWidget("Screenshot3DS");
+        MyGUI::Widget* fps = getWidget("Fps3DS");
+        screenshot->setPosition(visible ? MyGUI::IntPoint(202, 4) : MyGUI::IntPoint(272, 4));
+        fps->setCoord(visible ? MyGUI::IntCoord(200, 36, 38, 16) : MyGUI::IntCoord(240, 38, 68, 16));
+        const int barWidth = visible ? 196 : 230;
+        for (const char* name : { "HealthFrame", "Health", "HealthValue3DS", "MagickaFrame", "Magicka",
+                 "MagickaValue3DS", "FatigueFrame", "Stamina", "FatigueValue3DS" })
+        {
+            // setCoord, not setSize: the values are anchored to their bar's right edge, so a shorter bar moves them
+            // left first (they came out off centre, test #115).
+            MyGUI::Widget* widget = getWidget(name);
+            widget->setCoord(widget->getLeft(), widget->getTop(), barWidth, widget->getHeight());
+            if (std::string_view(name).ends_with("Value3DS"))
+                widget->setPosition(0, widget->getTop());
+        }
+#endif
         updatePositions();
     }
 

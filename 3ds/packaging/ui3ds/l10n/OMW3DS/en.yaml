@@ -36,3 +36,7 @@ TutorialMove: "The Circle Pad moves you, and the C-Stick looks around."
 ScreenshotSaved: "Screenshot saved"
 ScreenshotFailed: "The screenshot could not be saved."
 ScreenshotBusy: "The last screenshot is still being saved."
+# Options > Experimental: features not finished yet, off by default.
+Experimental: "Experimental"
+FullMap: "Full map (tap the minimap)"
+ExperimentalNote: "These features are still being worked on. They may cause short freezes or flashing."
