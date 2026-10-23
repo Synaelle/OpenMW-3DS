@@ -59,9 +59,10 @@ folder, OpenMW's own code is at the root.
    ```
    This is a test build, with debug tools. Add `-NoDebug` for a build like the releases.
 
-To build a full release (the CIA, the setup app for Windows and Linux, and the packages), run
-`3ds\scripts\make-release.ps1 -Version x.y.z`. The Linux setup app is built in WSL with Docker. The setup app's own
-instructions are in [3ds/setup](3ds/setup/README.md).
+To build a full release (the CIA, the Windows setup app and the packages), run
+`3ds\scripts\make-release.ps1 -Version x.y.z`. With `-Draft` it also makes the draft release on GitHub, where the
+macOS and Linux setup apps get built. The setup app (Rust and Tauri) has its own instructions in
+[3ds/setup](3ds/setup/README.md).
 
 ## Contributing
 
