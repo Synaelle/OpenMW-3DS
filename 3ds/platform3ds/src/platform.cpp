@@ -385,7 +385,7 @@ namespace p3ds
 
     // The previous two runs' logs stay: NAME-1.log (the last run), NAME-2.log (the one before). Several runs of a
     // hardware test then survive until the tester copies the folder (each launch used to overwrite them).
-    static char gLogDir[96] = "sdmc:/openmw/logs";
+    static char gLogDir[96] = "sdmc:/" OPENMW3DS_SD_DIR "/logs";
 
     const char* logDir()
     {
@@ -438,7 +438,7 @@ namespace p3ds
         remove(kAutorunDonePath);
         rotateLogs();
 #ifdef OPENMW3DS_DEBUG
-        if (stat("sdmc:/openmw/memprofile", &logDir) == 0)
+        if (stat("sdmc:/" OPENMW3DS_SD_DIR "/memprofile", &logDir) == 0)
             memprobe::enableThreadAccounting(); // diagnostics (see memprobe.hpp)
 #endif
 

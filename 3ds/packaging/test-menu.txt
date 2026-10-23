@@ -1,3 +1,3 @@
-title Test #113: endurance benchmark again (sound cache fix for the out of memory), loading spinner turning right to left - run Debug, Endurance
-logs test113
+title Test #115: before 0.2.0 - HUD with the minimap (camera button and fps moved), no map notes, first launch memory, folders made by the game - run A
+logs test115
 run A: normal |

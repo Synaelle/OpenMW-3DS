@@ -60,7 +60,7 @@ namespace Files
         {
             // main3ds.cpp sets OPENMW3DS_LOG_DIR to a hardware test run's own folder (platform3ds logDir).
             static const std::filesystem::path logPath(
-                std::getenv("OPENMW3DS_LOG_DIR") != nullptr ? std::getenv("OPENMW3DS_LOG_DIR") : "/openmw/logs");
+                std::getenv("OPENMW3DS_LOG_DIR") != nullptr ? std::getenv("OPENMW3DS_LOG_DIR") : "/" OPENMW3DS_SD_DIR "/logs");
             return logPath;
         }
 #else

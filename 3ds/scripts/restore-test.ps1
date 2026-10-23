@@ -4,11 +4,14 @@
 #   scripts\restore-test.ps1 -Test test77 -List    # only say what would change
 # What the SD holds is out\sdcard-openmw.manifest.json (the last package, or the last restore): only the files
 # that differ are sent, files the test did not have are deleted (under openmw/ and cias/ only), and the manifest
-# then records the restored test, so the next package's update list is right. The tester then installs
-# sdmc:/cias/openmw3ds.cia.
+# then records the restored test, so the next package's update list is right. The tester then installs the CIA.
+# Tests packaged since 22/10/2026 live in sdmc:/openmw-test with the "OpenMW Test" title. Older ones used
+# sdmc:/openmw and the player's title: restoring one would write into the player's install and its CIA would
+# replace their OpenMW, so they need -IntoPlayerInstall.
 param(
     [Parameter(Mandatory)][string]$Test,
-    [switch]$List
+    [switch]$List,
+    [switch]$IntoPlayerInstall
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -29,7 +32,14 @@ if (Test-Path $sdManifestPath) {
     (Get-Content $sdManifestPath -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $onSd[$_.Name] = $_.Value }
 }
 $send = @($wanted.Keys | Where-Object { $onSd[$_] -ne $wanted[$_] } | Sort-Object)
-$delete = @($onSd.Keys | Where-Object { -not $wanted.ContainsKey($_) -and ($_ -like 'openmw/*' -or $_ -like 'cias/*') } | Sort-Object)
+if (-not $IntoPlayerInstall -and @($wanted.Keys | Where-Object { $_ -like 'openmw/*' }).Count -gt 0) {
+    throw "$Test predates the separate test install: it writes to sdmc:/openmw and its CIA replaces the player's OpenMW. Add -IntoPlayerInstall to restore it anyway."
+}
+# Only the test install and test CIAs are cleaned (the player's sdmc:/openmw too with -IntoPlayerInstall).
+$delete = @($onSd.Keys | Where-Object {
+        -not $wanted.ContainsKey($_) -and ($_ -like 'openmw-test/*' -or $_ -like 'cias/*-test.cia' -or
+            ($IntoPlayerInstall -and ($_ -like 'openmw/*' -or $_ -like 'cias/*')))
+    } | Sort-Object)
 
 Get-Content "$archive\BUILD.txt" | ForEach-Object { Write-Host $_ }
 Write-Host "Send ($($send.Count)):"; $send | ForEach-Object { Write-Host "  sdmc:/$_" }
@@ -55,4 +65,5 @@ foreach ($rel in $delete) {
 $sorted = [ordered]@{}
 $wanted.Keys | Sort-Object | ForEach-Object { $sorted[$_] = $wanted[$_] }
 $sorted | ConvertTo-Json | Set-Content $sdManifestPath
-Write-Host "Restored ${Test}: install sdmc:/cias/openmw3ds.cia"
+$cias = @($wanted.Keys | Where-Object { $_ -like 'cias/*.cia' }) -join ', '
+Write-Host "Restored ${Test}: install sdmc:/$cias"

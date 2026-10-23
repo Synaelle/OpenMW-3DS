@@ -17,6 +17,17 @@ if (OPENMW_PLATFORM_3DS)
     # POSIX declarations (strnlen, fileno, ...) that newlib hides in strict C++20 mode.
     add_compile_options("SHELL:-include ${OPENMW3DS_ROOT}/deps/compat/include/openmw3ds_int32.h")
     add_compile_definitions(_GNU_SOURCE OPENMW_PLATFORM_3DS=1)
+    # Test builds (the debug tools) are a title of their own, "OpenMW Test", with their own folder on the SD card,
+    # so a test never touches the player's install (the tester, 22/10/2026): sdmc:/openmw-test, sdmc:/openmw for a
+    # release. The packaging (apps/openmw) gives the test title its own ID, icon and banner.
+    if (OPENMW3DS_DEBUG)
+        set(OPENMW3DS_SD_DIR "openmw-test")
+        set(OPENMW3DS_UNIQUE_ID 0xF6D3F)
+    else()
+        set(OPENMW3DS_SD_DIR "openmw")
+        set(OPENMW3DS_UNIQUE_ID 0xF6D3E)
+    endif()
+    add_compile_definitions(OPENMW3DS_SD_DIR="${OPENMW3DS_SD_DIR}" OPENMW3DS_UNIQUE_ID=${OPENMW3DS_UNIQUE_ID})
     # The port's own version (start menu, main menu, credits, loading screen): 0.1.0 is the first release
     # (LIMITATIONS.md M21). Until then 0.1.0-dev<N>, N the hardware test being packaged: the "Test #N" title of
     # packaging/test-menu.txt (the tester, 21/10), read again whenever that file changes.

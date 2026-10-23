@@ -24,6 +24,11 @@ foreach ($line in Get-Content $list) {
     $path = $line.Trim().Substring(5)
     if ($section -eq 'put') { $files += $path } elseif ($section -eq 'rm') { $deletes += $path }
 }
+# A test package never deletes from the player's install (sdmc:/openmw, cias/openmw3ds.cia): only its own folder
+# and CIA, whatever an old manifest lists.
+if (@($files | Where-Object { $_ -like '/openmw-test/*' -or $_ -like '/cias/*-test.cia' }).Count -gt 0) {
+    $deletes = @($deletes | Where-Object { $_ -like '/openmw-test/*' -or $_ -like '/cias/*-test.cia' })
+}
 if ($files.Count -eq 0 -and $deletes.Count -eq 0) { Write-Output 'Nothing to upload.'; exit 0 }
 
 # The changed files in a folder shaped like the SD card.
@@ -49,11 +54,13 @@ if ($deletes.Count -gt 0) {
     Write-Output "Deleted $($deletes.Count) files the package no longer has."
 }
 
-if ($files -contains '/cias/openmw3ds.cia') {
+# The package's CIA (openmw3ds-test.cia for a test build, openmw3ds.cia for a release-like one).
+foreach ($cia in @($files | Where-Object { $_ -like '/cias/*.cia' })) {
+    $name = Split-Path $cia -Leaf
     $entries = ((& $baguette --json --quiet ls /cias) | ConvertFrom-Json).entries
-    $onCard = ($entries | Where-Object name -eq 'openmw3ds.cia').size
-    $local = (Get-Item (Join-Path $root 'cias\openmw3ds.cia')).Length
-    if ($onCard -ne $local) { Write-Output "CIA size differs: card $onCard, local $local."; exit 1 }
-    Write-Output "CIA on the card: $onCard bytes (matches)."
+    $onCard = ($entries | Where-Object name -eq $name).size
+    $local = (Get-Item (Join-Path $root "cias\$name")).Length
+    if ($onCard -ne $local) { Write-Output "$name size differs: card $onCard, local $local."; exit 1 }
+    Write-Output "$name on the card: $onCard bytes (matches)."
 }
 Remove-Item -Recurse -Force $stage

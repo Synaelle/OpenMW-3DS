@@ -174,14 +174,27 @@ if(BUILD_OPENMW)
 
     if (OPENMW_PLATFORM_3DS)
         include(${OPENMW3DS_ROOT}/cmake/Ctr3dsPackaging.cmake)
+        # A test build is its own title next to the player's, marked on the HOME Menu (CMakeLists.txt: its own
+        # folder on the SD card, OPENMW3DS_SD_DIR, and ID).
+        if (OPENMW3DS_DEBUG)
+            set(_omw3ds_title "OpenMW Test")
+            set(_omw3ds_code "CTR-P-OMW4")
+            set(_omw3ds_art ICON "${OPENMW3DS_ROOT}/packaging/icon_test.png"
+                BANNER "${OPENMW3DS_ROOT}/packaging/banner_test.png")
+        else()
+            set(_omw3ds_title "OpenMW")
+            set(_omw3ds_code "CTR-P-OMW3")
+            set(_omw3ds_art)
+        endif()
         omw3ds_package(openmw
-            TITLE "OpenMW"
+            TITLE "${_omw3ds_title}"
             DESCRIPTION "OpenMW engine port for New 3DS" # no game name in the title metadata (the tester, 20/10)
             AUTHOR "Synaelle" # the tester (the port's author), 22/10/2026
-            PRODUCT_CODE "CTR-P-OMW3"
-            UNIQUE_ID 0xF6D3E # must match n3ds/main3ds.cpp
+            PRODUCT_CODE "${_omw3ds_code}"
+            UNIQUE_ID ${OPENMW3DS_UNIQUE_ID} # the game checks it (n3ds/main3ds.cpp)
             SYSTEM_MODE_EXT 178MB
-            VERSION "${OPENMW3DS_VERSION}")
+            VERSION "${OPENMW3DS_VERSION}"
+            ${_omw3ds_art})
         # Scripted input for automated emulator runs (n3ds/hidinject.cpp, debug tools).
         if (OPENMW3DS_DEBUG)
             target_link_options(openmw PRIVATE

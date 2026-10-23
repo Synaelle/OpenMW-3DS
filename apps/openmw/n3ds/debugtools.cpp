@@ -330,7 +330,7 @@ namespace omw3ds::debug
         {
             static const Autorun autorun = [] {
                 Autorun result;
-                if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
+                if (std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/autorun.txt", "r"))
                 {
                     char buf[4096] = {};
                     std::fread(buf, 1, sizeof(buf) - 1, f);
@@ -586,7 +586,7 @@ namespace omw3ds::debug
         if (autorun.mLuaProfileAt != 0 && frame == autorun.mLuaProfileAt)
         {
             const std::string table = MWBase::Environment::get().getLuaManager()->formatResourceUsageStats();
-            if (std::FILE* f = std::fopen("sdmc:/openmw/lua_profile.txt", "w"))
+            if (std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/lua_profile.txt", "w"))
             {
                 std::fwrite(table.data(), 1, table.size(), f);
                 std::fclose(f);
@@ -827,12 +827,12 @@ namespace omw3ds::debug
         for (unsigned shot : autorun.mShots)
             if (shot == frame)
             {
-                const std::string path = "sdmc:/openmw/shot_top_" + std::to_string(shot) + ".bmp";
+                const std::string path = "sdmc:/" OPENMW3DS_SD_DIR "/shot_top_" + std::to_string(shot) + ".bmp";
                 Render3DS::requestCapture(path.c_str());
                 P3DS_LOGI("screenshot %s: %s", path.c_str(), describeView(frame).c_str());
                 // The bottom screen too (its framebuffer holds the last frame drawn there: M8's GUI or the text
                 // display).
-                const std::string bottom = "sdmc:/openmw/shot_bottom_" + std::to_string(shot) + ".bmp";
+                const std::string bottom = "sdmc:/" OPENMW3DS_SD_DIR "/shot_bottom_" + std::to_string(shot) + ".bmp";
                 p3ds::screenshot::saveBottomScreen(bottom.c_str());
             }
         const float turn = frame == 30 ? autorun.mTurnDegrees : 0.f;
@@ -854,8 +854,8 @@ namespace omw3ds::debug
             if (view == tick)
             {
                 const std::string name = "load" + std::to_string(view);
-                Render3DS::requestCapture(("sdmc:/openmw/shot_top_" + name + ".bmp").c_str());
-                p3ds::screenshot::saveBottomScreen(("sdmc:/openmw/shot_bottom_" + name + ".bmp").c_str());
+                Render3DS::requestCapture(("sdmc:/" OPENMW3DS_SD_DIR "/shot_top_" + name + ".bmp").c_str());
+                p3ds::screenshot::saveBottomScreen(("sdmc:/" OPENMW3DS_SD_DIR "/shot_bottom_" + name + ".bmp").c_str());
                 P3DS_LOGI("autorun: loading screens saved (%s)", name.c_str());
             }
     }

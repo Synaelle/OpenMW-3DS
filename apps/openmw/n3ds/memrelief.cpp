@@ -33,7 +33,7 @@ namespace omw3ds::memrelief
         {
 #ifdef OPENMW3DS_DEBUG
             static const bool test = [] {
-                std::FILE* f = std::fopen("sdmc:/openmw/evict-test", "r");
+                std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/evict-test", "r");
                 if (f != nullptr)
                     std::fclose(f);
                 return f != nullptr;
@@ -72,7 +72,7 @@ namespace omw3ds::memrelief
 #ifndef OPENMW3DS_DEBUG
             return false;
 #endif
-            std::FILE* f = std::fopen("sdmc:/openmw/no-evict", "r");
+            std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/no-evict", "r");
             if (f != nullptr)
                 std::fclose(f);
             if (f != nullptr)

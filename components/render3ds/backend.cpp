@@ -154,7 +154,7 @@ namespace Render3DS
             return false;
 #endif
             static const bool enabled = [] {
-                std::FILE* f = std::fopen("sdmc:/openmw/gpu-verify", "r");
+                std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/gpu-verify", "r");
                 if (f != nullptr)
                     std::fclose(f);
                 P3DS_LOGI("render3ds: draw-by-draw GPU checks %s", f != nullptr ? "on (sdmc:/openmw/gpu-verify)" : "off");
@@ -3000,7 +3000,7 @@ namespace Render3DS
         {
             static const bool enabled = [] {
                 struct stat st;
-                return stat("sdmc:/openmw/zeste-tags", &st) == 0;
+                return stat("sdmc:/" OPENMW3DS_SD_DIR "/zeste-tags", &st) == 0;
             }();
             if (!enabled)
                 return;
@@ -3436,7 +3436,7 @@ namespace Render3DS
                 static bool censusDone = false;
                 gCensusFrame = false;
                 if (!censusDone && gLastStats.mDraws > 150 && gFrame % 300 == 0)
-                    if (std::FILE* f = std::fopen("sdmc:/openmw/draw-census", "r"))
+                    if (std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/draw-census", "r"))
                     {
                         std::fclose(f);
                         gCensusFrame = censusDone = true;
@@ -5186,7 +5186,7 @@ namespace Render3DS
 #ifdef OPENMW3DS_DEBUG
         // sdmc:/openmw/cpu-skinning: skinned meshes on the CPU, as before M10 (comparisons on hardware).
         if (gSkinVariant)
-            if (std::FILE* f = std::fopen("sdmc:/openmw/cpu-skinning", "r"))
+            if (std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/cpu-skinning", "r"))
             {
                 std::fclose(f);
                 gSkinVariant = false;
@@ -5205,7 +5205,7 @@ namespace Render3DS
             (unsigned long)gBufferBase);
 
 #ifdef OPENMW3DS_DEBUG
-        if (std::FILE* f = std::fopen("sdmc:/openmw/autorun.txt", "r"))
+        if (std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/autorun.txt", "r"))
         {
             char buf[256] = {};
             std::fread(buf, 1, sizeof(buf) - 1, f);
@@ -5275,7 +5275,7 @@ namespace Render3DS
 #ifdef OPENMW3DS_DEBUG
             struct stat st;
             const bool on = stat(offFile, &st) != 0;
-            Log(Debug::Info) << "render3ds: " << (offFile + std::strlen("sdmc:/openmw/no-")) << (on ? " on" : " off");
+            Log(Debug::Info) << "render3ds: " << (offFile + std::strlen("sdmc:/" OPENMW3DS_SD_DIR "/no-")) << (on ? " on" : " off");
             return on;
 #else
             (void)offFile;
@@ -5286,25 +5286,25 @@ namespace Render3DS
 
     bool thinWeather()
     {
-        static const bool on = switchOn("sdmc:/openmw/no-thinweather");
+        static const bool on = switchOn("sdmc:/" OPENMW3DS_SD_DIR "/no-thinweather");
         return on;
     }
 
     bool poseCadence()
     {
-        static const bool on = switchOn("sdmc:/openmw/no-posecadence");
+        static const bool on = switchOn("sdmc:/" OPENMW3DS_SD_DIR "/no-posecadence");
         return on;
     }
 
     bool smallCullBoost()
     {
-        static const bool on = switchOn("sdmc:/openmw/no-smallcull");
+        static const bool on = switchOn("sdmc:/" OPENMW3DS_SD_DIR "/no-smallcull");
         return on;
     }
 
     bool flameLoops()
     {
-        static const bool on = switchOn("sdmc:/openmw/no-flameloops");
+        static const bool on = switchOn("sdmc:/" OPENMW3DS_SD_DIR "/no-flameloops");
         return on;
     }
 
@@ -5318,7 +5318,7 @@ namespace Render3DS
 
     bool sameStateSkip()
     {
-        static const bool on = switchOn("sdmc:/openmw/no-samestate");
+        static const bool on = switchOn("sdmc:/" OPENMW3DS_SD_DIR "/no-samestate");
         return on;
     }
 

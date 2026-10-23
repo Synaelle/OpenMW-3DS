@@ -7,11 +7,11 @@ extern "C" const char* const p3ds_build_id; // "YYYYMMDD-HHMMSS <git rev>", rege
 namespace p3ds
 {
     // Root of all port files on the SD card.
-    constexpr const char* kBaseDir = "sdmc:/openmw";
+    constexpr const char* kBaseDir = "sdmc:/" OPENMW3DS_SD_DIR;
     // Every log in one folder: the port log, crash reports and OpenMW's own openmw.log (main.cpp).
-    constexpr const char* kLogDir = "sdmc:/openmw/logs";
-    constexpr const char* kAutorunPath = "sdmc:/openmw/autorun.txt";
-    constexpr const char* kAutorunDonePath = "sdmc:/openmw/autorun.done";
+    constexpr const char* kLogDir = "sdmc:/" OPENMW3DS_SD_DIR "/logs";
+    constexpr const char* kAutorunPath = "sdmc:/" OPENMW3DS_SD_DIR "/autorun.txt";
+    constexpr const char* kAutorunDonePath = "sdmc:/" OPENMW3DS_SD_DIR "/autorun.done";
 
     struct InitOptions
     {

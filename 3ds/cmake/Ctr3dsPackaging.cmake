@@ -11,10 +11,11 @@ set(OMW3DS_PACKAGING_DIR "${_omw3ds_root}/packaging")
 # omw3ds_package(<elf target>
 #     TITLE <name> DESCRIPTION <text> AUTHOR <text>
 #     PRODUCT_CODE <CTR-P-XXXX> UNIQUE_ID <0xFxxxx>
-#     [SYSTEM_MODE_EXT 124MB|178MB])
+#     [SYSTEM_MODE_EXT 124MB|178MB] [ICON <png>] [BANNER <png>])
+# ICON and BANNER replace packaging/icon.png and the banner (a flat image then, no 3D emblem): the test title's.
 # Produces <target>.3dsx always and <target>.cia when makerom/bannertool are available.
 function(omw3ds_package target)
-    cmake_parse_arguments(PARSE_ARGV 1 P "" "TITLE;DESCRIPTION;AUTHOR;PRODUCT_CODE;UNIQUE_ID;SYSTEM_MODE_EXT;VERSION" "")
+    cmake_parse_arguments(PARSE_ARGV 1 P "" "TITLE;DESCRIPTION;AUTHOR;PRODUCT_CODE;UNIQUE_ID;SYSTEM_MODE_EXT;VERSION;ICON;BANNER" "")
     if(NOT P_SYSTEM_MODE_EXT)
         set(P_SYSTEM_MODE_EXT 178MB)
     endif()
@@ -29,6 +30,9 @@ function(omw3ds_package target)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     set(icon_png "${OMW3DS_PACKAGING_DIR}/icon.png")
+    if(P_ICON)
+        set(icon_png "${P_ICON}")
+    endif()
     set(smdh "${CMAKE_CURRENT_BINARY_DIR}/${target}.smdh")
     ctr_generate_smdh(OUTPUT "${smdh}" NAME "${P_TITLE}" DESCRIPTION "${P_DESCRIPTION}" AUTHOR "${P_AUTHOR}" ICON "${icon_png}")
     ctr_create_3dsx(${target} SMDH "${smdh}")
@@ -52,7 +56,10 @@ function(omw3ds_package target)
     set(banner_png "${OMW3DS_PACKAGING_DIR}/banner.png")
     set(banner_cgfx "${OMW3DS_PACKAGING_DIR}/banner3d.cgfx")
     set(banner_wav "${OMW3DS_PACKAGING_DIR}/banner.wav")
-    if(EXISTS "${banner_cgfx}")
+    if(P_BANNER)
+        set(banner_png "${P_BANNER}")
+    endif()
+    if(EXISTS "${banner_cgfx}" AND NOT P_BANNER)
         add_custom_command(OUTPUT "${banner}"
             COMMAND "${OMW3DS_BANNERTOOL}" makebanner -ci "${banner_cgfx}" -a "${banner_wav}" -o "${banner}"
             DEPENDS "${banner_cgfx}" "${banner_wav}" VERBATIM)

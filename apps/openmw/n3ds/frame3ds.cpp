@@ -238,15 +238,15 @@ namespace omw3ds
         if (gPlayerShotWait > 0 || (last != 0 && now - last < 500))
             return;
         last = now;
-        mkdir("sdmc:/openmw/screenshots", 0777); // may be missing (empty folders and FTP copies)
+        mkdir("sdmc:/" OPENMW3DS_SD_DIR "/screenshots", 0777); // may be missing (empty folders and FTP copies)
         // Named by the console's clock: a new game session doesn't write over the last one's pictures.
         const time_t clock = time(nullptr);
         const tm* t = localtime(&clock);
         char path[96];
-        std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/%04d-%02d-%02d_%02d-%02d-%02d.bmp",
+        std::snprintf(path, sizeof(path), "sdmc:/" OPENMW3DS_SD_DIR "/screenshots/%04d-%02d-%02d_%02d-%02d-%02d.bmp",
             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
         for (int n = 2; access(path, F_OK) == 0 && n < 100; ++n) // twice in a second
-            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/%04d-%02d-%02d_%02d-%02d-%02d_%d.bmp",
+            std::snprintf(path, sizeof(path), "sdmc:/" OPENMW3DS_SD_DIR "/screenshots/%04d-%02d-%02d_%02d-%02d-%02d_%d.bmp",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, n);
         Render3DS::requestPlayerCapture(path);
         gPlayerShotWait = 3; // taken at the next frame's start
@@ -546,13 +546,13 @@ namespace omw3ds
         {
             static unsigned count = 0;
             if (count == 0)
-                mkdir("sdmc:/openmw/screenshots", 0777); // may be missing (empty folders and FTP copies)
+                mkdir("sdmc:/" OPENMW3DS_SD_DIR "/screenshots", 0777); // may be missing (empty folders and FTP copies)
             // Both screens: the top one from the render target (next frame), the bottom one as it shows now.
             char path[64];
-            std::snprintf(path, sizeof(path), "sdmc:/openmw/screenshots/top_%03u.bmp", count);
+            std::snprintf(path, sizeof(path), "sdmc:/" OPENMW3DS_SD_DIR "/screenshots/top_%03u.bmp", count);
             Render3DS::requestCapture(path);
             char bottomPath[64];
-            std::snprintf(bottomPath, sizeof(bottomPath), "sdmc:/openmw/screenshots/bottom_%03u.bmp", count++);
+            std::snprintf(bottomPath, sizeof(bottomPath), "sdmc:/" OPENMW3DS_SD_DIR "/screenshots/bottom_%03u.bmp", count++);
             p3ds::screenshot::saveBottomScreen(bottomPath);
 #ifdef OPENMW3DS_DEBUG
             P3DS_LOGI("screenshot %s: %s", path, debug::describeView(gStats.frameIndex).c_str());

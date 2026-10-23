@@ -45,7 +45,7 @@ namespace p3ds::crash
         alignas(8) u8 gHandlerStack[kHandlerStackSize];
         char gReport[kReportSize];
         size_t gReportLen = 0;
-        char gPath[96] = "/openmw/logs/openmw3ds-crash.log"; // set by install()
+        char gPath[96] = "/" OPENMW3DS_SD_DIR "/logs/openmw3ds-crash.log"; // set by install()
         volatile bool gWaitForInput = true;
         int gInCrash = 0; // accessed with __atomic builtins
         const char* const* gContext = nullptr;
@@ -584,7 +584,7 @@ namespace p3ds::crash
 #ifndef OPENMW3DS_DEBUG
                     return false; // debug builds only
 #endif
-                    std::FILE* f = std::fopen("sdmc:/openmw/memwalk", "r");
+                    std::FILE* f = std::fopen("sdmc:/" OPENMW3DS_SD_DIR "/memwalk", "r");
                     if (f != nullptr)
                         std::fclose(f);
                     return f != nullptr;
@@ -867,7 +867,7 @@ namespace
 
     void loadTraceRequest()
     {
-        FILE* f = fopen("sdmc:/openmw/trace.txt", "r");
+        FILE* f = fopen("sdmc:/" OPENMW3DS_SD_DIR "/trace.txt", "r");
         if (f == nullptr)
             return;
         unsigned long addr = 0;
@@ -961,7 +961,7 @@ namespace p3ds::memprobe
 #ifndef OPENMW3DS_DEBUG
             return false; // debug builds only
 #endif
-            FILE* f = fopen("sdmc:/openmw/memprofile", "r");
+            FILE* f = fopen("sdmc:/" OPENMW3DS_SD_DIR "/memprofile", "r");
             if (f != nullptr)
                 fclose(f);
             if (f != nullptr)

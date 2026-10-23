@@ -7,7 +7,7 @@ namespace
     // A POSIX absolute path on the default device: std::filesystem (newlib) does not treat "sdmc:/..."
     // as absolute, so OpenMW would resolve it relative to the config directory. main3ds.cpp makes
     // sdmc the default device with chdir("sdmc:/").
-    const std::filesystem::path sRoot = "/openmw";
+    const std::filesystem::path sRoot = "/" OPENMW3DS_SD_DIR;
 }
 
 namespace Files

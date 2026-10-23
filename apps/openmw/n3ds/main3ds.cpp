@@ -55,7 +55,7 @@ int runApplication(int argc, char* argv[]); // apps/openmw/main.cpp
 
 namespace
 {
-    constexpr const char* kArgsPath = "sdmc:/openmw/args.txt";
+    constexpr const char* kArgsPath = "sdmc:/" OPENMW3DS_SD_DIR "/args.txt";
 
     // The start menu's choice (M15): Start boots the game's own main menu (a new game goes through character
     // creation). Debug's "Start game", intro skipped, keeps the test set-up of args.txt (--skip-menu --start <cell>
@@ -168,7 +168,7 @@ namespace
     TestRuns readTestRuns()
     {
         TestRuns runs;
-        std::ifstream file("sdmc:/openmw/test-menu.txt");
+        std::ifstream file("sdmc:/" OPENMW3DS_SD_DIR "/test-menu.txt");
         std::string line;
         while (file && std::getline(file, line))
         {
@@ -210,7 +210,7 @@ namespace
             all.insert(r.mSwitches.begin(), r.mSwitches.end());
         for (const std::string& name : all)
         {
-            const std::string path = "sdmc:/openmw/" + name;
+            const std::string path = "sdmc:/" OPENMW3DS_SD_DIR "/" + name;
             struct stat st;
             const bool exists = stat(path.c_str(), &st) == 0;
             const bool want = run != nullptr && std::find(run->mSwitches.begin(), run->mSwitches.end(), name)
@@ -454,7 +454,7 @@ int main(int, char**)
     UErrorCode icuStatus = U_ZERO_ERROR;
     udata_setCommonData(icudt73l_dat, &icuStatus); // logged once the log is up
     p3ds::InitOptions opts;
-    opts.ciaUniqueId = 0xF6D3E; // must match apps/openmw packaging UNIQUE_ID
+    opts.ciaUniqueId = OPENMW3DS_UNIQUE_ID; // the packaging's UNIQUE_ID (CMakeLists.txt: the test title has its own)
     // Before p3ds::init (the run decides where the logs go) and the watchdog (waiting here isn't a hang).
     std::string startLine;
 #ifdef OPENMW3DS_DEBUG
@@ -518,7 +518,7 @@ int main(int, char**)
     if (!runLogs.empty())
     {
         opts.logSubdir = runLogs.c_str();
-        setenv("OPENMW3DS_LOG_DIR", ("/openmw/logs/" + runLogs).c_str(), 1); // OpenMW's openmw.log, MyGUI.log
+        setenv("OPENMW3DS_LOG_DIR", ("/" OPENMW3DS_SD_DIR "/logs/" + runLogs).c_str(), 1); // OpenMW's openmw.log, MyGUI.log
     }
 #endif
     p3ds::init(opts);
@@ -536,7 +536,7 @@ int main(int, char**)
     // The bottom screen while the game starts (M15): the game's name, what it does, a moving row of blocks
     // (platform3ds/loadscreen.cpp, drawn by the watchdog's thread). The M6 text screens (sdmc:/openmw/no-m8ui) keep
     // the debug display instead.
-    if (access("sdmc:/openmw/no-m8ui", F_OK) == 0)
+    if (access("sdmc:/" OPENMW3DS_SD_DIR "/no-m8ui", F_OK) == 0)
     {
         omw3ds::initBottomScreen("(starting OpenMW)");
     }
@@ -555,15 +555,34 @@ int main(int, char**)
         P3DS_LOGE("citro3d renderer failed to start: running headless");
     // M8's UI (MyGUI drawn on both screens). sdmc:/openmw/no-m8ui, the emergency fallback, goes back to M6's text
     // screens (the bottom screen's debug display and menus).
-    Render3DS::setDrawsGui(access("sdmc:/openmw/no-m8ui", F_OK) != 0);
-    Render3DS::openTexturePack("sdmc:/openmw/cooked/textures.o3tp");
+    Render3DS::setDrawsGui(access("sdmc:/" OPENMW3DS_SD_DIR "/no-m8ui", F_OK) != 0);
+    {
+        const char* pack = "sdmc:/" OPENMW3DS_SD_DIR "/cooked/textures.o3tp";
+#ifdef OPENMW3DS_DEBUG
+        // A test install (openmw-test) reads the player's textures when it brings none (scripts/stage-sd.ps1), as
+        // it reads their game files (its openmw.cfg's first data folder).
+        if (access(pack, F_OK) != 0)
+            pack = "sdmc:/openmw/cooked/textures.o3tp";
+#endif
+        Render3DS::openTexturePack(pack);
+    }
 
     // Make the SD card the default device so plain "/openmw/..." paths work: std::filesystem (newlib)
     // does not consider "sdmc:/..." absolute, and OpenMW resolves relative paths against config dirs.
     chdir("sdmc:/");
+    // The folders the game writes to, created when missing: an upload over FTP leaves out empty folders (test #114:
+    // a new test install had no cache folder and stopped at startup). Each mkdir costs ~1.5 s on the card, so only
+    // when it isn't there.
+    for (const char* folder : { "cache", "saves", "screenshots", "config" })
+    {
+        const std::string path = std::string("/" OPENMW3DS_SD_DIR "/") + folder;
+        struct stat st;
+        if (stat(path.c_str(), &st) != 0)
+            mkdir(path.c_str(), 0777);
+    }
     // std::filesystem::temp_directory_path() (used by the crash-catcher setup) needs an existing dir.
-    setenv("TMPDIR", "/openmw/cache", 1);
-    setenv("HOME", "/openmw", 1);
+    setenv("TMPDIR", "/" OPENMW3DS_SD_DIR "/cache", 1);
+    setenv("HOME", "/" OPENMW3DS_SD_DIR, 1);
     // SDL is only used for events, joystick, touch and timers. Its n3ds video driver would take over
     // the screens (gfxInit) and has no OpenGL, so use the dummy driver.
     setenv("SDL_VIDEODRIVER", "dummy", 1);
