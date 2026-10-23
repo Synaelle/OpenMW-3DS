@@ -33,7 +33,7 @@ namespace
 #ifdef OPENMW_PLATFORM_3DS
     // Counting the references re-reads every cell's references from the SD card (12 s on hardware, at every start).
     // The result depends only on the content files: it is kept in this file, keyed by their names and sizes.
-    constexpr char sRefInfoCachePath[] = "sdmc:/openmw/cache/refinfo.bin";
+    constexpr char sRefInfoCachePath[] = "sdmc:/" OPENMW3DS_SD_DIR "/cache/refinfo.bin";
     constexpr char sRefInfoCacheMagic[4] = { 'O', '3', 'R', 'I' };
     constexpr int sRefInfoCacheVersion = 1;
 
@@ -664,6 +664,13 @@ namespace MWWorld
         const std::size_t cellCount = cells.getSize();
         const std::size_t interiorCellCount = cells.getIntSize();
         const std::size_t exteriorCellCount = cells.getExtSize();
+#ifdef OPENMW_PLATFORM_3DS
+        // Room for Morrowind's references up front (316,116 in 2,538 cells, 16 bytes each): growing by doubling ended
+        // at 8 MB each, the 4 MB copy still alive, and that peak took the large pool a region of linear memory it
+        // never gives back (test #114: a first launch left the GPU 8 MB short, textures then loaded at half size).
+        refs.reserve(cellCount * 128);
+        refIDs.reserve(cellCount * 128);
+#endif
         for (std::size_t i = 0; i < cellCount; ++i)
         {
 #ifdef OPENMW_PLATFORM_3DS
